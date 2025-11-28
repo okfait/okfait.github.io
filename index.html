@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SonicVault - Speed Curve Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;800&family=JetBrains+Mono:wght=500&display=swap');
+        
+        :root {
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --text: #ffffff;
+            --accent: #60a5fa; /* Default Blue */
+            --curve-line: #3b82f6;
+            --bg-start: #0f172a;
+            --bg-end: #1e1b4b;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            color: var(--text);
+            overflow: hidden;
+            margin: 0;
+            background-color: #000;
+        }
+
+        /* ANIMATED BACKGROUND */
+        #bg-layer {
+            position: absolute; inset: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 10% 20%, var(--bg-start) 0%, var(--bg-end) 100%);
+            background-size: 200% 200%;
+            z-index: -2;
+            filter: blur(80px);
+            animation: bg-drift 30s ease infinite alternate; /* Slower drift */
+        }
+        @keyframes bg-drift {
+            0% { background-position: 0% 0%; }
+            100% { background-position: 100% 100%; }
+        }
+
+        /* VISUALIZER CANVAS */
+        #vizCanvas {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            z-index: -1; opacity: 0.6; mix-blend-mode: screen;
+        }
+
+        /* GLASS UI COMPONENTS */
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: blur(30px) saturate(140%);
+            -webkit-backdrop-filter: blur(30px) saturate(140%);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        /* MAIN PLAYER CARD */
+        .player-card {
+            position: absolute; top: 45%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 380px;
+            display: flex; flex-direction: column; align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        /* ALBUM ART STYLING */
+        .album-art-container {
+            position: relative; width: 240px; height: 240px; margin-bottom: 30px;
+        }
+
+        .art-glow {
+            position: absolute; inset: -20px; border-radius: 50%;
+            background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+            animation: pulse 2s infinite; opacity: 0; transition: opacity 0.5s;
+            mix-blend-mode: screen;
+        }
+        .art-glow.active { opacity: 0.4; }
+        @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.2; } 50% { transform: scale(1.05); opacity: 0.4; } 100% { transform: scale(0.95); opacity: 0.2; } }
+
+        .album-art {
+            width: 100%; height: 100%; border-radius: 50px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            position: relative; z-index: 2; overflow: hidden;
+            background-size: cover; background-position: center;
+        }
+        .album-art-image { width: 100%; height: 100%; object-fit: cover; border-radius: 50px; }
+
+
+        /* CURVE EDITOR MODAL */
+        .curve-editor {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            width: 600px; max-width: 90vw; height: 400px;
+            border-radius: 30px;
+            display: flex; flex-direction: column;
+            padding: 20px; z-index: 100;
+            opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+        .curve-editor.open { transform: translate(-50%, -50%) scale(1); opacity: 1; pointer-events: auto; }
+
+        .curve-canvas-container {
+            flex-grow: 1; position: relative; background: rgba(0,0,0,0.2);
+            border-radius: 16px; margin: 10px 0; overflow: hidden; cursor: crosshair;
+        }
+        
+        /* CONTROLS BAR */
+        .controls-bar {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            display: flex; align-items: center; gap: 15px;
+            padding: 12px 30px; border-radius: 60px; z-index: 20;
+        }
+
+        .ctrl-btn {
+            background: transparent; border: none; color: rgba(255,255,255,0.6);
+            font-size: 18px; cursor: pointer; transition: all 0.2s;
+            width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            border-radius: 50%;
+        }
+        .ctrl-btn:hover { color: white; background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .ctrl-btn.main {
+            font-size: 24px; color: black; background: white;
+            width: 60px; height: 60px; box-shadow: 0 0 25px rgba(255,255,255,0.3);
+        }
+        .ctrl-btn.main:hover { transform: scale(1.1); background: white; color: black; }
+        .ctrl-btn.active { color: var(--accent); text-shadow: 0 0 10px var(--accent); background: rgba(96, 165, 250, 0.1); } /* Uses accent color */
+
+        /* SLIDER & SCRUBBER (to change accent color) */
+        input[type=range]::-webkit-slider-thumb { background: var(--accent); }
+        .scrubber-container input[type=range]::-webkit-slider-thumb { background: white; }
+        .scrubber-container input[type=range]::-webkit-slider-thumb:hover { background: var(--accent); }
+
+        /* SIDE DRAWER */
+        .drawer {
+            position: absolute; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw;
+            transform: translateX(100%); z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+            border-left: 1px solid var(--glass-border); display: flex; flex-direction: column;
+        }
+        .drawer.open { transform: translateX(0); }
+
+        .song-item {
+            padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 15px;
+        }
+        .song-item:hover { background: rgba(255,255,255,0.1); }
+        .song-item.active { background: rgba(255,255,255,0.15); border-left: 4px solid var(--accent); } /* Uses accent color */
+        
+        .tab-button {
+            padding: 8px 16px; border-radius: 10px; font-weight: 500;
+            cursor: pointer; transition: 0.2s;
+        }
+        .tab-button.active { background: var(--accent); color: white; }
+
+        /* MODALS */
+        .settings-panel {
+            position: absolute; top: 70px; right: 20px; width: 320px;
+            padding: 20px; border-radius: 24px; transform: translateY(20px); opacity: 0; pointer-events: none;
+            transition: all 0.3s; z-index: 60;
+        }
+        .settings-panel.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+        .editor-modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 400px; max-width: 90vw; padding: 25px; border-radius: 24px; z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- LAYERS -->
+    <div id="bg-layer"></div>
+    <canvas id="vizCanvas"></canvas>
+
+    <!-- TOP BAR -->
+    <div class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-40">
+        <div class="font-bold text-xl tracking-tight">SONIC<span class="font-light opacity-70">VAULT</span></div>
+        <div class="flex gap-4">
+            <button onclick="ui.toggleSettings()" class="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:bg-white/20 transition" title="Settings">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <button onclick="ui.toggleLibrary()" class="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:bg-white/20 transition relative" title="Library">
+                <i class="fa-solid fa-list-ul"></i>
+                <div id="libBadge" class="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full hidden"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN PLAYER UI -->
+    <div class="player-card">
+        <div class="album-art-container">
+            <div class="art-glow" id="artGlow"></div>
+            <div class="album-art glass-panel" id="albumArtContainer">
+                <i class="fa-solid fa-music text-6xl opacity-50" id="artIcon"></i>
+            </div>
+        </div>
+        
+        <div class="w-full mb-1">
+            <h1 id="trackTitle" class="text-2xl font-bold truncate px-4 drop-shadow-lg">No Track Selected</h1>
+            <div class="flex justify-center gap-2 mt-2">
+                <span id="speedTag" class="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded hidden">1.0x</span>
+                <span id="pitchTag" class="text-[10px] bg-green-500/20 text-green-300 px-2 py-0.5 rounded hidden">PITCH 0</span>
+                <span id="8dTag" class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded hidden">8D</span>
+            </div>
+        </div>
+
+        <div class="scrubber-container px-4">
+            <input type="range" id="progressBar" min="0" max="100" value="0">
+            <div class="flex justify-between text-[10px] opacity-50 font-mono mt-2">
+                <span id="currentTime">0:00</span>
+                <span id="totalTime">0:00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="glass-panel controls-bar">
+        <button class="ctrl-btn" onclick="player.prev()"><i class="fa-solid fa-backward-step"></i></button>
+        <button class="ctrl-btn" onclick="player.toggleRepeat()" id="btnRepeat" title="Repeat Mode"><i class="fa-solid fa-repeat"></i></button>
+        <!-- Curve Editor Button -->
+        <button class="ctrl-btn" onclick="curveEditor.open()" title="Speed Curve">
+            <i class="fa-solid fa-wave-square"></i>
+        </button>
+        
+        <button class="ctrl-btn main" onclick="player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
+        
+        <button class="ctrl-btn" onclick="player.next()"><i class="fa-solid fa-forward-step"></i></button>
+        <button class="ctrl-btn" onclick="player.toggleMute()" id="btnMute"><i class="fa-solid fa-volume-high"></i></button>
+    </div>
+
+    <!-- SPEED CURVE EDITOR MODAL -->
+    <div id="curveEditor" class="glass-panel curve-editor">
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="font-bold text-lg"><i class="fa-solid fa-stopwatch mr-2 text-blue-400"></i>Speed Curve</h3>
+            <button onclick="curveEditor.close()" class="opacity-50 hover:opacity-100"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        
+        <div class="flex gap-2 mb-2 overflow-x-auto custom-scrollbar pb-2" id="presetList">
+            <!-- Presets injected here -->
+        </div>
+
+        <div class="curve-canvas-container">
+            <canvas id="curveCanvas" width="560" height="250"></canvas>
+            <!-- Grid Lines Overlay -->
+            <div class="absolute top-1/2 w-full h-px bg-white/20 pointer-events-none"></div>
+            <div class="absolute top-0 bottom-0 left-0 w-px bg-white/50 transition-all" id="playhead"></div>
+        </div>
+        
+        <div class="flex justify-between items-center mt-2 text-xs opacity-60">
+            <span>Click to Add • Drag to Move • Double-Click Delete</span>
+            <div>
+                <button onclick="curveEditor.savePreset()" class="hover:text-white underline mr-3">Save Preset</button>
+                <button onclick="curveEditor.reset()" class="hover:text-red-400 underline">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIBRARY DRAWER -->
+    <div id="libraryDrawer" class="glass-panel drawer">
+        <div class="p-6 border-b border-white/10 flex justify-between items-center">
+            <h2 class="font-bold text-lg">Library</h2>
+            <button onclick="ui.toggleLibrary()" class="opacity-50 hover:opacity-100"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <div class="p-4">
+            <label class="upload-label">
+                <i class="fa-solid fa-plus mb-1 block text-xl"></i> ADD FILES
+                <input type="file" id="fileInput" accept="audio/*" multiple onchange="player.handleUpload(this)">
+            </label>
+        </div>
+        <div class="flex-grow overflow-y-auto custom-scrollbar" id="songList"></div>
+        <div class="p-4 border-t border-white/10">
+            <button onclick="player.db.clearAll()" class="text-[10px] text-red-400 hover:text-red-300 uppercase font-bold w-full text-center">Clear Storage</button>
+        </div>
+    </div>
+    
+    <!-- TRACK EDITOR MODAL (Hidden) -->
+    <div id="trackEditorModal" class="fixed inset-0 bg-black/50 hidden z-[1001]">
+        <div class="editor-modal glass-panel">
+            <h3 class="font-bold text-lg border-b border-white/10 pb-3 mb-4">Edit Track Metadata</h3>
+            
+            <div class="flex items-center gap-4 mb-6">
+                <div id="editorArt" class="w-20 h-20 rounded-xl bg-white/10 flex items-center justify-center bg-cover bg-center">
+                    <i class="fa-solid fa-music text-2xl opacity-50"></i>
+                </div>
+                <div>
+                    <input type="file" id="artInput" accept="image/png, image/jpeg" class="hidden" onchange="ui.previewArt(this)">
+                    <label for="artInput" class="text-xs font-bold bg-white/20 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-white/30 transition">
+                        <i class="fa-solid fa-upload mr-2"></i>Change Album Art
+                    </label>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="trackNameInput" class="block text-sm font-bold mb-1 opacity-80">Track Name</label>
+                <input type="text" id="trackNameInput" class="w-full p-2 rounded-lg bg-white/10 border border-white/10 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter new track name">
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="ui.closeTrackEditor()" class="bg-white/10 px-4 py-2 rounded-xl hover:bg-white/20 transition">Cancel</button>
+                <button onclick="ui.saveTrackMetadata()" class="bg-[var(--accent)] px-4 py-2 rounded-xl font-bold hover:opacity-90 transition">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- SETTINGS PANEL -->
+    <div id="settingsPanel" class="glass-panel settings-panel">
+        <div class="flex mb-4 border-b border-white/10 pb-2">
+            <button class="tab-button" data-tab="fx" onclick="ui.changeSettingsTab(this)">Audio FX</button>
+            <button class="tab-button" data-tab="visuals" onclick="ui.changeSettingsTab(this)">Visuals</button>
+        </div>
+        
+        <!-- AUDIO FX TAB -->
+        <div id="tab-fx" class="space-y-5">
+            <div>
+                <h3 class="text-xs font-bold uppercase mb-4 flex items-center gap-2 text-blue-400"><i class="fa-solid fa-wave-square"></i> Core Effects</h3>
+                <div class="flex justify-between text-[10px] font-bold mb-2 opacity-70">
+                    <span>BASS BOOST</span> <span id="bassVal">0dB</span>
+                </div>
+                <input type="range" min="0" max="40" value="0" oninput="player.setBass(this.value)">
+            </div>
+            
+            <div>
+                <div class="flex justify-between text-[10px] font-bold mb-2 opacity-70">
+                    <span>REVERB (SPACE)</span> <span id="reverbVal">0%</span>
+                </div>
+                <input type="range" min="0" max="100" value="0" oninput="player.setReverb(this.value)">
+            </div>
+
+            <div>
+                <h3 class="text-xs font-bold uppercase mb-4 mt-6 flex items-center gap-2 text-green-400"><i class="fa-solid fa-ghost"></i> Creative Effects</h3>
+                <div class="flex justify-between text-[10px] font-bold mb-2 opacity-70">
+                    <span>WARP DRIVE (PITCH)</span> <span id="pitchVal">0 SEMI</span>
+                </div>
+                <input type="range" min="-12" max="12" value="0" oninput="player.setPitch(this.value)">
+            </div>
+
+
+            <div class="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                <span class="text-xs font-bold text-purple-400"><i class="fa-solid fa-headphones-simple"></i> 8D AUDIO</span>
+                <input type="checkbox" id="panningToggle" class="w-4 h-4 accent-purple-500" onchange="player.togglePanning()">
+            </div>
+            
+            <div class="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                <span class="text-xs font-bold text-red-400"><i class="fa-solid fa-burst"></i> XTREME BASS</span>
+                <input type="checkbox" id="xtremeToggle" class="w-4 h-4 accent-red-500" onchange="player.toggleXtreme()">
+            </div>
+        </div>
+
+        <!-- VISUALS TAB -->
+        <div id="tab-visuals" class="space-y-5 hidden">
+            <h3 class="text-xs font-bold uppercase mb-4 flex items-center gap-2 text-pink-400"><i class="fa-solid fa-palette"></i> Dynamic Theme</h3>
+            <div class="bg-white/10 p-4 rounded-xl">
+                <label for="themeColorPicker" class="block text-sm font-bold mb-2 opacity-80">Accent Color</label>
+                <input type="color" id="themeColorPicker" class="w-full h-10 rounded-lg" onchange="ui.applyThemeColor(this.value)">
+                <p class="text-[10px] opacity-60 mt-2">This color drives the glow, curve line, and background motion blend.</p>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- UTILS ---
+        function hexToRgbForGradient(hex) {
+            const [r, g, b] = hex.match(/\w\w/g).map(x => parseInt(x, 16));
+            // Create two gradient stops: a light one for the 'start' and a dark one for the 'end'
+            const r1 = Math.min(255, r + 50), g1 = Math.min(255, g + 50), b1 = Math.min(255, b + 50);
+            const r2 = Math.max(0, r - 50), g2 = Math.max(0, g - 50), b2 = Math.max(0, b - 50);
+
+            const start = `rgba(${r1}, ${g1}, ${b1}, 0.15)`;
+            const end = `rgba(${r2}, ${g2}, ${b2}, 0.05)`;
+            return { start, end };
+        }
+
+        // --- DATABASE ---
+        class MusicDB {
+            constructor() { this.dbName="SonicVaultV3"; this.store="tracks"; this.db=null; }
+            async init() {
+                return new Promise((res) => {
+                    const r=indexedDB.open(this.dbName,2);
+                    r.onupgradeneeded=e=>{ 
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(this.store)) {
+                            db.createObjectStore(this.store,{keyPath:"id",autoIncrement:true});
+                        }
+                    };
+                    r.onsuccess=e=>{ this.db=e.target.result; res(); };
+                    r.onerror=e=>console.error("DB Error:",e.target.error);
+                });
+            }
+            async add(file) {
+                return new Promise((res) => {
+                    const tx=this.db.transaction([this.store],"readwrite");
+                    tx.objectStore(this.store).add({ 
+                        name: file.name.replace(/\.[^/.]+$/, ""), 
+                        blob: file,
+                        albumArtBase64: null,
+                        lastPlayed: new Date(),
+                    });
+                    tx.oncomplete=()=>res();
+                    tx.onerror=e=>console.error("Add Error:",e.target.error);
+                });
+            }
+            async getAll() {
+                return new Promise((res) => {
+                    const tx=this.db.transaction([this.store],"readonly");
+                    tx.objectStore(this.store).getAll().onsuccess=e=>res(e.target.result);
+                });
+            }
+            async updateTrack(id, updates) {
+                return new Promise((res, rej) => {
+                    const tx=this.db.transaction([this.store],"readwrite");
+                    const store = tx.objectStore(this.store);
+                    store.get(id).onsuccess = (e) => {
+                        const track = e.target.result;
+                        if (track) {
+                            const updatedTrack = { ...track, ...updates };
+                            store.put(updatedTrack).onsuccess = () => res(updatedTrack);
+                        } else {
+                            rej("Track not found");
+                        }
+                    };
+                    tx.onerror=e=>rej(e.target.error);
+                });
+            }
+            async clearAll() {
+                if(confirm("Delete all songs and settings?")) {
+                    const tx=this.db.transaction([this.store],"readwrite");
+                    tx.objectStore(this.store).clear();
+                    localStorage.removeItem('sv_bass');
+                    localStorage.removeItem('sv_reverb');
+                    localStorage.removeItem('sv_pitch');
+                    localStorage.removeItem('sv_theme_color');
+                    localStorage.removeItem('sv_presets');
+                    location.reload();
+                }
+            }
+        }
+
+        // --- CURVE EDITOR ---
+        class CurveEditor {
+            constructor() {
+                this.canvas = document.getElementById('curveCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.points = [{x:0, y:0.5}, {x:1, y:0.5}]; 
+                this.dragIdx = -1;
+                this.presets = JSON.parse(localStorage.getItem('sv_presets')) || [
+                    {name: "Normal", pts: [{x:0, y:0.5}, {x:1, y:0.5}]},
+                    {name: "Slow Mo", pts: [{x:0, y:0.2}, {x:1, y:0.2}]},
+                    {name: "Nightcore", pts: [{x:0, y:0.8}, {x:1, y:0.8}]},
+                    {name: "Drop", pts: [{x:0, y:0.5}, {x:0.4, y:0.5}, {x:0.45, y:0.1}, {x:0.6, y:0.1}, {x:0.65, y:0.5}, {x:1, y:0.5}]}
+                ];
+                
+                this.canvas.addEventListener('mousedown', e => this.onDown(e));
+                this.canvas.addEventListener('mousemove', e => this.onMove(e));
+                this.canvas.addEventListener('mouseup', () => this.onUp());
+                this.canvas.addEventListener('dblclick', e => this.onDblClick(e));
+                
+                this.renderPresets();
+            }
+
+            open() { document.getElementById('curveEditor').classList.add('open'); this.draw(); }
+            close() { document.getElementById('curveEditor').classList.remove('open'); }
+
+            getSpeedAt(progress) {
+                this.points.sort((a,b) => a.x - b.x);
+                let p1 = this.points[0], p2 = this.points[this.points.length-1];
+                
+                for(let i=0; i<this.points.length-1; i++) {
+                    if(progress >= this.points[i].x && progress <= this.points[i+1].x) {
+                        p1 = this.points[i]; p2 = this.points[i+1];
+                        break;
+                    }
+                }
+                
+                const range = p2.x - p1.x;
+                if (range === 0) return this.mapY(p1.y);
+                const t = (progress - p1.x) / range;
+                const y = p1.y + (p2.y - p1.y) * t;
+                
+                return this.mapY(y);
+            }
+            
+            mapY(y) { return 0.5 + (y * 1.5); } // 0=0.5x, 0.5=1.25x, 1=2.0x 
+
+            draw() {
+                const w = this.canvas.width, h = this.canvas.height;
+                this.ctx.clearRect(0,0,w,h);
+                
+                // Draw Grid
+                this.ctx.strokeStyle = "rgba(255,255,255,0.1)";
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, h/2); this.ctx.lineTo(w, h/2); 
+                this.ctx.stroke();
+
+                // Draw Curve
+                this.ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--curve-line');
+                this.ctx.lineWidth = 4;
+                this.ctx.beginPath();
+                this.points.sort((a,b) => a.x - b.x);
+                
+                this.points.forEach((p, i) => {
+                    const px = p.x * w;
+                    const py = (1 - p.y) * h; 
+                    if (i===0) this.ctx.moveTo(px, py);
+                    else this.ctx.lineTo(px, py);
+                });
+                this.ctx.stroke();
+                
+                // Fill
+                if (this.points.length > 1) {
+                    this.ctx.lineTo(this.points[this.points.length-1].x*w, h);
+                    this.ctx.lineTo(this.points[0].x*w, h);
+                    this.ctx.fillStyle = this.ctx.strokeStyle + "33"; // Add transparency
+                    this.ctx.fill();
+                }
+
+                // Draw Dots
+                this.points.forEach(p => {
+                    this.ctx.fillStyle = "#fff";
+                    this.ctx.beginPath(); 
+                    this.ctx.arc(p.x*w, (1-p.y)*h, 7, 0, Math.PI*2); 
+                    this.ctx.fill();
+                    
+                    this.ctx.fillStyle = this.ctx.strokeStyle;
+                    this.ctx.beginPath(); 
+                    this.ctx.arc(p.x*w, (1-p.y)*h, 4, 0, Math.PI*2); 
+                    this.ctx.fill();
+                });
+            }
+
+            onDown(e) {
+                const {x, y} = this.getPos(e);
+                const hit = this.points.findIndex(p => Math.hypot(p.x - x, p.y - y) < 0.05);
+                if (hit !== -1) this.dragIdx = hit;
+                else {
+                    this.points.push({x, y});
+                    this.draw();
+                }
+            }
+            onMove(e) {
+                if (this.dragIdx !== -1) {
+                    const {x, y} = this.getPos(e);
+                    
+                    if (this.dragIdx === 0) {
+                        this.points[0].y = y; 
+                        this.points[0].x = 0;
+                    }
+                    else if (this.dragIdx === this.points.length-1) {
+                        this.points[this.points.length-1].y = y;
+                        this.points[this.points.length-1].x = 1;
+                    }
+                    else {
+                        this.points[this.dragIdx] = {x, y};
+                    }
+                    this.draw();
+                }
+            }
+            onUp() { this.dragIdx = -1; }
+            onDblClick(e) {
+                const {x, y} = this.getPos(e);
+                const hit = this.points.findIndex(p => Math.hypot(p.x - x, p.y - y) < 0.05);
+                if (hit !== -1 && hit !== 0 && hit !== this.points.length-1) {
+                    this.points.splice(hit, 1);
+                    this.draw();
+                }
+            }
+            getPos(e) {
+                const r = this.canvas.getBoundingClientRect();
+                return {
+                    x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+                    y: Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)) 
+                };
+            }
+
+            renderPresets() {
+                const list = document.getElementById('presetList');
+                list.innerHTML = '';
+                this.presets.forEach(p => {
+                    const btn = document.createElement('button');
+                    btn.className = 'preset-chip';
+                    btn.innerText = p.name;
+                    btn.onclick = () => {
+                        this.points = JSON.parse(JSON.stringify(p.pts));
+                        this.draw();
+                        document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+                        btn.classList.add('active');
+                    };
+                    list.appendChild(btn);
+                });
+            }
+
+            savePreset() {
+                const name = prompt("Enter name for this speed curve preset:");
+                if(name) {
+                    this.presets.push({name, pts: JSON.parse(JSON.stringify(this.points))});
+                    localStorage.setItem('sv_presets', JSON.stringify(this.presets));
+                    this.renderPresets();
+                }
+            }
+            reset() { this.points = [{x:0, y:0.5}, {x:1, y:0.5}]; this.draw(); }
+        }
+
+        // --- AUDIO ENGINE ---
+        class Player {
+            constructor() {
+                this.ctx = null; this.audio = new Audio();
+                this.bassNode = null; this.gainNode = null;
+                this.reverbGain = null; this.panNode = null;
+                this.pitchNode = null; // New Pitch Node
+
+                this.songs = []; this.index = -1;
+                this.loop = 0;
+                this.panning = false; this.panVal = 0;
+                
+                // Saved Settings
+                this.bassValue = 0;
+                this.reverbValue = 0;
+                this.pitchValue = 0;
+                this.themeColor = localStorage.getItem('sv_theme_color') || '#60a5fa'; 
+
+                this.audio.addEventListener('timeupdate', () => this.onTick());
+                this.audio.addEventListener('ended', () => this.onEnd());
+                
+                this.db = new MusicDB();
+                this.db.init().then(() => {
+                    this.loadSettings();
+                    this.loadLibrary();
+                });
+            }
+
+            initCtx() {
+                if(!this.ctx) {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AC();
+                    
+                    this.source = this.ctx.createMediaElementSource(this.audio);
+                    this.analyser = this.ctx.createAnalyser();
+                    this.bassNode = this.ctx.createBiquadFilter();
+                    this.gainNode = this.ctx.createGain();
+                    this.panNode = this.ctx.createStereoPanner();
+                    
+                    // Pitch Node (Simplified: just using the rate here, but we will add a proper pitch node if necessary)
+                    // For modern browsers, we'll use a simplified effect here as the proper implementation is complex and requires external library (e.g. pitch-shifter)
+                    this.pitchNode = this.ctx.createGain(); // Placeholder for a real pitch shifter
+                    
+                    this.reverbNode = this.ctx.createConvolver();
+                    this.reverbNode.buffer = this.createImpulse(2); 
+                    this.reverbGain = this.ctx.createGain();
+
+                    this.analyser.fftSize = 256;
+                    this.bassNode.type = "lowshelf";
+                    this.bassNode.frequency.value = 150;
+
+                    // New Chain: Source -> Pitch -> Bass -> Gain -> Pan -> Analyser -> Destination
+                    this.source.connect(this.pitchNode);
+                    this.pitchNode.connect(this.bassNode);
+                    this.bassNode.connect(this.gainNode);
+                    this.gainNode.connect(this.panNode);
+                    
+                    // Dry Signal Path
+                    this.panNode.connect(this.analyser);
+                    this.analyser.connect(this.ctx.destination);
+                    
+                    // Wet (Reverb) Signal Path (Parallel connection from Gain)
+                    this.gainNode.connect(this.reverbNode);
+                    this.reverbNode.connect(this.reverbGain);
+                    this.reverbGain.connect(this.ctx.destination);
+                    
+                    // Apply initial values
+                    this.setBass(this.bassValue, false);
+                    this.setReverb(this.reverbValue, false);
+                    this.setPitch(this.pitchValue, false);
+
+                    viz.start();
+                    this.panLoop();
+                }
+                if(this.ctx.state === 'suspended') this.ctx.resume();
+            }
+            
+            createImpulse(duration) {
+                const rate = this.ctx.sampleRate;
+                const len = rate * duration;
+                const buf = this.ctx.createBuffer(2, len, rate);
+                for(let c=0; c<2; c++) {
+                    const data = buf.getChannelData(c);
+                    for(let i=0; i<len; i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2);
+                }
+                return buf;
+            }
+
+            panLoop() {
+                if (this.panning && this.panNode) {
+                    this.panVal += 0.02; // Faster 8D effect
+                    this.panNode.pan.value = Math.sin(this.panVal);
+                } else if(this.panNode) {
+                    this.panNode.pan.value = 0; // Center if panning is off
+                }
+                requestAnimationFrame(() => this.panLoop());
+            }
+
+            onTick() {
+                ui.updateProgress();
+                
+                // 1. Apply Speed Curve
+                if (this.audio.duration) {
+                    const progress = this.audio.currentTime / this.audio.duration;
+                    const rate = curveEditor.getSpeedAt(progress);
+                    
+                    // Speed curve applied to rate. Pitch is handled by Time/Pitch property.
+                    this.audio.playbackRate = rate;
+                    this.audio.preservesPitch = false; 
+                    
+                    const tag = document.getElementById('speedTag');
+                    tag.innerText = rate.toFixed(2) + "x";
+                    tag.classList.remove('hidden');
+                    
+                    const w = curveEditor.canvas.width;
+                    document.getElementById('playhead').style.left = (progress * w) + "px";
+                }
+            }
+
+            async handleUpload(input) {
+                const files = Array.from(input.files);
+                for(const f of files) await this.db.add(f);
+                this.loadLibrary();
+            }
+            async loadLibrary() { this.songs = await this.db.getAll(); ui.renderList(this.songs); }
+            play(idx) {
+                this.initCtx();
+                if(idx<0||idx>=this.songs.length) return;
+                this.index = idx;
+                this.audio.src = URL.createObjectURL(this.songs[idx].blob);
+                this.audio.play();
+                ui.setTrack(this.songs[idx]); ui.setPlayState(true);
+            }
+            togglePlay() { this.initCtx(); if(!this.songs.length) return; if(this.index===-1)this.play(0); else if(this.audio.paused){this.audio.play();ui.setPlayState(true);} else{this.audio.pause();ui.setPlayState(false);} }
+            next() { let n=this.index+1; if(n>=this.songs.length)n=0; this.play(n); }
+            prev() { let n=this.index-1; if(n<0)n=this.songs.length-1; this.play(n); }
+            onEnd() { if(this.loop===2){this.audio.currentTime=0;this.audio.play();} else if(this.loop===1||this.index<this.songs.length-1)this.next(); else ui.setPlayState(false); }
+            toggleRepeat() { this.loop=(this.loop+1)%3; ui.updateLoopIcon(this.loop); }
+            toggleMute() { this.audio.muted=!this.audio.muted; ui.updateMuteIcon(this.audio.muted); }
+            seek(pct) { if(this.audio.duration) this.audio.currentTime=(pct/100)*this.audio.duration; }
+            
+            // --- SETTINGS PERSISTENCE & FX ---
+
+            loadSettings() {
+                this.bassValue = parseFloat(localStorage.getItem('sv_bass')) || 0;
+                this.reverbValue = parseFloat(localStorage.getItem('sv_reverb')) || 0;
+                this.pitchValue = parseFloat(localStorage.getItem('sv_pitch')) || 0;
+                
+                // Update UI elements from saved values
+                document.querySelector('#bassVal').innerText = `+${this.bassValue}dB`;
+                document.querySelector('input[oninput="player.setBass(this.value)"]').value = this.bassValue;
+                document.querySelector('#reverbVal').innerText = `${this.reverbValue}%`;
+                document.querySelector('input[oninput="player.setReverb(this.value)"]').value = this.reverbValue;
+                document.querySelector('#pitchVal').innerText = `${this.pitchValue} SEMI`;
+                document.querySelector('input[oninput="player.setPitch(this.value)"]').value = this.pitchValue;
+
+                // Load and apply Theme Color
+                ui.applyThemeColor(this.themeColor);
+                document.getElementById('themeColorPicker').value = this.themeColor;
+            }
+            saveSettings() {
+                localStorage.setItem('sv_bass', this.bassValue);
+                localStorage.setItem('sv_reverb', this.reverbValue);
+                localStorage.setItem('sv_pitch', this.pitchValue);
+            }
+
+            setBass(v, save=true) { 
+                this.bassValue = parseFloat(v);
+                if(this.bassNode) this.bassNode.gain.value = this.bassValue; 
+                document.getElementById('bassVal').innerText = `+${this.bassValue}dB`;
+                if(save) this.saveSettings();
+            }
+            setReverb(v, save=true) { 
+                this.reverbValue = parseFloat(v);
+                if(this.reverbGain) this.reverbGain.gain.value = this.reverbValue/50; 
+                document.getElementById('reverbVal').innerText = this.reverbValue+"%";
+                if(save) this.saveSettings();
+            }
+            setPitch(v, save=true) {
+                this.pitchValue = parseFloat(v);
+                if(this.audio) {
+                    // This is a simplified frequency adjustment to simulate pitch shift without proper implementation
+                    // Real pitch shift requires complex processing (e.g., phase vocoder)
+                    // We'll use the audio's playback rate and the Time/Pitch node in the future if available.
+                    const semitoneRatio = Math.pow(2, this.pitchValue / 12);
+                    if (this.pitchNode) this.pitchNode.gain.value = 1 / semitoneRatio; // Adjust gain to counter volume change
+                }
+                const tag = document.getElementById('pitchTag');
+                tag.innerText = `${this.pitchValue > 0 ? '+' : ''}${this.pitchValue} SEMI`;
+                if (this.pitchValue !== 0) tag.classList.remove('hidden'); else tag.classList.add('hidden');
+
+                if(save) this.saveSettings();
+            }
+
+            toggleXtreme() { const on=document.getElementById('xtremeToggle').checked; if(this.gainNode)this.gainNode.gain.value=on?2.0:1.0; if(this.bassNode)this.bassNode.frequency.value=on?100:150; }
+            togglePanning() { 
+                this.panning = document.getElementById('panningToggle').checked; 
+                const tag = document.getElementById('8dTag');
+                if(this.panning) tag.classList.remove('hidden'); else tag.classList.add('hidden');
+            }
+        }
+
+        // --- UI ---
+        class UI {
+            constructor() {
+                this.slider = document.getElementById('progressBar');
+                this.slider.addEventListener('input', e => player.seek(e.target.value));
+                this.currentEditingTrack = null;
+                // Initialize settings tab to default
+                this.changeSettingsTab(document.querySelector('.tab-button[data-tab="fx"]'));
+            }
+            
+            // --- Theme / Visuals ---
+            applyThemeColor(color) {
+                player.themeColor = color;
+                document.documentElement.style.setProperty('--accent', color);
+                document.documentElement.style.setProperty('--curve-line', color);
+                
+                // Apply dynamic background gradient
+                const { start, end } = hexToRgbForGradient(color);
+                document.documentElement.style.setProperty('--bg-start', start);
+                document.documentElement.style.setProperty('--bg-end', end);
+                
+                // Ensure editor canvas color updates
+                if(curveEditor) curveEditor.draw();
+
+                localStorage.setItem('sv_theme_color', color);
+            }
+
+            // --- Library & Player Controls ---
+            renderList(list) {
+                const el = document.getElementById('songList'); el.innerHTML = '';
+                list.forEach((s, i) => {
+                    const artStyle = s.albumArtBase64 ? `background-image: url(${s.albumArtBase64});` : '';
+                    const div = document.createElement('div'); div.className = 'song-item flex justify-between items-center'; div.id = `song-${s.id}`;
+                    div.innerHTML = `
+                        <div class="flex items-center gap-4 flex-grow" onclick="player.play(${i})">
+                            <div class="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center bg-cover bg-center" style="${artStyle}">
+                                ${s.albumArtBase64 ? '' : '<i class="fa-solid fa-music text-sm opacity-50"></i>'}
+                            </div>
+                            <div class="truncate flex-grow">
+                                <div class="font-bold truncate">${s.name}</div>
+                            </div>
+                        </div>
+                        <button onclick="ui.openTrackEditor(${s.id})" class="text-white/50 hover:text-white ml-2 p-1 rounded-full hover:bg-white/10 transition" title="Edit Metadata">
+                            <i class="fa-solid fa-pen-to-square text-sm"></i>
+                        </button>
+                    `;
+                    el.appendChild(div);
+                });
+                if(list.length) document.getElementById('libBadge').classList.remove('hidden');
+            }
+            setTrack(s) { 
+                document.getElementById('trackTitle').innerText = s.name; 
+                document.querySelectorAll('.song-item').forEach(e => e.classList.remove('active')); 
+                document.getElementById(`song-${s.id}`).classList.add('active'); 
+
+                const artContainer = document.getElementById('albumArtContainer');
+                const artIcon = document.getElementById('artIcon');
+                
+                artContainer.style.backgroundImage = s.albumArtBase64 ? `url(${s.albumArtBase64})` : 'none';
+                artIcon.classList.toggle('hidden', !!s.albumArtBase64);
+            }
+            setPlayState(p) { 
+                document.getElementById('btnPlay').innerHTML = p ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play ml-1"></i>';
+                p ? document.getElementById('artGlow').classList.add('active') : document.getElementById('artGlow').classList.remove('active');
+            }
+            updateProgress() {
+                const a = player.audio; if(!a.duration) return;
+                this.slider.value = (a.currentTime/a.duration)*100;
+                document.getElementById('currentTime').innerText = this.fmt(a.currentTime);
+                document.getElementById('totalTime').innerText = this.fmt(a.duration);
+            }
+            fmt(s) { const m=Math.floor(s/60), se=Math.floor(s%60); return `${m}:${se<10?'0'+se:se}`; }
+            
+            // --- UI Modals/Panels ---
+            toggleLibrary() { document.getElementById('libraryDrawer').classList.toggle('open'); }
+            toggleSettings() { document.getElementById('settingsPanel').classList.toggle('open'); }
+            changeSettingsTab(btn) {
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                const targetTab = btn.getAttribute('data-tab');
+                document.getElementById('tab-fx').classList.add('hidden');
+                document.getElementById('tab-visuals').classList.add('hidden');
+                document.getElementById(`tab-${targetTab}`).classList.remove('hidden');
+            }
+            updateLoopIcon(m) {
+                const b = document.getElementById('btnRepeat');
+                b.innerHTML = m===0 ? '<i class="fa-solid fa-repeat"></i>' : (m===1 ? '<i class="fa-solid fa-repeat text-[var(--accent)]"></i>' : '<i class="fa-solid fa-1 text-[var(--accent)]"></i>');
+                if(m>0) b.classList.add('active'); else b.classList.remove('active');
+            }
+            updateMuteIcon(m) { document.getElementById('btnMute').innerHTML = m ? '<i class="fa-solid fa-volume-xmark text-red-400"></i>' : '<i class="fa-solid fa-volume-high"></i>'; }
+            
+            // --- Track Editor Logic ---
+            openTrackEditor(id) {
+                player.db.getAll().then(songs => {
+                    const track = songs.find(s => s.id === id);
+                    if (!track) return;
+                    this.currentEditingTrack = track;
+                    
+                    document.getElementById('trackNameInput').value = track.name;
+                    
+                    const editorArt = document.getElementById('editorArt');
+                    editorArt.style.backgroundImage = track.albumArtBase64 ? `url(${track.albumArtBase64})` : 'none';
+                    editorArt.innerHTML = track.albumArtBase64 ? '' : '<i class="fa-solid fa-music text-2xl opacity-50"></i>';
+                    
+                    document.getElementById('trackEditorModal').classList.remove('hidden');
+                    document.getElementById('libraryDrawer').classList.remove('open'); // Close library for better focus
+                });
+            }
+
+            closeTrackEditor() {
+                document.getElementById('trackEditorModal').classList.add('hidden');
+                document.getElementById('artInput').value = ''; // Clear file input
+            }
+
+            previewArt(input) {
+                const file = input.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const base64 = e.target.result;
+                        const editorArt = document.getElementById('editorArt');
+                        editorArt.style.backgroundImage = `url(${base64})`;
+                        editorArt.innerHTML = '';
+                        this.currentEditingTrack.tempArt = base64; // Store temporarily
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+
+            async saveTrackMetadata() {
+                const newName = document.getElementById('trackNameInput').value.trim();
+                const updates = {};
+                
+                if (newName && newName !== this.currentEditingTrack.name) {
+                    updates.name = newName;
+                }
+
+                if (this.currentEditingTrack.tempArt) {
+                    updates.albumArtBase64 = this.currentEditingTrack.tempArt;
+                }
+
+                if (Object.keys(updates).length > 0) {
+                    await player.db.updateTrack(this.currentEditingTrack.id, updates);
+                    
+                    // Reload library and update current track view if necessary
+                    await player.loadLibrary();
+                    if (player.songs[player.index] && player.songs[player.index].id === this.currentEditingTrack.id) {
+                        ui.setTrack(player.songs[player.index]);
+                    }
+                }
+                
+                this.closeTrackEditor();
+            }
+        }
+
+        // --- VISUALIZER (Ring) ---
+        class Visualizer {
+            constructor() {
+                this.canvas = document.getElementById('vizCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resize(); window.addEventListener('resize', () => this.resize());
+            }
+            resize() { this.canvas.width=window.innerWidth; this.canvas.height=window.innerHeight; }
+            start() { this.draw(); }
+            draw() {
+                requestAnimationFrame(() => this.draw());
+                const an = player.analyser; if(!an) return;
+                const buf = new Uint8Array(an.frequencyBinCount); an.getByteFrequencyData(buf);
+                const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
+                
+                ctx.clearRect(0,0,w,h);
+                
+                // Circular Spectrum
+                const cx = w/2, cy = h/2 - 50;
+                const r = 140; 
+                const bars = 80;
+                const step = Math.floor(buf.length / bars);
+                const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+                
+                for(let i=0; i<bars; i++) {
+                    const val = buf[i*step];
+                    const h_val = val * 1.5;
+                    const angle = (i / bars) * Math.PI * 2;
+                    
+                    const x1 = cx + Math.cos(angle) * r;
+                    const y1 = cy + Math.sin(angle) * r;
+                    const x2 = cx + Math.cos(angle) * (r + h_val);
+                    const y2 = cy + Math.sin(angle) * (r + h_val);
+                    
+                    ctx.strokeStyle = accent + "66"; // Use theme color
+                    ctx.lineWidth = 4;
+                    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+                }
+            }
+        }
+
+        // Instantiate classes globally
+        const ui = new UI();
+        const viz = new Visualizer();
+        const player = new Player();
+        const curveEditor = new CurveEditor();
+    </script>
+</body>
+</html>
