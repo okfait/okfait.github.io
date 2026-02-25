@@ -627,17 +627,17 @@
 
     <!-- CONTROLS -->
     <div class="controls glass-panel">
-        <button class="btn" onclick="player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
-        <button class="btn" onclick="curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
+        <button class="btn" onclick="window.player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
+        <button class="btn" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
         
-        <button class="btn" onclick="player.prev()"><i class="fa-solid fa-backward-step"></i></button>
-        <button class="btn main" onclick="player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
-        <button class="btn" onclick="player.next()"><i class="fa-solid fa-forward-step"></i></button>
+        <button class="btn" onclick="window.player.prev()"><i class="fa-solid fa-backward-step"></i></button>
+        <button class="btn main" onclick="window.player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
+        <button class="btn" onclick="window.player.next()"><i class="fa-solid fa-forward-step"></i></button>
         
         <div class="vol-container">
             <div class="vol-bridge"></div>
             <div class="vol-popup">
-                <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="audioSys.setVolume(this.value)">
+                <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="window.audioSys.setVolume(this.value)">
             </div>
             <button class="btn"><i class="fa-solid fa-volume-high"></i></button>
         </div>
@@ -747,8 +747,8 @@
                 </div>
             </div>
             <div class="flex justify-between items-center pt-2 px-2">
-                <span class="text-xs font-bold">Auto-DJ Crossfade</span>
-                <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked">
+                <span class="text-xs font-bold">Auto DJ</span>
+                <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()">
             </div>
             <div class="text-center pt-10 pb-4">
                 <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
@@ -1165,27 +1165,27 @@
             setBass(v){
                 if(this.ctx)this.bass.gain.value=v; this.bassVal=v; $('bassVal').innerText=`+${v}dB`; 
                 if(this.globalAudio) localStorage.setItem('sv_bass',v);
-                else if(window.player.currentTrack) { window.player.currentTrack.bassVal=v; window.player.db.update(window.player.currentTrack.id, {bassVal:v}); }
-                window.ui.updateMetaTags();
+                else if(window.player && window.player.currentTrack) { window.player.currentTrack.bassVal=v; window.player.db.update(window.player.currentTrack.id, {bassVal:v}); }
+                if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
             }
             setReverb(v){
                 if(this.ctx)this.revGain.gain.value=v/50; this.reverbVal=v; $('reverbVal').innerText=v+'%'; 
                 if(this.globalAudio) localStorage.setItem('sv_reverb',v);
-                else if(window.player.currentTrack) { window.player.currentTrack.reverbVal=v; window.player.db.update(window.player.currentTrack.id, {reverbVal:v}); }
-                window.ui.updateMetaTags();
+                else if(window.player && window.player.currentTrack) { window.player.currentTrack.reverbVal=v; window.player.db.update(window.player.currentTrack.id, {reverbVal:v}); }
+                if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
             }
             setVolume(v){if(this.ctx)this.gain.gain.value=v;}
             setBaseSpeed(v){
                 this.baseSpeed=parseFloat(v); $('pitchVal').innerText=v+"x"; 
                 if(this.globalAudio) localStorage.setItem('sv_pitch',v);
-                else if(window.player.currentTrack) { window.player.currentTrack.baseSpeed=parseFloat(v); window.player.db.update(window.player.currentTrack.id, {baseSpeed:parseFloat(v)}); }
-                window.ui.updateMetaTags();
+                else if(window.player && window.player.currentTrack) { window.player.currentTrack.baseSpeed=parseFloat(v); window.player.db.update(window.player.currentTrack.id, {baseSpeed:parseFloat(v)}); }
+                if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
             }
             toggleXtreme(){
                 const on=$('xtremeToggle').checked; this.xtremeOn = on;
                 if(this.ctx){this.bass.frequency.value=on?100:200; this.bass.Q.value=on?10:1;}
                 if(this.globalAudio) localStorage.setItem('sv_xtreme',on);
-                else if(window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
+                else if(window.player && window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
             }
         };
 
@@ -2670,7 +2670,13 @@
                 this.closeEditor(); 
             }
             setBgBrightness(v){ $('bg-layer').style.opacity=v; localStorage.setItem('sv_bg_bright',v); }
-            updateMetaTags(){ const c=$('metaTags'); c.innerHTML=''; if(window.audioSys.baseSpeed!=1)c.innerHTML+=`<span class="tag">WARP ${window.audioSys.baseSpeed}x</span>`; if(window.audioSys.bassVal>0)c.innerHTML+=`<span class="tag">BASS +${window.audioSys.bassVal}</span>`; if(window.audioSys.reverbVal>0)c.innerHTML+=`<span class="tag">REVERB ${window.audioSys.reverbVal}%</span>`; }
+            updateMetaTags(){ 
+                const c=$('metaTags'); c.innerHTML=''; 
+                if(window.audioSys.baseSpeed!=1) c.innerHTML+=`<span class="tag" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.3); color: #e879f9;">WARP ${window.audioSys.baseSpeed}x</span>`; 
+                if(window.audioSys.bassVal>0) c.innerHTML+=`<span class="tag" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171;">BASS +${window.audioSys.bassVal}</span>`; 
+                if(window.audioSys.reverbVal>0) c.innerHTML+=`<span class="tag" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: #7dd3fc;">REVERB ${window.audioSys.reverbVal}%</span>`; 
+                if(window.player && window.player.autoDj) c.innerHTML+=`<span class="tag" style="background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); color: #4ade80;">AUTO DJ</span>`;
+            }
             
             // Helper: Convert Hex to RGBA
             hexToRgba(hex, alpha) {
