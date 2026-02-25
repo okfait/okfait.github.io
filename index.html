@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v11.28 - Custom Drag</title>
+    <title>okMUSIC v2.1.3 - Custom Drag</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="importmap">
@@ -68,7 +68,7 @@
         #vizCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; filter: drop-shadow(0 0 10px var(--accent-glow)); }
 
         /* UI COMPONENTS */
-        .glass-panel { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); -webkit-backdrop-filter: blur(8px) saturate(110%); box-shadow: inset 1px 1px 0 0 rgba(255,255,255,0.05), inset -0.5px -0.5px 0 0 rgba(255,255,255,0.01), 0 20px 40px -5px rgba(0,0,0,0.3); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.05); }
+        .glass-panel { background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); -webkit-backdrop-filter: blur(8px) saturate(110%); box-shadow: inset 1px 1px 0 0 rgba(255,255,255,0.05), inset -0.5px -0.5px 0 0 rgba(255,255,255,0.01), 0 20px 40px -5px rgba(0,0,0,0.3); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.05); }
         .glass-panel:active { transform: scale(0.995); }
         .controls.glass-panel:active { transform: translateX(-50%) scale(0.995); }
 
@@ -103,12 +103,12 @@
         .btn.active { color: var(--accent); background: rgba(96, 165, 250, 0.1); border-color: var(--accent); }
 
         .vol-container { position: relative; display: flex; align-items: center; justify-content: center; height: 48px; }
-        .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
+        .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
         .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
         .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
-        input[type=range].vol-slider { writing-mode: vertical-lr; direction: rtl; width: 4px; height: 100%; accent-color: var(--accent); background: transparent; }
+        input[type=range].vol-slider { -webkit-appearance: slider-vertical; width: 4px; height: 100%; accent-color: var(--accent); background: transparent; }
 
-        .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
+        .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
         .left-panel { left: 0; transform: translateX(-110%); border-radius: 0 var(--radius-xl) var(--radius-xl) 0; }
         .right-panel { right: 0; transform: translateX(110%); border-radius: var(--radius-xl) 0 0 var(--radius-xl); }
         .side-panel.open { transform: translateX(0); }
@@ -129,7 +129,7 @@
 
         /* Unified Transparent Glass Modal Style */
         .glass-modal { 
-            background: rgba(255, 255, 255, 0.1); 
+            background: rgba(255, 255, 255, 0.01); 
             backdrop-filter: blur(10px) saturate(110%); 
             -webkit-backdrop-filter: blur(10px) saturate(110%);
             border-radius: 32px; 
@@ -607,7 +607,12 @@
         
         #toast { position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-        
+
+        @media (max-width: 600px) {
+            .controls { padding: 10px 20px; gap: 12px; width: 90%; max-width: 320px; }
+            .btn { width: 40px; height: 40px; font-size: 16px; }
+            .btn.main { width: 56px; height: 56px; font-size: 22px; }
+        }
     </style>
 </head>
 <body>
@@ -621,7 +626,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.1.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.1.3</span></div>
         <div class="flex gap-4">
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
@@ -1238,6 +1243,7 @@
                 this.xStrength = 0;
                 this.lastTrigger = 0; 
                 this.lastRippleTime = 0;
+                this.bassHistory = [];
             }
             resize(){ this.cv.width=window.innerWidth; this.cv.height=window.innerHeight; }
             start(){ this.draw(); }
@@ -1289,8 +1295,12 @@
                      }
                 }
                 
-                // Bass Ripple Effect
-                if (this.rippleEffect && bass > 180 && (performance.now() - this.lastRippleTime > 300)) {
+                // Bass Ripple Effect (Energy based)
+                this.bassHistory.push(bass);
+                if(this.bassHistory.length > 30) this.bassHistory.shift();
+                const avgBass = this.bassHistory.reduce((a,b)=>a+b,0) / this.bassHistory.length;
+                
+                if (this.rippleEffect && bass > 180 && bass > avgBass * 1.3 && (performance.now() - this.lastRippleTime > 400)) {
                     this.lastRippleTime = performance.now();
                     const ripple = document.createElement('div');
                     ripple.className = 'bass-ripple';
@@ -3182,7 +3192,7 @@
                                 downloaded++;
                                 downloadNext(idx + 1);
                             } else {
-                                setTimeout(() => downloadNext(idx), 500); 
+                                setTimeout(() => downloadNext(idx), 50); 
                             }
                         };
                         downloadNext(0);
@@ -3195,8 +3205,12 @@
                     }
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
-                    if (data.time && Math.abs(window.audioSys.audio.currentTime - data.time) > 2) {
-                        window.audioSys.audio.currentTime = data.time;
+                    if (data.time && data.timestamp) {
+                        const latency = Math.max(0, (Date.now() - data.timestamp) / 1000);
+                        const expectedTime = data.time + latency;
+                        if (Math.abs(window.audioSys.audio.currentTime - expectedTime) > 0.3) {
+                            window.audioSys.audio.currentTime = expectedTime;
+                        }
                     }
                 }
             }
