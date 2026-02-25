@@ -61,6 +61,7 @@
         #bg-base {
             position: absolute; inset: 0; background: #050508; z-index: -4;
         }
+        #bg-layer { position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background-size: cover; background-position: center; mix-blend-mode: overlay; opacity: 0.15; filter: blur(30px); animation: spin-slow 90s linear infinite; z-index: -3; }
         @keyframes spin-slow { 100% { transform: rotate(360deg); } }
         
         #beat-flash { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 800px; height: 800px; background: radial-gradient(closest-side, var(--accent) 0%, transparent 100%); mix-blend-mode: screen; opacity: 0; pointer-events: none; z-index: -2; transition: opacity 0.1s ease-out; border-radius: 50%; filter: blur(40px); }
@@ -591,7 +592,7 @@
     <div class="top-bar">
         <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v11.8</span></div>
         <div class="flex gap-4">
-            <button onclick="document.body.classList.toggle('display-mode')" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
+            <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
             <button onclick="window.voiceControl.toggle()" class="top-icon" id="micBtn" title="Voice Control"><i class="fa-solid fa-microphone"></i></button>
             <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
@@ -946,7 +947,25 @@
 
         // --- GLOBAL HELPERS ---
         const $ = id => document.getElementById(id);
-
+        const formatTime = (time) => {
+            if (isNaN(time)) return "0:00";
+            const min = Math.floor(time / 60);
+            const sec = Math.floor(time % 60);
+            return `${min}:${sec.toString().padStart(2, '0')}`;
+        };
+        
+        window.toggleDisplayMode = () => {
+            document.body.classList.toggle('display-mode');
+            if(document.body.classList.contains('display-mode')) {
+                if(document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch((e)=>console.log(e));
+                }
+            } else {
+                if(document.fullscreenElement && document.exitFullscreen) {
+                    document.exitFullscreen().catch((e)=>console.log(e));
+                }
+            }
+        };
         // --- CLASSES DEFINITION ---
 
         class AudioExporter {
@@ -2777,12 +2796,23 @@
                     setTimeout(() => window.ui.updateActiveIndicator(), 0);
                 }
                 
-                // Party Mode Broadcast Loop (Base64 Mode)
+                // Party Mode Broadcast Loop (Base64 Mode Chunked)
                 if(window.partyMode && window.partyMode.active && window.db) {
                     const reader = new FileReader();
-                    reader.onload = (e) => {
+                    reader.onload = async (e) => {
+                        const base64 = e.target.result;
+                        const chunkSize = 150000; // 150KB chunks
+                        const chunks = Math.ceil(base64.length / chunkSize);
+                        
+                        await window.setDb(window.dbRef(window.db, `partyData/${window.partyMode.sessionId}`), null);
+                        
+                        for(let i=0; i<chunks; i++) {
+                            const chunk = base64.substr(i * chunkSize, chunkSize);
+                            await window.setDb(window.dbRef(window.db, `partyData/${window.partyMode.sessionId}/${i}`), chunk);
+                        }
+                        
                         window.partyMode.broadcast({
-                            type: 'PLAY', id: s.id, name: s.name, data: e.target.result,
+                            type: 'PLAY', id: s.id, name: s.name, chunks: chunks,
                             beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
                         });
                     };
@@ -2967,22 +2997,44 @@
                         if(data.beatSignals) song.beatSignals = data.beatSignals;
                         if(data.speedPoints) song.speedPoints = data.speedPoints;
                         window.player.play(song.id, null, false);
-                    } else if (data.data) {
+                    } else if (data.chunks) {
                         const status = $('syncStatus');
-                        status.innerText = "Downloading Party Track...";
                         status.style.display = 'inline-block';
-                        fetch(data.data).then(r=>r.blob()).then(blob=>{
-                            blob.name = data.name + ".mp3";
-                            window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
-                                window.player.loadLib().then(()=>{
-                                    window.player.play(id, null, false);
-                                    status.innerText = `Party: ${this.sessionId}`;
-                                });
-                            });
-                        }).catch(e=>console.error("Download failed", e));
+                        this.isDownloading = true; // Block STATUS seeking
+                        
+                        let fullString = "";
+                        let downloaded = 0;
+                        
+                        const downloadNext = async (idx) => {
+                            status.innerText = `Buffering: ${Math.round((downloaded / data.chunks) * 100)}%`;
+                            if(idx >= data.chunks) {
+                                status.innerText = "Processing...";
+                                fetch(fullString).then(r=>r.blob()).then(blob=>{
+                                    blob.name = data.name + ".mp3";
+                                    window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
+                                        window.player.loadLib().then(()=>{
+                                            this.isDownloading = false;
+                                            window.player.play(id, null, false);
+                                            status.innerText = `Party: ${this.sessionId}`;
+                                        });
+                                    });
+                                }).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
+                                return;
+                            }
+                            
+                            const snap = await window.getDb(window.dbRef(window.db, `partyData/${this.sessionId}/${idx}`));
+                            if(snap.exists()) {
+                                fullString += snap.val();
+                                downloaded++;
+                                downloadNext(idx + 1);
+                            } else {
+                                setTimeout(() => downloadNext(idx), 500); 
+                            }
+                        };
+                        downloadNext(0);
                     }
                 }
-                else if(data.type === 'STATUS') {
+                else if(data.type === 'STATUS' && !this.isDownloading) {
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
                     if (data.time && Math.abs(window.audioSys.audio.currentTime - data.time) > 2) {
