@@ -612,8 +612,8 @@
             .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
             .top-icon { width: 38px; height: 38px; font-size: 14px; }
             .controls { padding: 12px 24px; gap: 16px; width: max-content; max-width: 95%; }
-            .btn { width: 44px; height: 44px; font-size: 16px; }
-            .btn.main { width: 60px; height: 60px; font-size: 24px; }
+            .btn { width: 48px; height: 48px; font-size: 18px; }
+            .btn.main { width: 68px; height: 68px; font-size: 26px; }
         }
     </style>
 </head>
@@ -972,6 +972,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref as dbRef, set, onValue, get, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBvJ_lGnmH3Dll1E-HY5CuqzKGqQBXb-C4",
@@ -986,17 +987,27 @@
         
         // REPLACE THE ABOVE CONFIG WITH YOUR OWN FIREBASE KEYS
 
-        let app, db;
+        let app, db, storage;
         try {
             app = initializeApp(firebaseConfig);
             db = getDatabase(app);
+            storage = getStorage(app);
+            
+            window.serverTimeOffset = 0;
+            onValue(dbRef(db, '.info/serverTimeOffset'), (snap) => {
+                window.serverTimeOffset = snap.val() || 0;
+            });
         } catch(e) { console.error("Firebase init failed", e); }
 
         window.db = db;
+        window.storage = storage;
         window.dbRef = dbRef;
+        window.storageRef = storageRef;
         window.setDb = set;
         window.onDbValue = onValue;
         window.getDb = get;
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
 
         // --- GLOBAL HELPERS ---
         const $ = id => document.getElementById(id);
@@ -1014,11 +1025,45 @@
                     document.documentElement.requestFullscreen().catch((e)=>console.log(e));
                 }
             } else {
+                document.getElementById('playerWrapper').style.transform = `translate(-50%, -50%) scale(1)`; 
                 if(document.fullscreenElement && document.exitFullscreen) {
                     document.exitFullscreen().catch((e)=>console.log(e));
                 }
             }
         };
+
+        // Pinch to Zoom Logic for Display Mode
+        document.addEventListener('DOMContentLoaded', () => {
+            let currentScale = 0.9;
+            let initialDistance = null;
+            const pw = document.getElementById('playerWrapper');
+            
+            pw.addEventListener('wheel', (e) => {
+                if(!document.body.classList.contains('display-mode')) return;
+                e.preventDefault();
+                currentScale += e.deltaY * -0.001;
+                currentScale = Math.min(Math.max(0.4, currentScale), 3);
+                pw.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+            }, {passive: false});
+
+            pw.addEventListener('touchstart', (e) => {
+                if(!document.body.classList.contains('display-mode') || e.touches.length !== 2) return;
+                initialDistance = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            }, {passive: false});
+
+            pw.addEventListener('touchmove', (e) => {
+                if(!document.body.classList.contains('display-mode') || e.touches.length !== 2 || !initialDistance) return;
+                e.preventDefault();
+                const currentDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                const delta = currentDist - initialDistance;
+                currentScale += delta * 0.005;
+                currentScale = Math.min(Math.max(0.4, currentScale), 3);
+                pw.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+                initialDistance = currentDist;
+            }, {passive: false});
+            
+            pw.addEventListener('touchend', () => initialDistance = null);
+        });
         // --- CLASSES DEFINITION ---
 
         class AudioExporter {
@@ -1137,7 +1182,7 @@
             updateFolder(id,d){ const f=this.findItem(id); if(f){ Object.assign(f,d); this.save(); window.ui.renderLibrary(); } }
             
             async shareLibrary() {
-                if(!window.db) return alert("Firebase not connected.");
+                if(!window.db || !window.storage) return alert("Firebase not connected.");
                 const btn = $('shareLibBtn');
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
                 btn.style.backgroundColor = 'var(--accent)';
@@ -1150,13 +1195,12 @@
                     for(const id of flatList) {
                         const song = window.player.songs.find(s=>s.id===id);
                         if(song) {
-                            const base64 = await new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onload = () => resolve(reader.result);
-                                reader.readAsDataURL(song.blob);
-                            });
+                            const sRef = window.storageRef(window.storage, `sharedLibs/${shareId}/${song.id}.mp3`);
+                            await window.uploadBytes(sRef, song.blob);
+                            const downloadUrl = await window.getDownloadURL(sRef);
+                            
                             songsToShare.push({
-                                id: song.id, name: song.name, data: base64,
+                                id: song.id, name: song.name, storageUrl: downloadUrl,
                                 beatSignals: song.beatSignals || [], speedPoints: song.speedPoints || []
                             });
                         }
@@ -1183,15 +1227,19 @@
                     const snap = await window.getDb(window.dbRef(window.db, 'sharedLibs/' + shareId));
                     if(snap.exists()) {
                         const data = snap.val();
-                        for(const s of data.songs) {
-                            const res = await fetch(s.data);
-                            const blob = await res.blob();
-                            blob.name = s.name + ".mp3";
-                            await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                        if (data && data.songs) {
+                            for(const s of data.songs) {
+                                let fetchUrl = s.storageUrl || s.data;
+                                if (!fetchUrl) continue;
+                                const res = await fetch(fetchUrl);
+                                const blob = await res.blob();
+                                blob.name = s.name + ".mp3";
+                                await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                            }
+                            this.structure = data.structure;
+                            this.save();
+                            await window.player.loadLib();
                         }
-                        this.structure = data.structure;
-                        this.save();
-                        await window.player.loadLib();
                         status.innerText = "Library Downloaded!"; setTimeout(() => status.style.display='none', 3000);
                         const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
                         window.history.pushState({path:newUrl},'',newUrl);
@@ -1295,20 +1343,20 @@
                      if (bass > 100) {
                           const bgInt = (bass-100)/(255-100);
                           bgLayer.style.opacity = Math.min(1, baseOp + bgInt * 0.4);
-                          bgLayer.style.filter = `blur(30px) brightness(${1 + bgInt * 0.5})`;
+                          bgLayer.style.filter = (window.innerWidth < 600) ? 'none' : `blur(30px) brightness(${1 + bgInt * 0.5})`;
                      } else {
                           bgLayer.style.opacity = baseOp;
-                          bgLayer.style.filter = `blur(30px) brightness(1)`;
+                          bgLayer.style.filter = (window.innerWidth < 600) ? 'none' : `blur(30px) brightness(1)`;
                      }
                 }
                 
-                // Bass Ripple Effect (Energy based with mid isolation)
-                let mid=0; for(let i=10;i<20;i++)mid+=buf[i]||0; mid/=10;
+                // Bass Ripple Effect (Attack/Transient rate-of-change detection)
                 this.bassHistory.push(bass);
-                if(this.bassHistory.length > 30) this.bassHistory.shift();
-                const avgBass = this.bassHistory.reduce((a,b)=>a+b,0) / this.bassHistory.length;
+                if(this.bassHistory.length > 5) this.bassHistory.shift();
+                const prevBass = this.bassHistory[this.bassHistory.length - 2] || bass;
+                const bassJump = bass - prevBass; // dC/dt
                 
-                if (this.rippleEffect && bass > 200 && bass > avgBass * 1.4 && bass > mid * 1.2 && (performance.now() - this.lastRippleTime > 400)) {
+                if (this.rippleEffect && bass > 180 && bassJump > 30 && (performance.now() - this.lastRippleTime > 300)) {
                     this.lastRippleTime = performance.now();
                     const ripple = document.createElement('div');
                     ripple.className = 'bass-ripple';
@@ -1324,8 +1372,9 @@
                 const cx=w/2, cy=h/2-40, r=140, bars=100;
                 const lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/bars)||1;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent');
+                const isMobile = window.innerWidth < 600;
                 if(this.xStrength > 0.2) { ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#ffffff"; } else { ctx.strokeStyle=col; ctx.shadowColor=col; }
-                ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur=15 + (this.xStrength * 30);
+                ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
                 for(let i=0;i<bars;i++){ 
                     const idx=Math.floor(i*step), v=d[idx], val=v*1.5, ang=(i/bars)*Math.PI*2; 
@@ -1342,7 +1391,7 @@
             }
             drawBars(ctx,w,h,d){
                 const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
-                const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=10; ctx.shadowColor=col;
+                const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=(window.innerWidth < 600) ? 0 : 10; ctx.shadowColor=col;
                 if(this.smooth){ ctx.beginPath(); ctx.moveTo(0,h); for(let i=0;i<cnt;i++){ const idx=Math.floor(i*step), v=d[idx], y=h-(v/255)*(h*0.8), x=i*sp+sp/2; if(i===0)ctx.lineTo(x,y); else { const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]/255)*(h*0.8); ctx.quadraticCurveTo(px,py,(px+x)/2,(py+y)/2); } } ctx.lineTo(w,h); ctx.fill(); }
                 else { for(let i=0;i<cnt;i++){ const idx=Math.floor(i*step), v=d[idx], bh=(v/255)*(h*0.8); ctx.fillRect(i*sp,h-bh,sp-2,bh); } }
             }
@@ -2949,27 +2998,17 @@
                     setTimeout(() => window.ui.updateActiveIndicator(), 0);
                 }
                 
-                // Party Mode Broadcast Loop (Base64 Mode Chunked)
-                if(window.partyMode && window.partyMode.active && window.db) {
-                    const reader = new FileReader();
-                    reader.onload = async (e) => {
-                        const base64 = e.target.result;
-                        const chunkSize = 150000; // 150KB chunks
-                        const chunks = Math.ceil(base64.length / chunkSize);
-                        
-                        await window.setDb(window.dbRef(window.db, `partyData/${window.partyMode.sessionId}`), null);
-                        
-                        for(let i=0; i<chunks; i++) {
-                            const chunk = base64.substr(i * chunkSize, chunkSize);
-                            await window.setDb(window.dbRef(window.db, `partyData/${window.partyMode.sessionId}/${i}`), chunk);
-                        }
-                        
-                        window.partyMode.broadcast({
-                            type: 'PLAY', id: s.id, name: s.name, chunks: chunks,
-                            beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
+                // Party Mode Broadcast Loop (Firebase Storage)
+                if(window.partyMode && window.partyMode.active && window.db && window.storage) {
+                    const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
+                    window.uploadBytes(sRef, s.blob).then(() => {
+                        window.getDownloadURL(sRef).then(downloadUrl => {
+                            window.partyMode.broadcast({
+                                type: 'PLAY', id: s.id, name: s.name, storageUrl: downloadUrl,
+                                beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
+                            });
                         });
-                    };
-                    reader.readAsDataURL(s.blob);
+                    }).catch(e => console.error("Party Mode upload failed", e));
                 }
             }
             
@@ -3147,8 +3186,9 @@
             broadcast(data) {
                 if(!this.active || !window.db) return;
                 if(!window.player.myId) window.player.myId = crypto.randomUUID();
+                const serverTime = Date.now() + (window.serverTimeOffset || 0);
                 window.setDb(window.dbRef(window.db, 'sessions/' + this.sessionId), {
-                    ...data, timestamp: Date.now(), sender: window.player.myId
+                    ...data, timestamp: serverTime, sender: window.player.myId
                 });
             }
             handleMessage(data) {
@@ -3160,52 +3200,60 @@
                         if(data.beatSignals) song.beatSignals = data.beatSignals;
                         if(data.speedPoints) song.speedPoints = data.speedPoints;
                         window.player.play(song.id, null, false);
-                    } else if (data.chunks) {
+                    } else if (data.storageUrl || data.chunks) {
                         const status = $('syncStatus');
                         status.style.display = 'inline-block';
                         this.isDownloading = true; // Block STATUS seeking
                         this.pauseRequestedDuringBuffer = false;
                         
-                        const cardNode = document.querySelector(`.lib-card[onclick*="${data.id}"]`) || document.querySelector(`.lib-card:contains('${data.name}')`);
+                        const textMatch = Array.from(document.querySelectorAll('.lib-card')).find(el => el.textContent.includes(data.name));
+                        const cardNode = document.querySelector(`.lib-card[onclick*="${data.id}"]`) || textMatch;
                         if (cardNode) { cardNode.style.opacity = '0.5'; cardNode.style.animation = 'pulse-red 1.5s infinite'; }
                         
-                        let fullString = "";
-                        let downloaded = 0;
+                        status.innerText = "Downloading Track...";
                         
-                        const downloadNext = async (idx) => {
-                            status.innerText = `Buffering: ${Math.round((downloaded / data.chunks) * 100)}%`;
-                            if(idx >= data.chunks) {
-                                status.innerText = "Processing...";
-                                fetch(fullString).then(r=>r.blob()).then(blob=>{
-                                    blob.name = data.name + ".mp3";
-                                    window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
-                                        window.player.loadLib().then(()=>{
-                                            this.isDownloading = false;
-                                            if (cardNode) { cardNode.style.opacity = '1'; cardNode.style.animation = 'none'; }
-                                            
-                                            if (this.pauseRequestedDuringBuffer) {
-                                                window.player.loadTrack(id); 
-                                                this.pauseRequestedDuringBuffer = false;
-                                            } else {
-                                                window.player.play(id, null, false);
-                                            }
-                                            status.innerText = `Party: ${this.sessionId}`;
-                                        });
-                                    });
-                                }).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
-                                return;
-                            }
-                            
-                            const snap = await window.getDb(window.dbRef(window.db, `partyData/${this.sessionId}/${idx}`));
-                            if(snap.exists()) {
-                                fullString += snap.val();
-                                downloaded++;
-                                downloadNext(idx + 1);
-                            } else {
-                                setTimeout(() => downloadNext(idx), 50); 
-                            }
+                        // Legacy chunks fallback or new storage URL
+                        const fetchUrl = data.storageUrl; 
+                        
+                        const processBlob = (blob) => {
+                            blob.name = data.name + ".mp3";
+                            window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
+                                window.player.loadLib().then(()=>{
+                                    this.isDownloading = false;
+                                    if (cardNode) { cardNode.style.opacity = '1'; cardNode.style.animation = 'none'; }
+                                    
+                                    if (this.pauseRequestedDuringBuffer) {
+                                        window.player.loadTrack(id); 
+                                        this.pauseRequestedDuringBuffer = false;
+                                    } else {
+                                        window.player.play(id, null, false);
+                                    }
+                                    status.innerText = `Party: ${this.sessionId}`;
+                                });
+                            });
                         };
-                        downloadNext(0);
+
+                        if (fetchUrl) {
+                            fetch(fetchUrl).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
+                        } else if (data.chunks) {
+                            let fullString = "";
+                            let downloaded = 0;
+                            const downloadNext = async (idx) => {
+                                status.innerText = `Buffering: ${Math.round((downloaded / data.chunks) * 100)}%`;
+                                if(idx >= data.chunks) {
+                                    status.innerText = "Processing...";
+                                    fetch(fullString).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
+                                    return;
+                                }
+                                const snap = await window.getDb(window.dbRef(window.db, `partyData/${this.sessionId}/${idx}`));
+                                if(snap.exists()) {
+                                    fullString += snap.val();
+                                    downloaded++;
+                                    downloadNext(idx + 1);
+                                } else { setTimeout(() => downloadNext(idx), 50); }
+                            };
+                            downloadNext(0);
+                        }
                     }
                 }
                 else if(data.type === 'STATUS') {
@@ -3216,7 +3264,8 @@
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
                     if (data.time && data.timestamp) {
-                        const latency = Math.max(0, (Date.now() - data.timestamp) / 1000);
+                        const localServerTime = Date.now() + (window.serverTimeOffset || 0);
+                        const latency = Math.max(0, (localServerTime - data.timestamp) / 1000);
                         const expectedTime = data.time + latency + (this.manualOffset / 1000);
                         if (Math.abs(window.audioSys.audio.currentTime - expectedTime) > 0.3) {
                             window.audioSys.audio.currentTime = expectedTime;
