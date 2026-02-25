@@ -611,9 +611,9 @@
         @media (max-width: 600px) {
             .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
             .top-icon { width: 38px; height: 38px; font-size: 14px; }
-            .controls { padding: 12px 24px; gap: 16px; width: max-content; max-width: 95%; }
-            .btn { width: 48px; height: 48px; font-size: 18px; }
-            .btn.main { width: 68px; height: 68px; font-size: 26px; }
+            .controls { padding: 10px 16px; gap: 12px; width: 95%; max-width: 360px; }
+            .btn { width: 44px; height: auto; font-size: 16px; aspect-ratio: 1/1; flex-shrink: 0; }
+            .btn.main { width: 56px; height: auto; font-size: 20px; aspect-ratio: 1/1; flex-shrink: 0; }
         }
     </style>
 </head>
@@ -1032,18 +1032,21 @@
             }
         };
 
+        window.displayScale = 1.0;
         // Pinch to Zoom Logic for Display Mode
         document.addEventListener('DOMContentLoaded', () => {
-            let currentScale = 0.9;
             let initialDistance = null;
             const pw = document.getElementById('playerWrapper');
+            const applyZoom = (scale) => {
+                window.displayScale = scale;
+                pw.style.transform = `translate(-50%, -50%) scale(${scale * 0.9})`;
+            };
             
             pw.addEventListener('wheel', (e) => {
                 if(!document.body.classList.contains('display-mode')) return;
                 e.preventDefault();
-                currentScale += e.deltaY * -0.001;
-                currentScale = Math.min(Math.max(0.4, currentScale), 3);
-                pw.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+                let nextScale = window.displayScale + (e.deltaY * -0.001);
+                applyZoom(Math.min(Math.max(0.4, nextScale), 3));
             }, {passive: false});
 
             pw.addEventListener('touchstart', (e) => {
@@ -1056,9 +1059,8 @@
                 e.preventDefault();
                 const currentDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
                 const delta = currentDist - initialDistance;
-                currentScale += delta * 0.005;
-                currentScale = Math.min(Math.max(0.4, currentScale), 3);
-                pw.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+                let nextScale = window.displayScale + (delta * 0.005);
+                applyZoom(Math.min(Math.max(0.4, nextScale), 3));
                 initialDistance = currentDist;
             }, {passive: false});
             
@@ -1326,7 +1328,8 @@
                 const buf=new Uint8Array(window.audioSys.analyser.frequencyBinCount); window.audioSys.analyser.getByteFrequencyData(buf);
                 const ctx=this.ctx, w=this.cv.width, h=this.cv.height; 
                 if(this.xStrength > 0) this.xStrength -= 0.05; if(this.xStrength < 0) this.xStrength = 0;
-                const shake = this.xStrength * 60; const zoom = 1.0 + (this.xStrength * 0.15); const rot = (Math.random() - 0.5) * this.xStrength * 0.25; 
+                const baseZoom = window.displayScale || 1.0;
+                const shake = this.xStrength * 60 * baseZoom; const zoom = baseZoom + (this.xStrength * 0.15 * baseZoom); const rot = (Math.random() - 0.5) * this.xStrength * 0.25; 
                 ctx.save(); ctx.translate(w/2, h/2); ctx.scale(zoom, zoom); ctx.rotate(rot); ctx.translate(-w/2 + (Math.random()-0.5)*shake, -h/2 + (Math.random()-0.5)*shake);
                 if(this.xStrength > 0.1) {
                      const flashAlpha = Math.min(0.8, this.xStrength * 0.2);
@@ -2999,16 +3002,23 @@
                 }
                 
                 // Party Mode Broadcast Loop (Firebase Storage)
-                if(window.partyMode && window.partyMode.active && window.db && window.storage) {
-                    const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
-                    window.uploadBytes(sRef, s.blob).then(() => {
-                        window.getDownloadURL(sRef).then(downloadUrl => {
-                            window.partyMode.broadcast({
-                                type: 'PLAY', id: s.id, name: s.name, storageUrl: downloadUrl,
-                                beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
+                if(window.partyMode && window.partyMode.active && window.db) {
+                    // Instant Broadcast (clients who already have it don't wait for upload latency)
+                    window.partyMode.broadcast({ type: 'PLAY', id: s.id, name: s.name, storageUrl: null, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
+                    
+                    if(window.storage) {
+                        const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
+                        window.uploadBytes(sRef, s.blob).then(() => {
+                            window.getDownloadURL(sRef).then(downloadUrl => {
+                                if (window.player.currId === s.id) { // Race condition prevention!
+                                    window.partyMode.broadcast({
+                                        type: 'PLAY', id: s.id, name: s.name, storageUrl: downloadUrl,
+                                        beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
+                                    });
+                                }
                             });
-                        });
-                    }).catch(e => console.error("Party Mode upload failed", e));
+                        }).catch(e => console.error("Party Mode upload failed", e));
+                    }
                 }
             }
             
@@ -3195,11 +3205,13 @@
                 if(data.type === 'JOIN') window.ui.showToast("User Connected");
                 if(data.type === 'LEAVE') window.ui.showToast("User Disconnected");
                 if(data.type === 'PLAY') {
-                    let song = window.player.songs.find(s => s.id === data.id || s.name === data.name);
+                    let song = window.player.songs.find(s => s.id === data.id || s.name === data.name || (s.name && s.name.replace('.mp3','') === data.name.replace('.mp3','')));
                     if (song) {
-                        if(data.beatSignals) song.beatSignals = data.beatSignals;
-                        if(data.speedPoints) song.speedPoints = data.speedPoints;
-                        window.player.play(song.id, null, false);
+                        if (window.player.currId !== song.id) {
+                            if(data.beatSignals) song.beatSignals = data.beatSignals;
+                            if(data.speedPoints) song.speedPoints = data.speedPoints;
+                            window.player.play(song.id, null, false);
+                        }
                     } else if (data.storageUrl || data.chunks) {
                         const status = $('syncStatus');
                         status.style.display = 'inline-block';
