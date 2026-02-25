@@ -68,7 +68,7 @@
         #vizCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; filter: drop-shadow(0 0 10px var(--accent-glow)); }
 
         /* UI COMPONENTS */
-        .glass-panel { background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); -webkit-backdrop-filter: blur(8px) saturate(110%); box-shadow: inset 1px 1px 0 0 rgba(255,255,255,0.05), inset -0.5px -0.5px 0 0 rgba(255,255,255,0.01), 0 20px 40px -5px rgba(0,0,0,0.3); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.05); }
+        .glass-panel { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); -webkit-backdrop-filter: blur(8px) saturate(110%); box-shadow: inset 1px 1px 0 0 rgba(255,255,255,0.05), inset -0.5px -0.5px 0 0 rgba(255,255,255,0.01), 0 20px 40px -5px rgba(0,0,0,0.3); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.05); }
         .glass-panel:active { transform: scale(0.995); }
         .controls.glass-panel:active { transform: translateX(-50%) scale(0.995); }
 
@@ -103,12 +103,12 @@
         .btn.active { color: var(--accent); background: rgba(96, 165, 250, 0.1); border-color: var(--accent); }
 
         .vol-container { position: relative; display: flex; align-items: center; justify-content: center; height: 48px; }
-        .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
+        .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
         .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
         .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
-        input[type=range].vol-slider { writing-mode: bt-lr; -webkit-appearance: slider-vertical; width: 4px; height: 100%; accent-color: var(--accent); background: transparent; }
+        input[type=range].vol-slider { writing-mode: vertical-lr; direction: rtl; width: 4px; height: 100%; accent-color: var(--accent); background: transparent; }
 
-        .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
+        .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
         .left-panel { left: 0; transform: translateX(-110%); border-radius: 0 var(--radius-xl) var(--radius-xl) 0; }
         .right-panel { right: 0; transform: translateX(110%); border-radius: var(--radius-xl) 0 0 var(--radius-xl); }
         .side-panel.open { transform: translateX(0); }
@@ -129,7 +129,7 @@
 
         /* Unified Transparent Glass Modal Style */
         .glass-modal { 
-            background: rgba(255, 255, 255, 0.01); 
+            background: rgba(255, 255, 255, 0.1); 
             backdrop-filter: blur(10px) saturate(110%); 
             -webkit-backdrop-filter: blur(10px) saturate(110%);
             border-radius: 32px; 
@@ -138,7 +138,29 @@
             z-index: 10000 !important; 
         }
         
-        .tag { font-size: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); color: white; font-weight: 700; }
+        
+        /* BASS RIPPLE EFFECT */
+        .bass-ripple {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: transparent;
+            border: 8px solid var(--accent);
+            opacity: 0.8;
+            pointer-events: none;
+            z-index: -2;
+            animation: ripple-out 1s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+            filter: blur(4px);
+            mix-blend-mode: screen;
+        }
+        @keyframes ripple-out {
+            0% { width: 50px; height: 50px; opacity: 0.8; border-width: 12px; }
+            100% { width: 1200px; height: 1200px; opacity: 0; border-width: 0; }
+        }.tag { font-size: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); color: white; font-weight: 700; }
         .pad { width: 100px; height: 100px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-weight: 800; font-size: 24px; color: var(--accent); transition: 0.1s; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .pad:active { background: var(--accent); color: black; transform: scale(0.95); box-shadow: 0 0 20px var(--accent); }
         
@@ -578,6 +600,14 @@
         }
         .scan-popup-content.active { opacity: 1; pointer-events: auto; }
         
+        /* DISPLAY MODE & TOASTS */
+        .display-mode .top-bar, .display-mode .controls, .display-mode .side-panel { opacity: 0; pointer-events: none; transition: opacity 0.5s; }
+        .display-mode .player-wrapper { max-width: 100vw; transform: translate(-50%, -50%) scale(0.9); }
+        .display-mode { overflow-y: auto !important; touch-action: pan-y !important; }
+        
+        #toast { position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+        
     </style>
 </head>
 <body>
@@ -587,6 +617,7 @@
     <div id="bg-layer"></div>
     <div id="beat-flash"></div>
     <canvas id="vizCanvas"></canvas>
+    <div id="toast"></div>
 
     <!-- TOP BAR -->
     <div class="top-bar">
@@ -744,6 +775,10 @@
                 <div class="flex justify-between items-center bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
                     <span class="text-xs font-bold text-red-400 flex items-center gap-2"><i class="fa-solid fa-burst"></i> XTREME BASS</span>
                     <input type="checkbox" id="xtremeToggle" class="w-5 h-5 accent-red-500" onchange="window.audioSys.toggleXtreme()">
+                </div>
+                <div class="flex justify-between items-center bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl">
+                    <span class="text-xs font-bold text-blue-400 flex items-center gap-2"><i class="fa-solid fa-droplet"></i> BASS RIPPLE</span>
+                    <input type="checkbox" id="rippleToggle" class="w-5 h-5 accent-blue-500" onchange="window.viz.rippleEffect=this.checked" checked>
                 </div>
             </div>
             <div class="flex justify-between items-center pt-2 px-2">
@@ -1196,11 +1231,13 @@
                 this.mode='ring'; 
                 this.smooth=true; 
                 this.flash=true; 
+                this.rippleEffect=true;
                 this.resize(); 
                 window.addEventListener('resize',()=>this.resize()); 
                 this.xMode = false;
                 this.xStrength = 0;
                 this.lastTrigger = 0; 
+                this.lastRippleTime = 0;
             }
             resize(){ this.cv.width=window.innerWidth; this.cv.height=window.innerHeight; }
             start(){ this.draw(); }
@@ -1250,6 +1287,15 @@
                           bgLayer.style.opacity = baseOp;
                           bgLayer.style.filter = `blur(30px) brightness(1)`;
                      }
+                }
+                
+                // Bass Ripple Effect
+                if (this.rippleEffect && bass > 180 && (performance.now() - this.lastRippleTime > 300)) {
+                    this.lastRippleTime = performance.now();
+                    const ripple = document.createElement('div');
+                    ripple.className = 'bass-ripple';
+                    document.body.appendChild(ripple);
+                    setTimeout(() => ripple.remove(), 1000);
                 }
 
                 const te=buf.reduce((a,b)=>a+b,0); 
@@ -2677,6 +2723,14 @@
                 if(window.audioSys.reverbVal>0) c.innerHTML+=`<span class="tag" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: #7dd3fc;">REVERB ${window.audioSys.reverbVal}%</span>`; 
                 if(window.player && window.player.autoDj) c.innerHTML+=`<span class="tag" style="background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); color: #4ade80;">AUTO DJ</span>`;
             }
+
+            showToast(msg){
+                const t = $('toast');
+                t.innerText = msg;
+                t.classList.add('show');
+                if(this.toastTimer) clearTimeout(this.toastTimer);
+                this.toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+            }
             
             // Helper: Convert Hex to RGBA
             hexToRgba(hex, alpha) {
@@ -3054,11 +3108,13 @@
                         }
                     });
                     this.listeners.push(unsubscribe);
-                } catch(e) { console.error("Party Mode error", e); }
+                    setTimeout(() => { this.broadcast({type: 'JOIN'}); window.ui.showToast("Joined session!"); }, 1000);
+                } catch(e) { window.ui.showToast("Connection Error"); console.error("Party Mode error", e); }
                 
                 this.updateUI();
             }
             leave() {
+                this.broadcast({type: 'LEAVE'});
                 this.active = false;
                 this.listeners.forEach(unsub => unsub());
                 this.listeners = [];
@@ -3066,6 +3122,7 @@
                 $('partyBtn').style = '';
                 $('syncStatus').style.display = 'none';
                 this.updateUI();
+                window.ui.showToast("Left Session");
             }
             broadcast(data) {
                 if(!this.active || !window.db) return;
@@ -3075,6 +3132,8 @@
                 });
             }
             handleMessage(data) {
+                if(data.type === 'JOIN') window.ui.showToast("User Connected");
+                if(data.type === 'LEAVE') window.ui.showToast("User Disconnected");
                 if(data.type === 'PLAY') {
                     let song = window.player.songs.find(s => s.id === data.id || s.name === data.name);
                     if (song) {
@@ -3085,6 +3144,10 @@
                         const status = $('syncStatus');
                         status.style.display = 'inline-block';
                         this.isDownloading = true; // Block STATUS seeking
+                        this.pauseRequestedDuringBuffer = false;
+                        
+                        const cardNode = document.querySelector(`.lib-card[onclick*="${data.id}"]`) || document.querySelector(`.lib-card:contains('${data.name}')`);
+                        if (cardNode) { cardNode.style.opacity = '0.5'; cardNode.style.animation = 'pulse-red 1.5s infinite'; }
                         
                         let fullString = "";
                         let downloaded = 0;
@@ -3098,7 +3161,14 @@
                                     window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
                                         window.player.loadLib().then(()=>{
                                             this.isDownloading = false;
-                                            window.player.play(id, null, false);
+                                            if (cardNode) { cardNode.style.opacity = '1'; cardNode.style.animation = 'none'; }
+                                            
+                                            if (this.pauseRequestedDuringBuffer) {
+                                                window.player.loadTrack(id); 
+                                                this.pauseRequestedDuringBuffer = false;
+                                            } else {
+                                                window.player.play(id, null, false);
+                                            }
                                             status.innerText = `Party: ${this.sessionId}`;
                                         });
                                     });
@@ -3118,7 +3188,11 @@
                         downloadNext(0);
                     }
                 }
-                else if(data.type === 'STATUS' && !this.isDownloading) {
+                else if(data.type === 'STATUS') {
+                    if (this.isDownloading) {
+                        if (!data.playing) this.pauseRequestedDuringBuffer = true;
+                        return;
+                    }
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
                     if (data.time && Math.abs(window.audioSys.audio.currentTime - data.time) > 2) {
