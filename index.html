@@ -609,9 +609,11 @@
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 
         @media (max-width: 600px) {
-            .controls { padding: 10px 20px; gap: 12px; width: 90%; max-width: 320px; }
-            .btn { width: 40px; height: 40px; font-size: 16px; }
-            .btn.main { width: 56px; height: 56px; font-size: 22px; }
+            .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
+            .top-icon { width: 38px; height: 38px; font-size: 14px; }
+            .controls { padding: 12px 24px; gap: 16px; width: max-content; max-width: 95%; }
+            .btn { width: 44px; height: 44px; font-size: 16px; }
+            .btn.main { width: 60px; height: 60px; font-size: 24px; }
         }
     </style>
 </head>
@@ -626,7 +628,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.1.3</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.1.4</span></div>
         <div class="flex gap-4">
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
@@ -790,7 +792,12 @@
                 <span class="text-xs font-bold">Auto DJ</span>
                 <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()">
             </div>
-            <div class="text-center pt-10 pb-4">
+            <div class="px-2 pb-4">
+                <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Party Sync Offset</span> <span id="syncOffsetVal" class="text-[var(--accent)]">0ms</span></div>
+                <input type="range" id="syncOffsetSlider" class="setting-slider" min="-500" max="500" value="0" oninput="$('syncOffsetVal').innerText = this.value + 'ms'; window.partyMode.manualOffset = parseInt(this.value); localStorage.setItem('sv_party_sync', this.value);">
+                <p class="text-[9px] text-white/30 mt-1 leading-tight">Adjust if the phone visualizer is slightly early/late compared to PC.</p>
+            </div>
+            <div class="text-center pt-4 pb-4">
                 <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
             </div>
         </div>
@@ -1295,12 +1302,13 @@
                      }
                 }
                 
-                // Bass Ripple Effect (Energy based)
+                // Bass Ripple Effect (Energy based with mid isolation)
+                let mid=0; for(let i=10;i<20;i++)mid+=buf[i]||0; mid/=10;
                 this.bassHistory.push(bass);
                 if(this.bassHistory.length > 30) this.bassHistory.shift();
                 const avgBass = this.bassHistory.reduce((a,b)=>a+b,0) / this.bassHistory.length;
                 
-                if (this.rippleEffect && bass > 180 && bass > avgBass * 1.3 && (performance.now() - this.lastRippleTime > 400)) {
+                if (this.rippleEffect && bass > 200 && bass > avgBass * 1.4 && bass > mid * 1.2 && (performance.now() - this.lastRippleTime > 400)) {
                     this.lastRippleTime = performance.now();
                     const ripple = document.createElement('div');
                     ripple.className = 'bass-ripple';
@@ -3065,6 +3073,7 @@
                 const c=localStorage.getItem('sv_theme'); if(c)window.ui.setTheme(c);
                 const xtr=localStorage.getItem('sv_xtreme') === 'true'; $('xtremeToggle').checked=xtr; window.audioSys.toggleXtreme();
                 const glob=localStorage.getItem('sv_global_audio') === 'true'; $('globalAudioToggle').checked=glob; window.audioSys.globalAudio=glob;
+                const sync=localStorage.getItem('sv_party_sync'); if(sync){ if($('syncOffsetSlider')) { $('syncOffsetSlider').value=sync; $('syncOffsetVal').innerText=sync+'ms'; } }
             }
         };
 
@@ -3073,6 +3082,7 @@
                 this.active = false;
                 this.sessionId = null;
                 this.listeners = [];
+                this.manualOffset = parseInt(localStorage.getItem('sv_party_sync')) || 0;
             }
             toggleSetup() {
                 const el = $('partySetupModal');
@@ -3207,7 +3217,7 @@
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
                     if (data.time && data.timestamp) {
                         const latency = Math.max(0, (Date.now() - data.timestamp) / 1000);
-                        const expectedTime = data.time + latency;
+                        const expectedTime = data.time + latency + (this.manualOffset / 1000);
                         if (Math.abs(window.audioSys.audio.currentTime - expectedTime) > 0.3) {
                             window.audioSys.audio.currentTime = expectedTime;
                         }
