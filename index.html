@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.2.6 - Custom Drag</title>
+    <title>okMUSIC v2.3.0 - Custom Drag</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="importmap">
@@ -621,6 +621,10 @@
         #syncPopup .title { font-weight: 800; font-size: 16px; color: var(--text); }
         #syncPopup .percent { font-weight: 700; font-size: 28px; color: var(--accent); font-variant-numeric: tabular-nums; }
         @keyframes pulse-glow { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.95); } }
+
+        /* SYNC ACTIVE BLUR STATE */
+        body.sync-active #bg-layer, body.sync-active #vizCanvas { filter: blur(30px) opacity(0.5); transition: filter 0.5s, opacity 0.5s; }
+        body.sync-active .player-wrapper, body.sync-active .controls, body.sync-active .top-bar { filter: blur(15px); opacity: 0.3; pointer-events: none; transition: filter 0.5s, opacity 0.5s; }
 
         @media (max-width: 600px) {
             .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
@@ -2872,13 +2876,17 @@
                 $('syncPopupTitle').innerText = title;
                 $('syncPopupPercent').innerText = pct;
                 pop.classList.add('show');
+                document.body.classList.add('sync-active');
             }
             updateSyncPopup(pct) {
                 if($('syncPopupPercent')) $('syncPopupPercent').innerText = pct;
             }
             hideSyncPopup() {
                 const pop = $('syncPopup');
-                if(pop) pop.classList.remove('show');
+                if(pop) {
+                    pop.classList.remove('show');
+                    document.body.classList.remove('sync-active');
+                }
             }
             
             // Helper: Convert Hex to RGBA
@@ -3067,7 +3075,17 @@
                 window.ui.updateMetaTags();
 
                 window.audioSys.audio.src=URL.createObjectURL(s.blob);
-                window.audioSys.audio.preservesPitch=false; window.audioSys.audio.play();
+                window.audioSys.audio.preservesPitch=false; 
+                
+                if(window.partyMode && window.partyMode.active && window.partyMode.isHost) {
+                    window.ui.showSyncPopup("Loading sounds...", "0%");
+                    const finalStatus = $('syncStatus');
+                    if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
+                    window.audioSys.audio.pause();
+                } else {
+                    window.audioSys.audio.play();
+                }
+                
                 window.ui.setTrack(s); window.ui.updatePlayBtn(true);
                 
                 // IMPORTANT: Only re-render if explicitly requested (e.g. from shuffle next/prev)
@@ -3340,10 +3358,9 @@
                         if (status) status.innerText = `Streaming: ${pct}%`;
                         window.ui.showSyncPopup("Streaming to Party...", pct + "%");
                     }
-                    
-                    window.ui.hideSyncPopup();
+                    // Host waits for READY event from Client to hide popup
                     const finalStatus = $('syncStatus');
-                    if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
+                    if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
                 };
                 reader.readAsDataURL(song.blob);
             }
@@ -3361,6 +3378,9 @@
                             if(data.beatSignals) song.beatSignals = data.beatSignals;
                             if(data.speedPoints) song.speedPoints = data.speedPoints;
                             window.player.play(song.id, null, false);
+                            
+                            // Client formally announces readiness
+                            this.broadcast({type: 'READY', id: data.id});
                         }
                     } else if (data.storageUrl || data.chunks) {
                         window.ui.showToast("Downloading Shared Track...");
@@ -3387,6 +3407,8 @@
                                 return;
                             }
                             
+                            // Announce ready before processing blob (or right after adding to DB)
+                            
                             blob.name = data.name + ".mp3";
                             window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
                                 window.player.loadLib().then(()=>{
@@ -3399,6 +3421,8 @@
                                     } else {
                                         window.player.play(id, null, false);
                                     }
+                                    
+                                    this.broadcast({type: 'READY', id: currentSessionCommand});
                                     status.innerText = `Party: ${this.sessionId}`;
                                     window.ui.hideSyncPopup();
                                 });
@@ -3420,6 +3444,7 @@
                                 const pct = Math.round((downloaded / data.chunks) * 100);
                                 status.innerText = `Buffering: ${pct}%`;
                                 window.ui.updateSyncPopup(pct + "%");
+                                this.broadcast({type: 'PROGRESS', pct: pct, id: currentSessionCommand});
                                 
                                 if(idx >= data.chunks) {
                                     status.innerText = "Processing...";
@@ -3436,7 +3461,18 @@
                             };
                             downloadNext(0);
                         }
+                        }
                     }
+                }
+                else if (data.type === 'PROGRESS' && this.isHost && data.id === this.lastCommandId) {
+                    window.ui.updateSyncPopup(data.pct + "%");
+                }
+                else if (data.type === 'READY' && this.isHost && data.id === this.lastCommandId) {
+                    window.ui.hideSyncPopup();
+                    window.audioSys.audio.play();
+                    window.ui.updatePlayBtn(true);
+                    const finalStatus = $('syncStatus');
+                    if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
                 }
                 else if(data.type === 'STATUS') {
                     if (this.isDownloading) {
