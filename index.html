@@ -107,6 +107,8 @@
         .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
         .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
         input[type=range].vol-slider {
+            appearance: none;
+            -webkit-appearance: none;
             writing-mode: vertical-lr;
             direction: rtl;
             width: 12px;
@@ -3265,14 +3267,19 @@
                 if(data.type === 'JOIN') window.ui.showToast("User Connected");
                 if(data.type === 'LEAVE') window.ui.showToast("User Disconnected");
                 if(data.type === 'PLAY') {
+                    console.log("Party PLAY command received:", data.id, data.name);
+                    this.lastCommandId = data.id; // Track the absolute most recent command
+                    
                     let song = window.player.songs.find(s => s.id === data.id || s.name === data.name || (s.name && s.name.replace('.mp3','') === data.name.replace('.mp3','')));
                     if (song) {
                         if (window.player.currId !== song.id) {
+                            window.ui.showToast("Switching: " + song.name);
                             if(data.beatSignals) song.beatSignals = data.beatSignals;
                             if(data.speedPoints) song.speedPoints = data.speedPoints;
                             window.player.play(song.id, null, false);
                         }
                     } else if (data.storageUrl || data.chunks) {
+                        window.ui.showToast("Downloading Shared Track...");
                         const status = $('syncStatus');
                         status.style.display = 'inline-block';
                         this.isDownloading = true; // Block STATUS seeking
@@ -3283,11 +3290,18 @@
                         if (cardNode) { cardNode.style.opacity = '0.5'; cardNode.style.animation = 'pulse-red 1.5s infinite'; }
                         
                         status.innerText = "Downloading Track...";
+                        const currentSessionCommand = data.id;
                         
                         // Legacy chunks fallback or new storage URL
                         const fetchUrl = data.storageUrl; 
                         
                         const processBlob = (blob) => {
+                            // VERIFY THIS IS STILL THE CURRENT SONG BEFORE PLAYING
+                            if (this.lastCommandId !== currentSessionCommand) {
+                                console.log("Discarding late download for stale command:", currentSessionCommand);
+                                return;
+                            }
+                            
                             blob.name = data.name + ".mp3";
                             window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
                                 window.player.loadLib().then(()=>{
@@ -3306,11 +3320,16 @@
                         };
 
                         if (fetchUrl) {
-                            fetch(fetchUrl).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
+                            fetch(fetchUrl).then(r=>r.blob()).then(processBlob).catch(e=>{ 
+                                console.error("Download failed", e); 
+                                this.isDownloading = false; 
+                                window.ui.showToast("CORS/Network Error: Download Failed");
+                            });
                         } else if (data.chunks) {
                             let fullString = "";
                             let downloaded = 0;
                             const downloadNext = async (idx) => {
+                                if (this.lastCommandId !== currentSessionCommand) { this.isDownloading = false; return; }
                                 status.innerText = `Buffering: ${Math.round((downloaded / data.chunks) * 100)}%`;
                                 if(idx >= data.chunks) {
                                     status.innerText = "Processing...";
