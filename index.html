@@ -1337,19 +1337,24 @@
                 }
                 ctx.clearRect(-w, -h, w*3, h*3);
                 let bass=0; for(let i=0;i<4;i++)bass+=buf[i]; bass/=4;
-                if(this.flash){ const th=120; if(bass>th){const int=(bass-th)/(255-th); $('beat-flash').style.opacity=int*0.7;}else $('beat-flash').style.opacity=0; }
+                if(this.flash){ 
+                    const th=120; 
+                    if(bass>th){const int=(bass-th)/(255-th); $('beat-flash').style.opacity=int*0.7;}else $('beat-flash').style.opacity=0; 
+                    $('beat-flash').style.transform = `translate(-50%, -50%) scale(${baseZoom})`;
+                }
                 
                 // Bass Reactive Background
                 const bgLayer = $('bg-layer');
+                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 if (bgLayer) {
                      const baseOp = parseFloat(localStorage.getItem('sv_bg_bright') || 0.15);
                      if (bass > 100) {
                           const bgInt = (bass-100)/(255-100);
                           bgLayer.style.opacity = Math.min(1, baseOp + bgInt * 0.4);
-                          bgLayer.style.filter = (window.innerWidth < 600) ? 'none' : `blur(30px) brightness(${1 + bgInt * 0.5})`;
+                          bgLayer.style.filter = isMobile ? 'none' : `blur(30px) brightness(${1 + bgInt * 0.5})`;
                      } else {
                           bgLayer.style.opacity = baseOp;
-                          bgLayer.style.filter = (window.innerWidth < 600) ? 'none' : `blur(30px) brightness(1)`;
+                          bgLayer.style.filter = isMobile ? 'none' : `blur(30px) brightness(1)`;
                      }
                 }
                 
@@ -1375,7 +1380,7 @@
                 const cx=w/2, cy=h/2-40, r=140, bars=100;
                 const lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/bars)||1;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent');
-                const isMobile = window.innerWidth < 600;
+                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 if(this.xStrength > 0.2) { ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#ffffff"; } else { ctx.strokeStyle=col; ctx.shadowColor=col; }
                 ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
@@ -1410,7 +1415,8 @@
             }
             drawBars(ctx,w,h,d){
                 const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
-                const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=(window.innerWidth < 600) ? 0 : 10; ctx.shadowColor=col;
+                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
+                const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=isMobile ? 0 : 10; ctx.shadowColor=col;
                 const path = new Path2D();
                 if(this.smooth){ 
                     path.moveTo(0,h); 
@@ -3187,12 +3193,14 @@
             }
             hostParty() {
                 this.sessionId = Math.random().toString(36).substring(2,6).toUpperCase();
+                this.isHost = true;
                 this.connect();
             }
             joinParty() {
                 const code = $('joinCodeInput').value.trim().toUpperCase();
                 if(!code) return alert("Please enter a party code.");
                 this.sessionId = code;
+                this.isHost = false;
                 this.connect();
             }
             connect() {
@@ -3211,12 +3219,22 @@
                         }
                     });
                     this.listeners.push(unsubscribe);
+                    
+                    if (this.isHost) {
+                        this.pingInterval = setInterval(() => {
+                            if (this.active && window.audioSys && window.audioSys.audio && !window.audioSys.audio.paused) {
+                                this.broadcast({type: 'STATUS', playing: true, time: window.audioSys.audio.currentTime});
+                            }
+                        }, 3000);
+                    }
+                    
                     setTimeout(() => { this.broadcast({type: 'JOIN'}); window.ui.showToast("Joined session!"); }, 1000);
                 } catch(e) { window.ui.showToast("Connection Error"); console.error("Party Mode error", e); }
                 
                 this.updateUI();
             }
             leave() {
+                if (this.pingInterval) clearInterval(this.pingInterval);
                 this.broadcast({type: 'LEAVE'});
                 this.active = false;
                 this.listeners.forEach(unsub => unsub());
