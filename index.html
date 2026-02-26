@@ -1386,17 +1386,51 @@
                         const rad = (i/bars) * Math.PI * 2; const lobe = Math.sin(rad * 2 + Math.PI/4); const distortion = lobe > 0 ? lobe * 30 : lobe * 120; const dist = this.xStrength * distortion;
                         x = cx + Math.cos(ang) * (r + val + dist); y = cy + Math.sin(ang) * (r + val + dist);
                     }
-                    pts.push({x, y}); 
+                    pts.push({x: x|0, y: y|0}); 
                 } 
                 pts.push(pts[0],pts[1]); 
-                if(this.smooth){ ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); for(let i=1;i<pts.length-2;i++){ const p0=pts[i-1],p1=pts[i],p2=pts[i+1], cp=this.getCP(p0.x,p0.y,p1.x,p1.y,p2.x,p2.y); ctx.bezierCurveTo(cp[2],cp[3],this.getCP(p1.x,p1.y,p2.x,p2.y,pts[i+2].x,pts[i+2].y)[0],this.getCP(p1.x,p1.y,p2.x,p2.y,pts[i+2].x,pts[i+2].y)[1],p2.x,p2.y); } ctx.stroke(); }
-                else { ctx.beginPath(); for(let i=0;i<bars;i++){ const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*1.5), y=cy+Math.sin(ang)*(r+d[idx]*1.5); ctx.moveTo(cx+Math.cos(ang)*r,cy+Math.sin(ang)*r); ctx.lineTo(x,y); } ctx.stroke(); }
+                
+                const path = new Path2D();
+                if(this.smooth){ 
+                    path.moveTo(pts[0].x,pts[0].y); 
+                    for(let i=1;i<pts.length-2;i++){ 
+                        const p0=pts[i-1], p1=pts[i], p2=pts[i+1];
+                        const cp1 = this.getCP(p0.x,p0.y,p1.x,p1.y,p2.x,p2.y);
+                        const cp2 = this.getCP(p1.x,p1.y,p2.x,p2.y,pts[i+2].x,pts[i+2].y);
+                        path.bezierCurveTo(cp1[2]|0, cp1[3]|0, cp2[0]|0, cp2[1]|0, p2.x, p2.y); 
+                    } 
+                    ctx.stroke(path); 
+                } else { 
+                    for(let i=0;i<bars;i++){ 
+                        const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*1.5), y=cy+Math.sin(ang)*(r+d[idx]*1.5); 
+                        path.moveTo((cx+Math.cos(ang)*r)|0,(cy+Math.sin(ang)*r)|0); path.lineTo(x|0,y|0); 
+                    } 
+                    ctx.stroke(path); 
+                }
             }
             drawBars(ctx,w,h,d){
                 const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=(window.innerWidth < 600) ? 0 : 10; ctx.shadowColor=col;
-                if(this.smooth){ ctx.beginPath(); ctx.moveTo(0,h); for(let i=0;i<cnt;i++){ const idx=Math.floor(i*step), v=d[idx], y=h-(v/255)*(h*0.8), x=i*sp+sp/2; if(i===0)ctx.lineTo(x,y); else { const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]/255)*(h*0.8); ctx.quadraticCurveTo(px,py,(px+x)/2,(py+y)/2); } } ctx.lineTo(w,h); ctx.fill(); }
-                else { for(let i=0;i<cnt;i++){ const idx=Math.floor(i*step), v=d[idx], bh=(v/255)*(h*0.8); ctx.fillRect(i*sp,h-bh,sp-2,bh); } }
+                const path = new Path2D();
+                if(this.smooth){ 
+                    path.moveTo(0,h); 
+                    for(let i=0;i<cnt;i++){ 
+                        const idx=Math.floor(i*step), v=d[idx], y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
+                        if(i===0) path.lineTo(x|0,y|0); 
+                        else { 
+                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]/255)*(h*0.8); 
+                            path.quadraticCurveTo(px|0, py|0, ((px+x)/2)|0, ((py+y)/2)|0); 
+                        } 
+                    } 
+                    path.lineTo(w,h); 
+                    ctx.fill(path); 
+                } else { 
+                    for(let i=0;i<cnt;i++){ 
+                        const idx=Math.floor(i*step), v=d[idx], bh=(v/255)*(h*0.8); 
+                        path.rect((i*sp)|0, (h-bh)|0, (sp-2)|0, bh|0); 
+                    } 
+                    ctx.fill(path);
+                }
             }
         };
 
@@ -3275,12 +3309,24 @@
                     }
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
+                    
                     if (data.time && data.timestamp) {
                         const localServerTime = Date.now() + (window.serverTimeOffset || 0);
                         const latency = Math.max(0, (localServerTime - data.timestamp) / 1000);
                         const expectedTime = data.time + latency + (this.manualOffset / 1000);
-                        if (Math.abs(window.audioSys.audio.currentTime - expectedTime) > 0.3) {
-                            window.audioSys.audio.currentTime = expectedTime;
+                        const drift = expectedTime - window.audioSys.audio.currentTime;
+
+                        // NTP Slewing: Avoid hard seeks if drift is minor. Catch up gracefully.
+                        if (Math.abs(drift) > 0.3) {
+                            window.audioSys.audio.currentTime = expectedTime; // Hard seek for massive desyncs
+                            window.audioSys.audio.playbackRate = window.audioSys.baseSpeed || 1.0;
+                        } 
+                        else if (Math.abs(drift) > 0.02) {
+                            // Slew Rate (Speed up or slow down by 5% to catch up perfectly)
+                            const slewRate = drift > 0 ? 1.05 : 0.95;
+                            window.audioSys.audio.playbackRate = (window.audioSys.baseSpeed || 1.0) * slewRate;
+                        } else {
+                            window.audioSys.audio.playbackRate = window.audioSys.baseSpeed || 1.0;
                         }
                     }
                 }
