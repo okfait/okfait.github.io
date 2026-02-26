@@ -107,8 +107,6 @@
         .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
         .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
         input[type=range].vol-slider {
-            appearance: none;
-            -webkit-appearance: none;
             writing-mode: vertical-lr;
             direction: rtl;
             width: 12px;
@@ -617,6 +615,13 @@
         #toast { position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 
+        #syncPopup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9); width: 280px; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; opacity: 0; pointer-events: none; transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1); z-index: 9999; }
+        #syncPopup.show { opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto; }
+        #syncPopup i { font-size: 40px; color: var(--accent); text-shadow: 0 0 20px var(--accent-glow); animation: pulse-glow 2s infinite; margin-bottom: 5px; }
+        #syncPopup .title { font-weight: 800; font-size: 16px; color: var(--text); }
+        #syncPopup .percent { font-weight: 700; font-size: 28px; color: var(--accent); font-variant-numeric: tabular-nums; }
+        @keyframes pulse-glow { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.95); } }
+
         @media (max-width: 600px) {
             .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
             .top-icon { width: 38px; height: 38px; font-size: 14px; }
@@ -634,6 +639,11 @@
     <div id="beat-flash"></div>
     <canvas id="vizCanvas"></canvas>
     <div id="toast"></div>
+    <div id="syncPopup" class="glass-modal">
+        <i class="fa-solid fa-cloud-arrow-down"></i>
+        <div class="title" id="syncPopupTitle">Downloading...</div>
+        <div class="percent" id="syncPopupPercent">0%</div>
+    </div>
 
     <!-- TOP BAR -->
     <div class="top-bar">
@@ -2849,6 +2859,26 @@
                 t.classList.add('show');
                 if(this.toastTimer) clearTimeout(this.toastTimer);
                 this.toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+            },
+            showSyncPopup(title, pct) {
+                const pop = $('syncPopup');
+                if(!pop) return;
+                const icon = pop.querySelector('i');
+                if (title.includes('Uploading') || title.includes('Streaming')) {
+                    icon.className = 'fa-solid fa-cloud-arrow-up';
+                } else {
+                    icon.className = 'fa-solid fa-cloud-arrow-down';
+                }
+                $('syncPopupTitle').innerText = title;
+                $('syncPopupPercent').innerText = pct;
+                pop.classList.add('show');
+            },
+            updateSyncPopup(pct) {
+                if($('syncPopupPercent')) $('syncPopupPercent').innerText = pct;
+            },
+            hideSyncPopup() {
+                const pop = $('syncPopup');
+                if(pop) pop.classList.remove('show');
             }
             
             // Helper: Convert Hex to RGBA
@@ -3306,9 +3336,12 @@
                         
                         // Update UI on host to show streaming progress
                         const status = $('syncStatus');
-                        if (status) status.innerText = `Streaming: ${Math.round(((i+1)/totalChunks)*100)}%`;
+                        const pct = Math.round(((i+1)/totalChunks)*100);
+                        if (status) status.innerText = `Streaming: ${pct}%`;
+                        window.ui.showSyncPopup("Streaming to Party...", pct + "%");
                     }
                     
+                    window.ui.hideSyncPopup();
                     const finalStatus = $('syncStatus');
                     if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
                 };
@@ -3331,6 +3364,7 @@
                         }
                     } else if (data.storageUrl || data.chunks) {
                         window.ui.showToast("Downloading Shared Track...");
+                        window.ui.showSyncPopup("Downloading Track...", "0%");
                         const status = $('syncStatus');
                         status.style.display = 'inline-block';
                         this.isDownloading = true; // Block STATUS seeking
@@ -3366,6 +3400,7 @@
                                         window.player.play(id, null, false);
                                     }
                                     status.innerText = `Party: ${this.sessionId}`;
+                                    window.ui.hideSyncPopup();
                                 });
                             });
                         };
@@ -3374,6 +3409,7 @@
                             fetch(fetchUrl).then(r=>r.blob()).then(processBlob).catch(e=>{ 
                                 console.error("Download failed", e); 
                                 this.isDownloading = false; 
+                                window.ui.hideSyncPopup();
                                 window.ui.showToast("CORS/Network Error: Download Failed");
                             });
                         } else if (data.chunks) {
@@ -3381,10 +3417,14 @@
                             let downloaded = 0;
                             const downloadNext = async (idx) => {
                                 if (this.lastCommandId !== currentSessionCommand) { this.isDownloading = false; return; }
-                                status.innerText = `Buffering: ${Math.round((downloaded / data.chunks) * 100)}%`;
+                                const pct = Math.round((downloaded / data.chunks) * 100);
+                                status.innerText = `Buffering: ${pct}%`;
+                                window.ui.updateSyncPopup(pct + "%");
+                                
                                 if(idx >= data.chunks) {
                                     status.innerText = "Processing...";
-                                    fetch(fullString).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; });
+                                    window.ui.updateSyncPopup("Processing...");
+                                    fetch(fullString).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; window.ui.hideSyncPopup(); });
                                     return;
                                 }
                                 const snap = await window.getDb(window.dbRef(window.db, `partyData/${this.sessionId}/${idx}`));
