@@ -3050,24 +3050,37 @@
                     setTimeout(() => window.ui.updateActiveIndicator(), 0);
                 }
                 
-                // Party Mode Broadcast Loop (Firebase Storage)
+                // Party Mode Broadcast Loop (Firebase Storage with Chunk Fallback)
                 if(window.partyMode && window.partyMode.active && window.db) {
                     // Instant Broadcast (clients who already have it don't wait for upload latency)
                     window.partyMode.broadcast({ type: 'PLAY', id: s.id, name: s.name, storageUrl: null, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
                     
-                    if(window.storage) {
-                        const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
-                        window.uploadBytes(sRef, s.blob).then(() => {
-                            window.getDownloadURL(sRef).then(downloadUrl => {
-                                if (window.player.currId === s.id) { // Race condition prevention!
+                    const tryUpload = async () => {
+                        if(window.storage) {
+                            try {
+                                const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
+                                await window.uploadBytes(sRef, s.blob);
+                                const downloadUrl = await window.getDownloadURL(sRef);
+                                if (window.player.currId === s.id) {
                                     window.partyMode.broadcast({
                                         type: 'PLAY', id: s.id, name: s.name, storageUrl: downloadUrl,
                                         beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
                                     });
                                 }
-                            });
-                        }).catch(e => console.error("Party Mode upload failed", e));
-                    }
+                                return true;
+                            } catch (e) {
+                                console.warn("Firebase Storage failed/blocked. Falling back to Chunks.", e);
+                                return false;
+                            }
+                        }
+                        return false;
+                    };
+
+                    tryUpload().then(success => {
+                        if (!success && window.player.currId === s.id) {
+                            window.partyMode.broadcastInChunks(s);
+                        }
+                    });
                 }
             }
             
@@ -3262,6 +3275,44 @@
                 window.setDb(window.dbRef(window.db, 'sessions/' + this.sessionId), {
                     ...data, timestamp: serverTime, sender: window.player.myId
                 });
+            }
+            
+            async broadcastInChunks(song) {
+                if (!window.db || !this.sessionId) return;
+                
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64 = e.target.result;
+                    const chunkSize = 1000 * 1024; // 1MB chunks
+                    const totalChunks = Math.ceil(base64.length / chunkSize);
+                    
+                    // 1. Purge old party data node
+                    await window.setDb(window.dbRef(window.db, `partyData/${this.sessionId}`), null);
+                    
+                    // 2. Broadcast the 'PLAY' intent with chunk count
+                    this.broadcast({
+                        type: 'PLAY', id: song.id, name: song.name, 
+                        chunks: totalChunks, 
+                        beatSignals: song.beatSignals || [], 
+                        speedPoints: song.speedPoints || []
+                    });
+                    
+                    // 3. Upload chunks
+                    for (let i = 0; i < totalChunks; i++) {
+                        if (window.player.currId !== song.id) break; // User switched songs!
+                        const start = i * chunkSize;
+                        const chunk = base64.substring(start, start + chunkSize);
+                        await window.setDb(window.dbRef(window.db, `partyData/${this.sessionId}/${i}`), chunk);
+                        
+                        // Update UI on host to show streaming progress
+                        const status = $('syncStatus');
+                        if (status) status.innerText = `Streaming: ${Math.round(((i+1)/totalChunks)*100)}%`;
+                    }
+                    
+                    const finalStatus = $('syncStatus');
+                    if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
+                };
+                reader.readAsDataURL(song.blob);
             }
             handleMessage(data) {
                 if(data.type === 'JOIN') window.ui.showToast("User Connected");
