@@ -106,7 +106,14 @@
         .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
         .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
         .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
-        input[type=range].vol-slider { -webkit-appearance: slider-vertical; width: 4px; height: 100%; accent-color: var(--accent); background: transparent; }
+        input[type=range].vol-slider {
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 12px;
+            height: 100px;
+            accent-color: var(--accent);
+            background: transparent;
+        }
 
         .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
         .left-panel { left: 0; transform: translateX(-110%); border-radius: 0 var(--radius-xl) var(--radius-xl) 0; }
@@ -3204,6 +3211,7 @@
                 this.connect();
             }
             connect() {
+                if(this.active) this.leave();
                 this.active = true;
                 $('partyBtn').classList.add('active');
                 $('syncStatus').innerText = `Party: ${this.sessionId}`;
