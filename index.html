@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.3.0 - Custom Drag</title>
+    <title>okMUSIC v2.5.0</title>
+    
+    <!-- PWA Manifest & Icons -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="importmap">
@@ -615,16 +620,7 @@
         #toast { position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 
-        #syncPopup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9); width: 280px; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; opacity: 0; pointer-events: none; transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1); z-index: 9999; }
-        #syncPopup.show { opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto; }
-        #syncPopup i { font-size: 40px; color: var(--accent); text-shadow: 0 0 20px var(--accent-glow); animation: pulse-glow 2s infinite; margin-bottom: 5px; }
-        #syncPopup .title { font-weight: 800; font-size: 16px; color: var(--text); }
-        #syncPopup .percent { font-weight: 700; font-size: 28px; color: var(--accent); font-variant-numeric: tabular-nums; }
-        @keyframes pulse-glow { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.95); } }
 
-        /* SYNC ACTIVE BLUR STATE */
-        body.sync-active #bg-layer, body.sync-active #vizCanvas { filter: blur(30px) opacity(0.5); transition: filter 0.5s, opacity 0.5s; }
-        body.sync-active .player-wrapper, body.sync-active .controls, body.sync-active .top-bar { filter: blur(15px); opacity: 0.3; pointer-events: none; transition: filter 0.5s, opacity 0.5s; }
 
         @media (max-width: 600px) {
             .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
@@ -643,15 +639,11 @@
     <div id="beat-flash"></div>
     <canvas id="vizCanvas"></canvas>
     <div id="toast"></div>
-    <div id="syncPopup" class="glass-modal">
-        <i class="fa-solid fa-cloud-arrow-down"></i>
-        <div class="title" id="syncPopupTitle">Downloading...</div>
-        <div class="percent" id="syncPopupPercent">0%</div>
-    </div>
+
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.3.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.5.0</span></div>
         <div class="flex gap-4">
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
@@ -731,7 +723,14 @@
             <!-- TRACK LIST CONTAINER -->
             <div id="libraryList" class="lib-grid-gap"></div>
             
-            <div class="mt-8 text-center">
+            <hr class="border-white/5 my-4">
+            <div class="px-2 pb-4 space-y-2">
+                <button onclick="window.libraryMgr.exportLibrary()" class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-download mr-2"></i> Export Library Data</button>
+                <button onclick="$('importLibraryInput').click()" class="w-full bg-white/5 hover:bg-white/10 text-white opacity-50 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-upload mr-2"></i> Import Library / Data</button>
+                <input type="file" id="importLibraryInput" accept=".json" class="hidden" onchange="window.libraryMgr.importLibrary(this)">
+            </div>
+
+            <div class="mt-2 text-center">
                  <button onclick="window.player.db.clearAll()" class="text-[10px] text-red-400 w-full text-center uppercase hover:text-white tracking-wider font-bold opacity-30 hover:opacity-100 transition pb-4">Factory Reset</button>
             </div>
         </div>
@@ -780,6 +779,10 @@
                     <span class="text-xs font-bold">Beat Flash</span>
                     <input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()" class="accent-[var(--accent)] w-5 h-5">
                 </div>
+                <div class="flex flex-col px-2 mt-2">
+                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Viz Sensitivity</span> <span id="vizSensVal" class="text-[var(--accent)]">1.0x</span></div>
+                    <input type="range" id="vizSensSlider" class="setting-slider" min="0.1" max="3.0" step="0.1" value="1.0" oninput="window.vizSens=parseFloat(this.value); $('vizSensVal').innerText=parseFloat(this.value).toFixed(1)+'x'; localStorage.setItem('sv_viz_sens', this.value);">
+                </div>
             </div>
             <hr class="border-white/5">
             <div class="space-y-6">
@@ -802,6 +805,22 @@
                     <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Warp (Pitch/Speed)</span> <span id="pitchVal" class="text-[var(--accent)]">1.0x</span></div>
                     <input type="range" class="setting-slider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="window.audioSys.setBaseSpeed(this.value)">
                 </div>
+                
+                <!-- EQ Presets -->
+                <div class="pt-2 border-t border-white/10 mt-2">
+                    <button onclick="const p=$('eqPresetsGroup'); p.style.display=p.style.display==='none'?'block':'none'" class="w-full text-left text-xs font-bold text-white/70 hover:text-white transition flex justify-between items-center mb-2">
+                        <span><i class="fa-solid fa-sliders mr-2"></i> EQ Presets</span> <i class="fa-solid fa-chevron-down mr-1"></i>
+                    </button>
+                    <div id="eqPresetsGroup" style="display:none;" class="space-y-2">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="window.audioSys.applyPreset('electronic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Electronic</button>
+                            <button onclick="window.audioSys.applyPreset('acoustic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Acoustic</button>
+                            <button onclick="window.audioSys.applyPreset('bass_boost')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Bass Boost</button>
+                            <button onclick="window.audioSys.applyPreset('vocal')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Vocal</button>
+                            <button onclick="window.audioSys.applyPreset('flat')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider col-span-2">Reset (Flat)</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="flex justify-between items-center bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
                     <span class="text-xs font-bold text-red-400 flex items-center gap-2"><i class="fa-solid fa-burst"></i> XTREME BASS</span>
                     <input type="checkbox" id="xtremeToggle" class="w-5 h-5 accent-red-500" onchange="window.audioSys.toggleXtreme()">
@@ -812,15 +831,22 @@
                 </div>
             </div>
             <div class="flex justify-between items-center pt-2 px-2">
-                <span class="text-xs font-bold">Auto DJ</span>
-                <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()">
+                <span class="text-xs font-bold">Auto DJ (Crossfade)</span>
+                <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()" checked>
             </div>
-            <div class="px-2 pb-4">
+            <div class="flex justify-between items-center pt-2 px-2">
+                <span class="text-xs font-bold text-[var(--accent)]">Host FX Override</span>
+                <input type="checkbox" id="hostFxToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked>
+            </div>
+            <div class="px-2 pb-2 mt-4">
                 <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Party Sync Offset</span> <span id="syncOffsetVal" class="text-[var(--accent)]">0ms</span></div>
                 <input type="range" id="syncOffsetSlider" class="setting-slider" min="-500" max="500" value="0" oninput="$('syncOffsetVal').innerText = this.value + 'ms'; window.partyMode.manualOffset = parseInt(this.value); localStorage.setItem('sv_party_sync', this.value);">
                 <p class="text-[9px] text-white/30 mt-1 leading-tight">Adjust if the phone visualizer is slightly early/late compared to PC.</p>
             </div>
-            <div class="text-center pt-4 pb-4">
+            
+
+            
+            <div class="text-center pt-4 pb-4 border-t border-white/5">
                 <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
             </div>
         </div>
@@ -941,10 +967,16 @@
         <h3 class="font-bold mb-3 text-[var(--accent)]" id="editorTitle">Edit Item</h3>
         <input type="text" id="editName" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-sm text-white outline-none focus:border-[var(--accent)] transition">
         
-        <!-- COLOR PICKER (Folders only) -->
         <div id="editColorContainer" class="hidden mb-4 p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
             <span class="text-xs font-bold uppercase">Folder Color</span>
             <input type="color" id="editColorInput" class="w-8 h-8 rounded-full border-0 p-0 bg-transparent cursor-pointer">
+        </div>
+
+        <div id="editArtContainer" class="hidden">
+            <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Cover Art URL (Optional)</label>
+            <input type="text" id="editArtUrl" placeholder="https://..." class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-[var(--accent)] transition mb-4">
+            
+            <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Or Upload Custom Cover Art</label>
         </div>
 
         <label class="block w-full p-4 border-2 border-dashed border-white/20 rounded-xl text-center cursor-pointer hover:bg-white/5 mb-6 transition">
@@ -978,11 +1010,35 @@
                 <p class="text-[10px] uppercase text-white/50 font-bold tracking-widest mb-1">Session Code</p>
                 <p id="activePartyCode" class="text-4xl font-black tracking-widest text-[var(--accent)] filter drop-shadow-[0_0_15px_var(--accent-glow)]"></p>
             </div>
+            
+            <div id="partySyncProgress" class="bg-white/5 border border-black/20 rounded-xl p-4 mb-4 text-center" style="display:none;">
+                <i id="partySyncIcon" class="fa-solid fa-cloud-arrow-down text-3xl text-[var(--accent)] mb-2 animate-bounce"></i>
+                <div id="partySyncTitle" class="text-xs font-bold text-white/70 mb-1">Downloading...</div>
+                <div id="partySyncPercent" class="text-xl font-black text-[var(--accent)]">0%</div>
+            </div>
+
+            <button onclick="window.partyMode.syncLibrary()" id="syncLibraryBtn" class="w-full bg-[var(--accent)] text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition mb-3" style="display:none;"><i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist</button>
             <button onclick="window.partyMode.leave()" class="w-full bg-red-500/20 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/40 transition">Leave Party</button>
         </div>
         
         <div class="mt-4 pt-4 border-t border-white/10">
             <button onclick="window.partyMode.toggleSetup()" class="text-xs text-white/50 hover:text-white font-bold transition">Close</button>
+        </div>
+    </div>
+
+    <!-- METADATA EDITOR MODAL -->
+    <div class="glass-modal" id="metaEditModal" style="display:none; width: 320px;">
+        <h3 class="font-bold mb-4 text-xl tracking-tight"><i class="fa-solid fa-pen text-[var(--accent)] mr-2"></i> Edit Track</h3>
+        
+        <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Track Name</label>
+        <input type="text" id="metaNameInput" class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm font-bold text-white outline-none focus:border-[var(--accent)] transition mb-4">
+        
+        <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Cover Art URL (Optional)</label>
+        <input type="text" id="metaArtInput" placeholder="https://..." class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm font-bold text-white outline-none focus:border-[var(--accent)] transition mb-4">
+        
+        <div class="flex gap-2 mt-2">
+            <button onclick="$('metaEditModal').style.display='none'" class="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2 rounded-lg transition text-xs">Cancel</button>
+            <button onclick="window.ui.saveMetadata()" class="flex-1 bg-[var(--accent)] hover:scale-105 text-black font-bold py-2 rounded-lg shadow-lg transition text-xs">Save Changes</button>
         </div>
     </div>
 
@@ -1273,6 +1329,47 @@
                     }
                 } catch(e) { console.error("Load shared lib error", e); status.style.display='none'; }
             }
+
+            async exportLibrary() {
+                try {
+                    const allSongs = window.player.songs;
+                    const exportData = { structure: this.structure, songs: [] };
+                    for (const s of allSongs) {
+                        const base64 = await new Promise(r => { const reader = new FileReader(); reader.onloadend = () => r(reader.result); reader.readAsDataURL(s.blob); });
+                        exportData.songs.push({ id: s.id, name: s.name, b64: base64, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
+                    }
+                    const jsonStr = JSON.stringify(exportData);
+                    const blob = new Blob([jsonStr], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `okMUSIC_Library_${Date.now()}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    window.ui.showToast("Library Exported!");
+                } catch (e) { console.error(e); window.ui.showToast("Export Failed!"); }
+            }
+
+            async importLibrary(input) {
+                if (!input.files || input.files.length === 0) return;
+                try {
+                    const file = input.files[0];
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    if (data && data.songs) {
+                        for (const s of data.songs) {
+                            if (!s.b64) continue;
+                            const res = await fetch(s.b64);
+                            const blob = await res.blob();
+                            blob.name = s.name + ".mp3";
+                            await window.player.db.add(blob, { beatSignals: s.beatSignals, speedPoints: s.speedPoints });
+                        }
+                        this.structure = data.structure || [];
+                        this.save();
+                        await window.player.loadLib();
+                        window.ui.showToast("Library Imported Successfully!");
+                    } else { window.ui.showToast("Invalid library file."); }
+                } catch(e) { console.error(e); window.ui.showToast("Import Failed!"); }
+            }
         };
 
         class AudioSystem {
@@ -1287,12 +1384,14 @@
                 if(this.globalAudio) localStorage.setItem('sv_bass',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.bassVal=v; window.player.db.update(window.player.currentTrack.id, {bassVal:v}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
+                this.broadcastFx();
             }
             setReverb(v){
                 if(this.ctx)this.revGain.gain.value=v/50; this.reverbVal=v; $('reverbVal').innerText=v+'%'; 
                 if(this.globalAudio) localStorage.setItem('sv_reverb',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.reverbVal=v; window.player.db.update(window.player.currentTrack.id, {reverbVal:v}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
+                this.broadcastFx();
             }
             setVolume(v){if(this.ctx)this.gain.gain.value=v;}
             setBaseSpeed(v){
@@ -1300,12 +1399,26 @@
                 if(this.globalAudio) localStorage.setItem('sv_pitch',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.baseSpeed=parseFloat(v); window.player.db.update(window.player.currentTrack.id, {baseSpeed:parseFloat(v)}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
+                this.broadcastFx();
             }
             toggleXtreme(){
                 const on=$('xtremeToggle').checked; this.xtremeOn = on;
                 if(this.ctx){this.bass.frequency.value=on?100:200; this.bass.Q.value=on?10:1;}
                 if(this.globalAudio) localStorage.setItem('sv_xtreme',on);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
+                this.broadcastFx();
+            }
+            
+            broadcastFx() {
+                if(window.partyMode && window.partyMode.active && window.partyMode.isHost && window.partyMode.hostFxOverride) {
+                    window.partyMode.broadcast({
+                        type: 'FX_SYNC',
+                        bass: this.bassVal,
+                        reverb: this.reverbVal,
+                        speed: this.baseSpeed,
+                        xtreme: this.xtremeOn
+                    });
+                }
             }
         };
 
@@ -1359,7 +1472,8 @@
                      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`; ctx.fillRect(-w, -h, w*3, h*3); 
                 }
                 ctx.clearRect(-w, -h, w*3, h*3);
-                let bass=0; for(let i=0;i<4;i++)bass+=buf[i]; bass/=4;
+                const sens = window.vizSens || 1.0;
+                let bass=0; for(let i=0;i<4;i++)bass+=buf[i]*sens; bass/=4;
                 if(this.flash){ 
                     const th=120; 
                     if(bass>th){const int=(bass-th)/(255-th); $('beat-flash').style.opacity=int*0.7;}else $('beat-flash').style.opacity=0; 
@@ -1402,13 +1516,14 @@
             drawRing(ctx,w,h,d){
                 const cx=w/2, cy=h/2-40, r=140, bars=100;
                 const lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/bars)||1;
+                const sens = window.vizSens || 1.0;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent');
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 if(this.xStrength > 0.2) { ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#ffffff"; } else { ctx.strokeStyle=col; ctx.shadowColor=col; }
                 ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
                 for(let i=0;i<bars;i++){ 
-                    const idx=Math.floor(i*step), v=d[idx], val=v*1.5, ang=(i/bars)*Math.PI*2; 
+                    const idx=Math.floor(i*step), v=d[idx]*sens, val=v*1.5, ang=(i/bars)*Math.PI*2; 
                     let x = cx+Math.cos(ang)*(r+val); let y = cy+Math.sin(ang)*(r+val);
                     if(this.xStrength > 0.01) {
                         const rad = (i/bars) * Math.PI * 2; const lobe = Math.sin(rad * 2 + Math.PI/4); const distortion = lobe > 0 ? lobe * 30 : lobe * 120; const dist = this.xStrength * distortion;
@@ -1430,7 +1545,7 @@
                     ctx.stroke(path); 
                 } else { 
                     for(let i=0;i<bars;i++){ 
-                        const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*1.5), y=cy+Math.sin(ang)*(r+d[idx]*1.5); 
+                        const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*sens*1.5), y=cy+Math.sin(ang)*(r+d[idx]*sens*1.5); 
                         path.moveTo((cx+Math.cos(ang)*r)|0,(cy+Math.sin(ang)*r)|0); path.lineTo(x|0,y|0); 
                     } 
                     ctx.stroke(path); 
@@ -1438,16 +1553,17 @@
             }
             drawBars(ctx,w,h,d){
                 const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
+                const sens = window.vizSens || 1.0;
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=isMobile ? 0 : 10; ctx.shadowColor=col;
                 const path = new Path2D();
                 if(this.smooth){ 
                     path.moveTo(0,h); 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx], y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
+                        const idx=Math.floor(i*step), v=d[idx]*sens, y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
                         if(i===0) path.lineTo(x|0,y|0); 
                         else { 
-                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]/255)*(h*0.8); 
+                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]*sens/255)*(h*0.8); 
                             path.quadraticCurveTo(px|0, py|0, ((px+x)/2)|0, ((py+y)/2)|0); 
                         } 
                     } 
@@ -1455,8 +1571,9 @@
                     ctx.fill(path); 
                 } else { 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx], bh=(v/255)*(h*0.8); 
+                        const idx=Math.floor(i*step), v=d[idx]*sens, bh=(v/255)*(h*0.8); 
                         path.rect((i*sp)|0, (h-bh)|0, (sp-2)|0, bh|0); 
+
                     } 
                     ctx.fill(path);
                 }
@@ -2818,18 +2935,22 @@
                 $('trackEditor').style.opacity='1'; $('trackEditor').style.pointerEvents='auto'; 
                 
                 const colorInputDiv = $('editColorContainer');
+                const artInputDiv = $('editArtContainer');
                 const colorInput = $('editColorInput');
                 
                 if(t==='song'){
                     const s=window.player.songs.find(x=>x.id===id); 
                     $('editorTitle').innerText="Edit Track"; 
                     $('editName').value=s?s.name:"";
+                    if($('editArtUrl')) $('editArtUrl').value=s?(s.customArtUrl||""):"";
                     colorInputDiv.classList.add('hidden');
+                    artInputDiv.classList.remove('hidden');
                 } else {
                     const f=window.libraryMgr.findItem(id); 
                     $('editorTitle').innerText="Edit Folder"; 
                     $('editName').value=f?f.name:"";
                     colorInputDiv.classList.remove('hidden');
+                    artInputDiv.classList.add('hidden');
                     colorInput.value = f.color || "#60a5fa";
                 } 
             }
@@ -2839,7 +2960,12 @@
             async saveEditor(){ 
                 const n=$('editName').value; 
                 if(this.editType==='song'){
-                    const u={name:n}; if(this.tempArt)u.art=this.tempArt; await window.player.db.update(this.editId,u); window.player.loadLib();
+                    const u={name:n}; 
+                    const customUrl = $('editArtUrl') ? $('editArtUrl').value.trim() : "";
+                    if(this.tempArt) u.art=this.tempArt; 
+                    else if(customUrl) { u.customArtUrl = customUrl; u.art = customUrl; }
+                    
+                    await window.player.db.update(this.editId,u); window.player.loadLib();
                 } else {
                     const u={name:n}; 
                     if(this.tempArt)u.art=this.tempArt; 
@@ -2865,28 +2991,25 @@
                 this.toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
             }
             showSyncPopup(title, pct) {
-                const pop = $('syncPopup');
+                const pop = $('partySyncProgress');
                 if(!pop) return;
-                const icon = pop.querySelector('i');
+                const icon = $('partySyncIcon');
                 if (title.includes('Uploading') || title.includes('Streaming')) {
-                    icon.className = 'fa-solid fa-cloud-arrow-up';
+                    icon.className = 'fa-solid fa-cloud-arrow-up text-3xl text-[var(--accent)] mb-2 animate-bounce';
                 } else {
-                    icon.className = 'fa-solid fa-cloud-arrow-down';
+                    icon.className = 'fa-solid fa-cloud-arrow-down text-3xl text-[var(--accent)] mb-2 animate-bounce';
                 }
-                $('syncPopupTitle').innerText = title;
-                $('syncPopupPercent').innerText = pct;
-                pop.classList.add('show');
-                document.body.classList.add('sync-active');
+                $('partySyncTitle').innerText = title;
+                $('partySyncPercent').innerText = pct;
+                pop.style.display = 'block';
+                $('partySetupModal').style.display = 'block';
             }
             updateSyncPopup(pct) {
-                if($('syncPopupPercent')) $('syncPopupPercent').innerText = pct;
+                if($('partySyncPercent')) $('partySyncPercent').innerText = pct;
             }
             hideSyncPopup() {
-                const pop = $('syncPopup');
-                if(pop) {
-                    pop.classList.remove('show');
-                    document.body.classList.remove('sync-active');
-                }
+                const pop = $('partySyncProgress');
+                if(pop) pop.style.display = 'none';
             }
             
             // Helper: Convert Hex to RGBA
@@ -3219,7 +3342,41 @@
                     window.audioSys.audio.playbackRate=window.curveEditor.getSpeedAt(pct)*window.audioSys.baseSpeed;
                     
                     if(this.autoDj && window.audioSys.audio.duration-window.audioSys.audio.currentTime<5 && !this.fading){
-                        this.fading=true; setTimeout(()=>{this.next(); this.fading=false;},4500);
+                        this.fading=true;
+                        
+                        // Dual-deck crossfade logic
+                        if (!window.fadeAudio) {
+                            window.fadeAudio = new Audio();
+                            window.fadeGain = window.audioSys.ctx.createGain();
+                            
+                            // To prevent CORS policy issues with AudioContext and MediaElementSource, 
+                            // crossOrigin must be anonymous if needed, but since we use blob URLs, it's fine.
+                            const src = window.audioSys.ctx.createMediaElementSource(window.fadeAudio);
+                            src.connect(window.fadeGain);
+                            window.fadeGain.connect(window.audioSys.analyzer);
+                        }
+                        
+                        // Swap tracks
+                        window.fadeAudio.src = window.audioSys.audio.src;
+                        window.fadeAudio.currentTime = window.audioSys.audio.currentTime;
+                        window.fadeAudio.play().catch(e=>console.log("Fader unallowed playback", e));
+                        
+                        let oldVol = window.audioSys.gain.gain.value || 1.0;
+                        window.fadeGain.gain.value = oldVol;
+                        
+                        const fadeOut = setInterval(() => {
+                            if (oldVol > 0.05) { oldVol -= 0.05; window.fadeGain.gain.value = oldVol; }
+                            else { window.fadeGain.gain.value = 0; clearInterval(fadeOut); window.fadeAudio.pause(); }
+                        }, 200);
+                        
+                        let newVol = 0;
+                        window.audioSys.gain.gain.value = 0;
+                        this.next(); // Load new track into main audio
+                        
+                        const fadeIn = setInterval(() => {
+                            if (newVol < 1.0) { newVol += 0.05; window.audioSys.gain.gain.value = newVol; }
+                            else { window.audioSys.gain.gain.value = 1.0; clearInterval(fadeIn); this.fading = false; }
+                        }, 200);
                     }
                 }
             }
@@ -3255,6 +3412,7 @@
                     $('partySetupInitial').style.display = 'none';
                     $('partySetupActive').style.display = 'block';
                     $('activePartyCode').innerText = this.sessionId;
+                    $('syncLibraryBtn').style.display = 'block';
                 } else {
                     $('partySetupInitial').style.display = 'block';
                     $('partySetupActive').style.display = 'none';
@@ -3323,6 +3481,57 @@
                 window.setDb(window.dbRef(window.db, 'sessions/' + this.sessionId), {
                     ...data, timestamp: serverTime, sender: window.player.myId
                 });
+            }
+
+            syncLibrary() {
+                if (!this.active) return;
+                if (!this.isHost) {
+                    this.broadcast({type: 'REQ_SYNC_ALL'});
+                    window.ui.showToast("Requested full sync from Host...");
+                    return;
+                }
+                
+                const btn = $('syncLibraryBtn');
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+                
+                const pushAll = async () => {
+                    const payload = [];
+                    for(const s of window.player.songs) {
+                        try {
+                            const sRef = window.storageRef(window.storage, `partyData/${this.sessionId}/${s.id}.mp3`);
+                            await window.uploadBytes(sRef, s.blob);
+                            const downloadUrl = await window.getDownloadURL(sRef);
+                            payload.push({id: s.id, name: s.name, storageUrl: downloadUrl, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                        } catch(e) { console.error("Failed to host song chunk", e); }
+                    }
+                    this.broadcast({type: 'SYNC_ALL', songs: payload});
+                    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist';
+                    window.ui.showToast("Playlist Sync Broadcasted!");
+                };
+                pushAll();
+            }
+
+            async processSyncAll(songs) {
+                $('syncStatus').style.display = 'inline-block';
+                $('partySetupModal').style.display = 'none';
+                
+                let count = 0;
+                for(const s of songs) {
+                    count++;
+                    $('syncStatus').innerText = `Syncing ${count}/${songs.length}`;
+                    try {
+                        const existing = window.player.songs.find(x => x.id === s.id || x.name === s.name);
+                        if (!existing) {
+                            const res = await fetch(s.storageUrl);
+                            const blob = await res.blob();
+                            blob.name = s.name + ".mp3";
+                            await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                        }
+                    } catch(e) { console.error(e); }
+                }
+                await window.player.loadLib();
+                $('syncStatus').innerText = "Playlist Synced!";
+                setTimeout(() => $('syncStatus').style.display='none', 3000);
             }
             
             async broadcastInChunks(song) {
@@ -3501,6 +3710,22 @@
                         }
                     }
                 }
+                else if (data.type === 'FX_SYNC' && !this.isHost) {
+                    const sl = document.querySelectorAll('.setting-slider');
+                    if (data.bass !== undefined) { sl[1].value = data.bass; window.audioSys.setBass(data.bass); }
+                    if (data.reverb !== undefined) { sl[2].value = data.reverb; window.audioSys.setReverb(data.reverb); }
+                    if (data.speed !== undefined) { sl[3].value = data.speed; window.audioSys.setBaseSpeed(data.speed); }
+                    if (data.xtreme !== undefined) { $('xtremeToggle').checked = data.xtreme; window.audioSys.toggleXtreme(); }
+                    window.ui.showToast("Host adjusted audio FX");
+                }
+                else if (data.type === 'SYNC_ALL' && !this.isHost) {
+                    window.ui.showToast("Downloading exact Host Playlist...");
+                    this.processSyncAll(data.songs);
+                }
+                else if (data.type === 'REQ_SYNC_ALL' && this.isHost) {
+                    window.ui.showToast("A Client requested Full Sync...");
+                    this.syncLibrary();
+                }
             }
         };
 
@@ -3557,6 +3782,15 @@
         const playlistParam = urlParams.get('playlist');
         if(playlistParam && window.libraryMgr) {
             setTimeout(() => window.libraryMgr.loadSharedLibrary(playlistParam), 1500);
+        }
+
+        // PWA SERVICE WORKER
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('SW registered!', reg);
+                }).catch(err => console.log('SW failed', err));
+            });
         }
     </script>
 </body>
