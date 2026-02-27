@@ -1,1083 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.6.0</title>
-    
-    <!-- PWA Manifest & Icons -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1a1a1a">
-    <link rel="apple-touch-icon" href="icon-192.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script type="importmap">
-        {
-            "imports": {
-                "ogl": "https://unpkg.com/ogl@1.0.3/src/index.mjs"
-            }
-        }
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@500&display=swap');
-        
-        :root {
-            --glass-base: rgba(255, 255, 255, 0.01);
-            --glass-highlight: rgba(255, 255, 255, 0.08);
-            --glass-shadow: rgba(0, 0, 0, 0.2);
-            --text: rgba(255, 255, 255, 0.95);
-            --text-dim: rgba(255, 255, 255, 0.6);
-            --accent: #60a5fa;
-            --accent-glow: rgba(96, 165, 250, 0.5);
-            --bg-hue: 220;
-            --radius-lg: 32px;
-            --radius-xl: 42px;
-        }
 
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
-
-        body {
-            font-family: 'Outfit', sans-serif;
-            background-color: #000;
-            color: var(--text);
-            overflow: hidden;
-            user-select: none;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* LAYERS - MAX VIBRANCY */
-        #bg-layer { 
-            position: absolute; 
-            inset: -50%; 
-            width: 200%; 
-            height: 200%; 
-            background: 
-                radial-gradient(circle at 50% 50%, hsl(var(--bg-hue), 90%, 25%) 0%, transparent 60%),
-                conic-gradient(from 0deg at 50% 50%, #000, hsl(var(--bg-hue), 80%, 15%), #000);
-            opacity: 0.3; 
-            z-index: -3; 
-            transition: background 0.8s ease-out; 
-            animation: spin-slow 90s linear infinite; 
-            mix-blend-mode: screen;
-        }
-        #bg-base {
-            position: absolute; inset: 0; background: #050508; z-index: -4;
-        }
-        #bg-layer { position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background-size: cover; background-position: center; mix-blend-mode: overlay; opacity: 0.15; filter: blur(30px); animation: spin-slow 90s linear infinite; z-index: -3; }
-        @keyframes spin-slow { 100% { transform: rotate(360deg); } }
-        
-        #beat-flash { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 800px; height: 800px; background: radial-gradient(closest-side, var(--accent) 0%, transparent 100%); mix-blend-mode: screen; opacity: 0; pointer-events: none; z-index: -2; transition: opacity 0.1s ease-out; border-radius: 50%; filter: blur(40px); }
-        #vizCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; filter: drop-shadow(0 0 10px var(--accent-glow)); }
-
-        /* UI COMPONENTS */
-        .glass-panel { background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); -webkit-backdrop-filter: blur(8px) saturate(110%); box-shadow: inset 1px 1px 0 0 rgba(255,255,255,0.05), inset -0.5px -0.5px 0 0 rgba(255,255,255,0.01), 0 20px 40px -5px rgba(0,0,0,0.3); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.05); }
-        .glass-panel:active { transform: scale(0.995); }
-        .controls.glass-panel:active { transform: translateX(-50%) scale(0.995); }
-
-        .top-bar { position: absolute; top: 0; left: 0; right: 0; padding: 24px; display: flex; justify-content: space-between; align-items: center; z-index: 50; }
-        .top-icon { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); transition: 0.2s; color: var(--text); }
-        .top-icon:hover { background: rgba(255,255,255,0.15); transform: scale(0.96); }
-        .top-icon.listening { border-color: #ef4444; color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); animation: pulse-red 1.5s infinite; }
-        @keyframes pulse-red { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-        .player-wrapper { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 420px; z-index: 10; transition: transform 0.05s; }
-        .art-container { position: relative; width: 260px; height: 260px; margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; }
-        .album-art { width: 100%; height: 100%; background-size: cover; background-position: center; border-radius: 32px; box-shadow: 0 20px 50px -10px rgba(0,0,0,0.6); position: relative; z-index: 5; border: 1px solid rgba(255,255,255,0.1); transition: border-radius 0.4s; background-color: #111; display: flex; align-items: center; justify-content: center; }
-        .album-art.circle { border-radius: 50%; width: 220px; height: 220px; }
-        .track-info { text-align: center; width: 100%; padding: 0 20px; }
-        .track-title { font-size: 1.75rem; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; text-shadow: none; color: white; }
-        .track-meta { font-size: 0.85rem; font-weight: 600; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
-
-        .scrubber { width: 100%; margin-top: 20px; padding: 0 30px; position: relative; }
-        input[type=range] { appearance: none; -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
-        /* UPDATED: Brighter track */
-        input[type=range].seek-bar::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255,255,255,0.3); border-radius: 99px; backdrop-filter: blur(4px); }
-        /* UPDATED: Theme colored thumb */
-        input[type=range].seek-bar::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; margin-top: -3px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.2s; }
-        input[type=range].seek-bar:hover::-webkit-slider-thumb { transform: scale(1.3); }
-        .time-labels { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); margin-top: 8px; font-weight: 500;}
-
-        .controls { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 24px; padding: 14px 40px; border-radius: 99px; z-index: 50; }
-        .btn { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); color: var(--text); font-size: 18px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-        .btn:hover { background: rgba(255,255,255,0.1); transform: scale(0.95); color: white; }
-        .btn.main { width: 68px; height: 68px; font-size: 26px; background: white; color: black; box-shadow: 0 0 25px var(--accent-glow); border: none; }
-        .btn.main:hover { transform: scale(0.98); background: #eee; }
-        .btn.active { color: var(--accent); background: rgba(96, 165, 250, 0.1); border-color: var(--accent); }
-
-        .vol-container { position: relative; display: flex; align-items: center; justify-content: center; height: 48px; }
-        .vol-popup { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); width: 36px; height: 120px; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; padding: 15px 0; opacity: 0; pointer-events: none; transition: opacity 0.3s ease 1.0s; z-index: 100; }
-        .vol-bridge { position: absolute; bottom: -30px; left: -40px; right: -40px; height: 120px; z-index: 10; }
-        .vol-container:hover .vol-popup, .vol-popup:hover { opacity: 1; pointer-events: auto; transition-delay: 0s; }
-        input[type=range].vol-slider {
-            writing-mode: vertical-lr;
-            direction: rtl;
-            width: 12px;
-            height: 100px;
-            accent-color: var(--accent);
-            background: transparent;
-        }
-
-        .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
-        .left-panel { left: 0; transform: translateX(-110%); border-radius: 0 var(--radius-xl) var(--radius-xl) 0; }
-        .right-panel { right: 0; transform: translateX(110%); border-radius: var(--radius-xl) 0 0 var(--radius-xl); }
-        .side-panel.open { transform: translateX(0); }
-        .panel-header { padding: 24px; display: flex; justify-content: space-between; align-items: center; font-weight: 800; letter-spacing: 1px; color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .panel-content { padding: 20px; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; }
-        
-        /* SCROLL MASK - FADE TOP */
-        .fade-mask {
-            mask-image: linear-gradient(to bottom, transparent 0%, black 30px, black 100%);
-            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30px, black 100%);
-        }
-
-        .setting-row { margin-bottom: 20px; }
-        .setting-label { font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; display: block; }
-        input[type=range].setting-slider { appearance: none; -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
-        input[type=range].setting-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; height: 16px; width: 16px; margin-top: -6px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.1s; }
-        input[type=range].setting-slider:hover::-webkit-slider-thumb { transform: scale(1.2); }
-
-        /* Unified Transparent Glass Modal Style */
-        .glass-modal { 
-            background: rgba(255, 255, 255, 0.01); 
-            backdrop-filter: blur(10px) saturate(110%); 
-            -webkit-backdrop-filter: blur(10px) saturate(110%);
-            border-radius: 32px; 
-            box-shadow: 0 40px 80px rgba(0,0,0,0.4); 
-            border: 1px solid rgba(255,255,255,0.08); 
-            z-index: 10000 !important; 
-        }
-        
-        
-        /* BASS RIPPLE EFFECT */
-        .bass-ripple {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: transparent;
-            border: 8px solid var(--accent);
-            opacity: 0.8;
-            pointer-events: none;
-            z-index: -2;
-            animation: ripple-out 1s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
-            filter: blur(4px);
-            mix-blend-mode: screen;
-        }
-        @keyframes ripple-out {
-            0% { width: 50px; height: 50px; opacity: 0.8; border-width: 12px; }
-            100% { width: 1200px; height: 1200px; opacity: 0; border-width: 0; }
-        }.tag { font-size: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); color: white; font-weight: 700; }
-        .pad { width: 100px; height: 100px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-weight: 800; font-size: 24px; color: var(--accent); transition: 0.1s; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        .pad:active { background: var(--accent); color: black; transform: scale(0.95); box-shadow: 0 0 20px var(--accent); }
-        
-        .preset-chip { padding: 4px 10px; background: rgba(255,255,255,0.1); border-radius: 12px; font-size: 10px; cursor: pointer; white-space: nowrap; margin-right: 5px; }
-        .preset-chip:hover { background: var(--accent); color: white; }
-
-        /* NEW LIBRARY STYLES (Brand New) */
-        .lib-search-container {
-            position: relative;
-            margin-bottom: 20px;
-        }
-        .lib-search-input {
-            width: 100%;
-            background: rgba(255,255,255,0.08); /* Slightly lighter base */
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 99px; /* PILL SHAPE */
-            padding: 12px 12px 12px 42px;
-            color: white;
-            font-size: 13px;
-            font-weight: 600;
-            outline: none;
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); /* Smoother transition */
-        }
-        .lib-search-input:focus {
-            background: rgba(255,255,255,0.15);
-            border-color: var(--accent);
-            box-shadow: 0 0 20px var(--accent-glow);
-        }
-        .lib-search-icon {
-            position: absolute;
-            left: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255,255,255,0.4);
-            pointer-events: none;
-            transition: 0.3s;
-        }
-        .lib-search-input:focus + .lib-search-icon {
-            color: var(--accent);
-        }
-
-        .lib-grid-gap { display: flex; flex-direction: column; gap: 8px; position: relative; padding-bottom: 20px; }
-
-        /* ACTIVE INDICATOR (Floating Border) */
-        #active-indicator {
-            position: absolute;
-            left: 0;
-            width: 100%;
-            height: 60px; 
-            background: linear-gradient(90deg, rgba(96, 165, 250, 0.2) 0%, rgba(96, 165, 250, 0.05) 100%);
-            border-left: 4px solid var(--accent);
-            border-radius: 24px;
-            pointer-events: none;
-            z-index: 0; /* Behind cards */
-            display: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-            /* PERFORMANCE: Use transition ONLY. No WAAPI needed for simple glides. */
-            transition: top 0.4s cubic-bezier(0.25, 1, 0.5, 1), height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease;
-            will-change: top, height;
-        }
-        /* Disable transition during drag/animation loops to prevent lag */
-        #active-indicator.no-transition {
-            transition: none !important;
-        }
-        
-        /* ---------------------------------------------------- */
-        /* NEW: CUSTOM DRAG & DROP STYLES (Proxy + Marker) */
-        /* ---------------------------------------------------- */
-
-        /* 1. Drag Insertion Line (Smooth) */
-        #drag-marker {
-            position: absolute;
-            left: 10px; right: 10px;
-            height: 4px; /* Visible thickness */
-            background: var(--accent);
-            box-shadow: 0 0 15px var(--accent), 0 0 5px white; /* Neon Glow */
-            border-radius: 4px;
-            z-index: 100;
-            pointer-events: none;
-            opacity: 0; /* Hidden by default */
-            /* Crucial for smoothness: Animate Top change */
-            transition: top 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease; 
-        }
-
-        /* 2. Drag Proxy (The "Mini Card") */
-        /* This replaces the default browser ghost image */
-        .lib-drag-proxy {
-            position: absolute; 
-            top: -9999px; left: -9999px; /* Start off-screen */
-            width: 200px; 
-            height: 44px;
-            background: rgba(255,255,255,0.05); /* Clear glass */
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--accent);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            padding: 0 12px;
-            gap: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.4); 
-            z-index: 99999;
-            color: white;
-            font-family: 'Outfit', sans-serif;
-            pointer-events: none; /* Ignore clicks */
-        }
-        .lib-drag-proxy i { color: var(--accent); font-size: 14px; }
-        .lib-drag-proxy span { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        
-        /* ---------------------------------------------------- */
-
-        /* Song Card */
-        .lib-card {
-            display: flex;
-            align-items: center;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.05);
-            padding: 10px;
-            border-radius: 24px; 
-            cursor: pointer;
-            transition: background 0.3s, border 0.3s, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            z-index: 1; /* Above indicator */
-            min-height: 64px; /* CRITICAL: Fixed min-height ensures centering works when content shrinks */
-        }
-        .lib-card:hover {
-            background: rgba(255,255,255,0.08);
-            border-color: rgba(255,255,255,0.15);
-            transform: scale(1.02) translateX(4px);
-            z-index: 10;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
-        }
-        /* Active state - transparent to show indicator */
-        .lib-card.active {
-            background: transparent !important; 
-            border-color: transparent !important;
-            box-shadow: none !important;
-        }
-        
-        .lib-card-icon {
-            width: 38px; height: 38px;
-            border-radius: 14px; 
-            background: rgba(255,255,255,0.05);
-            display: flex; align-items: center; justify-content: center;
-            margin-right: 14px;
-            color: var(--text-dim);
-            flex-shrink: 0;
-            font-size: 12px;
-            /* SMOOTH ICON TRANSITION */
-            transition: background 0.4s ease, color 0.4s ease, transform 0.4s ease;
-        }
-        
-        .lib-card.active .lib-card-icon {
-            background: var(--accent);
-            color: black;
-            box-shadow: 0 0 15px var(--accent-glow);
-            transform: scale(1.05);
-        }
-
-        .lib-card-info { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; height: 100%; }
-        
-        /* Updated Static Text Glow (No Box, No Pulse) */
-        .lib-card-title { 
-            font-size: 13px; 
-            font-weight: 700; 
-            color: white; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
-            letter-spacing: 0.2px; 
-            z-index: 2; 
-            background: transparent !important; /* Ensure no box */
-            transition: color 0.3s, filter 0.5s ease;
-            position: relative;
-            /* Initial offset removed, handled by flexbox centering now */
-        }
-        
-        .lib-card.active .lib-card-title { 
-            color: var(--accent); 
-            filter: drop-shadow(0 0 8px var(--accent)); /* Soft Neon Glow */
-        }
-
-        /* HIGHLIGHT CLASS FOR SEARCH */
-        .text-highlight {
-            color: var(--accent);
-            text-shadow: 0 0 10px var(--accent-glow);
-            font-weight: 800;
-        }
-        
-        /* NEW SUB TEXT HANDLING - REFACTORED FOR PERFECT CENTERING */
-        .lib-card-sub-container {
-            height: 14px; 
-            overflow: hidden;
-            transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1), margin-top 0.5s ease, opacity 0.4s ease;
-            margin-top: 2px;
-            opacity: 1;
-        }
-        
-        /* THE ANIMATION STATE - COLLAPSE TO ZERO */
-        .lib-card.is-centered .lib-card-sub-container {
-            height: 0;
-            margin-top: 0;
-            opacity: 0;
-        }
-
-        .lib-card-sub { 
-            font-size: 10px; 
-            font-weight: 600; 
-            color: var(--text-dim); 
-            text-transform: uppercase; 
-            letter-spacing: 0.5px; 
-            display: flex;
-            align-items: center;
-        }
-
-        /* Folder Accordion - Grid Animation */
-        .lib-folder {
-            border-radius: 24px; /* Smoother corners */
-            overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.05);
-            background: rgba(255,255,255,0.02);
-            margin-bottom: 6px;
-            transition: background-color 0.3s;
-            position: relative;
-            z-index: 1;
-        }
-        /* SMALLER HITBOX RESTORED */
-        .lib-folder-header {
-            padding: 12px 14px; /* RESTORED PADDING */
-            border-radius: 24px; 
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            cursor: pointer;
-            background: transparent;
-            transition: 0.2s;
-            position: relative;
-            z-index: 2; /* Keep header clickable */
-        }
-        .lib-folder-header:hover { background: rgba(255,255,255,0.05); }
-        .lib-folder-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
-        
-        /* Grid based animation wrapper */
-        .lib-folder-content { 
-            display: grid;
-            grid-template-rows: 0fr;
-            transition: grid-template-rows 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-            background: rgba(255,255,255,0.01);
-        }
-        .lib-folder-content.open { 
-            grid-template-rows: 1fr;
-        }
-        .lib-folder-inner {
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            padding: 0 4px; /* Add padding for inner items */
-        }
-        /* Fix padding bottom when open to show last item */
-        .lib-folder-content.open .lib-folder-inner {
-            padding-bottom: 6px;
-            padding-top: 4px;
-        }
-
-        /* Empty State */
-        .lib-empty {
-            height: 200px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border: 2px dashed rgba(255,255,255,0.1);
-            border-radius: 32px; /* Very round */
-            margin-top: 20px;
-            transition: 0.2s;
-            cursor: pointer;
-        }
-        .lib-empty:hover { border-color: var(--accent); background: rgba(96, 165, 250, 0.05); }
-        .lib-empty i { font-size: 32px; margin-bottom: 12px; opacity: 0.3; }
-        .lib-empty span { font-size: 12px; font-weight: 700; opacity: 0.5; text-transform: uppercase; letter-spacing: 1px; }
-
-        /* Quick Actions */
-        .quick-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-        .q-btn {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.05);
-            padding: 10px;
-            border-radius: 99px; /* PILL BUTTONS */
-            color: var(--text-dim);
-            font-size: 14px;
-            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-            cursor: pointer;
-        }
-        .q-btn:hover { background: rgba(255,255,255,0.15); color: white; transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
-        .q-btn.active { background: var(--accent); color: black; box-shadow: 0 0 15px var(--accent-glow); border-color: var(--accent); }
-
-        
-        /* HEADER & MODAL BUTTONS */
-        .panel-header .action-btn, 
-        .glass-modal .action-btn { 
-            opacity: 1;
-            font-size: 14px;
-            background: rgba(255,255,255,0.05);
-            margin-left: 4px;
-            width: 32px; height: 32px;
-            display: flex; align-items: center; justify-content: center;
-            border-radius: 50%;
-            color: white;
-            transition: 0.2s;
-        }
-        .panel-header .action-btn:hover,
-        .glass-modal .action-btn:hover {
-            background: var(--accent);
-            opacity: 1;
-            color: black;
-        }
-
-        /* DISPLAY MODE OVERRIDES */
-        body.display-mode .controls, 
-        body.display-mode .side-panel,
-        body.display-mode .glass-modal, 
-        body.display-mode #partySetupModal { display: none !important; }
-        
-        /* Hide everything in top bar except the displayModeBtn itself */
-        body.display-mode .top-bar .text-2xl { opacity: 0; pointer-events: none; }
-        body.display-mode .top-bar .top-icon:not(#displayModeBtn) { display: none; }
-        
-        body.display-mode #vizCanvas { z-index: 0; filter: drop-shadow(0 0 20px var(--accent-glow)); }
-
-        /* PARTY MODE MODAL */
-        #partySetupModal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 30px; width: 340px; z-index: 10050; text-align: center; }
-        
-        /* CONTEXT MENU STYLE */
-        #contextMenu {
-            position: absolute;
-            background: rgba(30, 30, 40, 0.95);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 8px;
-            z-index: 9999;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            min-width: 160px;
-            display: none;
-            flex-direction: column;
-            gap: 4px;
-        }
-        
-        .ctx-item {
-            padding: 10px 16px;
-            font-size: 13px;
-            color: white;
-            cursor: pointer;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            transition: 0.2s;
-            font-weight: 500;
-        }
-        
-        .ctx-item:hover {
-            background: var(--accent);
-            color: black;
-        }
-        
-        .ctx-item.delete:hover {
-            background: #ef4444;
-            color: white;
-        }
-
-        /* DRAG INDICATORS */
-        .drag-highlight { border-color: var(--accent) !important; background: rgba(96, 165, 250, 0.1) !important; }
-
-        /* --- TIMELINE EDITOR STYLES --- */
-        .mode-toggle-container {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 20px;
-            background: rgba(255,255,255,0.05);
-            padding: 6px;
-            border-radius: 99px;
-            width: fit-content;
-            margin-left: auto; 
-            margin-right: auto;
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-
-        .mode-pill {
-            padding: 8px 24px;
-            border-radius: 99px;
-            font-weight: 800;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            background: transparent;
-            border: 1px solid transparent;
-            color: rgba(255,255,255,0.4);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-        }
-
-        .mode-pill:hover { color: white; background: rgba(255,255,255,0.05); }
-
-        .mode-pill.speed.active { background: var(--accent); color: #000; box-shadow: 0 0 25px var(--accent-glow); border-color: var(--accent); transform: scale(1.05); }
-        .mode-pill.beat.active { background: #fbbf24; color: #000; box-shadow: 0 0 25px rgba(251, 191, 36, 0.4); border-color: #fbbf24; transform: scale(1.05); }
-        .mode-pill.trigger.active { background: #4ade80; color: #000; box-shadow: 0 0 25px rgba(74, 222, 128, 0.4); border-color: #4ade80; transform: scale(1.05); }
-        
-        .cursor-grab { cursor: ew-resize !important; }
-        .cursor-delete { cursor: not-allowed !important; } 
-
-        .tilt-toggle { color: rgba(255,255,255,0.3); transition: 0.2s; cursor: pointer; }
-        .tilt-toggle.active { color: #4ade80; text-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
-        
-        /* SCAN FEEDBACK POPUP */
-        .scan-popup-content {
-            position: absolute;
-            top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(20, 20, 20, 0.9);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
-            padding: 15px 25px;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            width: 300px;
-            opacity: 0; pointer-events: none;
-            transition: opacity 0.2s;
-        }
-        .scan-popup-content.active { opacity: 1; pointer-events: auto; }
-        
-        /* DISPLAY MODE & TOASTS */
-        .display-mode .top-bar, .display-mode .controls, .display-mode .side-panel { opacity: 0; pointer-events: none; transition: opacity 0.5s; }
-        .display-mode .player-wrapper { max-width: 100vw; transform: translate(-50%, -50%) scale(0.9); }
-        .display-mode { overflow-y: auto !important; touch-action: pan-y !important; }
-        
-        #toast { position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
-        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-
-
-
-        @media (max-width: 600px) {
-            .top-bar { padding: 12px; flex-wrap: wrap; gap: 8px; justify-content: space-around; }
-            .top-icon { width: 38px; height: 38px; font-size: 14px; }
-            .controls { padding: 10px 16px; gap: 12px; width: 95%; max-width: 360px; }
-            .btn { width: 44px; height: auto; font-size: 16px; aspect-ratio: 1/1; flex-shrink: 0; }
-            .btn.main { width: 56px; height: auto; font-size: 20px; aspect-ratio: 1/1; flex-shrink: 0; }
-        }
-    </style>
-</head>
-<body>
-
-    <!-- LAYERS -->
-    <div id="bg-base"></div>
-    <div id="bg-layer"></div>
-    <div id="beat-flash"></div>
-    <canvas id="vizCanvas"></canvas>
-    <div id="toast"></div>
-
-
-    <!-- TOP BAR -->
-    <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.5.0</span></div>
-        <div class="flex gap-4">
-            <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
-            <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
-            <button onclick="window.voiceControl.toggle()" class="top-icon" id="micBtn" title="Voice Control"><i class="fa-solid fa-microphone"></i></button>
-            <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
-            <button onclick="window.ui.toggleSettings()" class="top-icon" title="Settings"><i class="fa-solid fa-sliders"></i></button>
-        </div>
-    </div>
-
-    <!-- CENTER PLAYER -->
-    <div class="player-wrapper" id="playerWrapper">
-        <div class="art-container" id="artContainer">
-            <div class="album-art circle glass-panel" id="albumArt">
-                <i class="fa-solid fa-music text-6xl opacity-20" id="artPlaceholder"></i>
-            </div>
-        </div>
-
-        <div class="track-info">
-            <div class="flex justify-center gap-2 mb-3" id="metaTags"></div>
-            <div class="track-title truncate" id="trackTitle">Select Track</div>
-            <!-- REMOVED "Local Audio" TEXT -->
-            <div class="track-meta" id="trackArtist"></div>
-            <div id="syncStatus"></div>
-        </div>
-
-        <div class="scrubber">
-            <input type="range" class="seek-bar" id="progressBar" min="0" max="100" value="0">
-            <div class="time-labels">
-                <span id="currTime">0:00</span>
-                <span id="totTime">--:--</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- CONTROLS -->
-    <div class="controls glass-panel">
-        <button class="btn" onclick="window.player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
-        <button class="btn" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
-        
-        <button class="btn" onclick="window.player.prev()"><i class="fa-solid fa-backward-step"></i></button>
-        <button class="btn main" onclick="window.player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
-        <button class="btn" onclick="window.player.next()"><i class="fa-solid fa-forward-step"></i></button>
-        
-        <div class="vol-container">
-            <div class="vol-bridge"></div>
-            <div class="vol-popup">
-                <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="window.audioSys.setVolume(this.value)">
-            </div>
-            <button class="btn"><i class="fa-solid fa-volume-high"></i></button>
-        </div>
-    </div>
-
-    <!-- NEW LIBRARY PANEL -->
-    <aside class="side-panel left-panel" id="libraryPanel">
-        <!-- HEADER -->
-        <div class="panel-header" ondrop="window.ui.handleRootDrop(event)" ondragover="event.preventDefault();">
-            <span>COLLECTION</span>
-            <button onclick="window.ui.toggleLibrary()" class="action-btn"><i class="fa-solid fa-xmark text-white"></i></button>
-        </div>
-        
-        <div class="panel-content custom-scrollbar fade-mask relative pb-4">
-            <!-- QUICK ACTIONS (Restored to Top) -->
-            <div class="quick-actions" style="grid-template-columns: repeat(5, 1fr);">
-                <button onclick="document.getElementById('fileInput').click()" class="q-btn" title="Add Files"><i class="fa-solid fa-plus"></i></button>
-                <button onclick="window.libraryMgr.openFolderModal()" class="q-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
-                <button onclick="window.libraryMgr.shareLibrary()" id="shareLibBtn" class="q-btn" title="Share Library"><i class="fa-solid fa-share-nodes"></i></button>
-                <button onclick="window.player.toggleShuffle()" id="shuffleBtn" class="q-btn" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
-                <button onclick="window.ui.toggleSelectMode()" id="selectBtn" class="q-btn" title="Select Multiple"><i class="fa-solid fa-check-double"></i></button>
-            </div>
-
-            <!-- SEARCH (Restored to Top) -->
-            <div class="lib-search-container">
-                <i class="fa-solid fa-magnifying-glass lib-search-icon"></i>
-                <input type="text" id="libSearch" placeholder="Search tracks..." oninput="window.ui.handleSearch(this.value)" 
-                       class="lib-search-input">
-            </div>
-
-            <!-- TRACK LIST CONTAINER -->
-            <div id="libraryList" class="lib-grid-gap"></div>
-
-            <!-- MULTI-SELECT ACTION BAR -->
-            <div id="multiSelectBar" class="hidden absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-xl border border-white/20 rounded-xl p-3 flex justify-between items-center shadow-2xl z-50">
-                <span id="selectCountDisplay" class="text-[10px] font-bold text-white uppercase tracking-wider">0 Selected</span>
-                <div class="flex gap-2">
-                    <button onclick="window.ui.deleteSelected()" class="bg-red-500/20 hover:bg-red-500/40 text-red-500 border border-red-500/50 px-3 py-2 rounded-lg text-[10px] font-bold transition"><i class="fa-solid fa-trash"></i> Delete</button>
-                    <button onclick="window.ui.toggleSelectMode()" class="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-[10px] uppercase font-bold transition"><i class="fa-solid fa-xmark"></i></button>
-                </div>
-            </div>
-            
-            <hr class="border-white/5 my-4">
-            <div class="px-2 pb-4 space-y-2">
-                <button onclick="window.libraryMgr.exportLibrary()" class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-download mr-2"></i> Export Library Data</button>
-                <button onclick="$('importLibraryInput').click()" class="w-full bg-white/5 hover:bg-white/10 text-white opacity-50 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-upload mr-2"></i> Import Library / Data</button>
-                <input type="file" id="importLibraryInput" accept=".json" class="hidden" onchange="window.libraryMgr.importLibrary(this)">
-                
-                <button onclick="window.ui.openPlaylistImporter()" class="w-full bg-gradient-to-r from-[#1DB954]/20 to-[#1DB954]/5 hover:from-[#1DB954]/30 hover:to-[#1DB954]/10 text-[#1DB954] border border-[#1DB954]/30 font-bold py-3 mt-4 rounded-lg text-[10px] tracking-wider uppercase transition shadow-[0_0_15px_rgba(29,185,84,0.1)] hover:shadow-[0_0_20px_rgba(29,185,84,0.25)]"><i class="fa-brands fa-spotify mr-2 text-base"></i> <i class="fa-brands fa-youtube mr-2 text-base text-red-400"></i> Import URL</button>
-            </div>
-
-            <div class="mt-2 text-center">
-                 <button onclick="window.player.db.clearAll()" class="text-[10px] text-red-400 w-full text-center uppercase hover:text-white tracking-wider font-bold opacity-30 hover:opacity-100 transition pb-4">Factory Reset</button>
-            </div>
-        </div>
-        
-        <!-- Hidden Inputs -->
-        <input type="file" id="fileInput" accept="audio/*" multiple class="hidden" onchange="window.player.handleUpload(this)">
-        <!-- Removed Import Folder Input -->
-    </aside>
-
-    <!-- RIGHT PANEL: SETTINGS -->
-    <aside class="side-panel right-panel" id="settingsPanel">
-        <div class="panel-header">
-            <span>SETTINGS</span>
-            <button onclick="window.ui.toggleSettings()" class="action-btn"><i class="fa-solid fa-xmark text-white text-lg"></i></button>
-        </div>
-        <div class="panel-content space-y-8">
-            <!-- EXPORT OPTIONS -->
-            <div class="space-y-2">
-                <button onclick="window.exporter.exportAudio()" class="w-full py-3 bg-[var(--accent)] text-black rounded-lg text-xs font-bold hover:scale-105 transition shadow-lg flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-download"></i> Export Processed Audio
-                </button>
-                <p class="text-[10px] text-white/40 text-center leading-tight">Downloads .wav with current Bass, Speed, and Reverb</p>
-            </div>
-            
-            <hr class="border-white/5">
-
-            <div class="space-y-6">
-                <label class="setting-label">Visuals</label>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Theme</span>
-                    <input type="color" id="colorPicker" value="#60a5fa" oninput="window.ui.setTheme(this.value)" class="w-10 h-10 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
-                </div>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Brightness</span>
-                    <input type="range" id="bgBrightSlider" class="setting-slider" style="width: 120px; background: rgba(255,255,255,0.3);" min="0" max="1" step="0.05" value="0.3" oninput="window.ui.setBgBrightness(this.value)">
-                </div>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Mode</span>
-                    <button onclick="window.viz.toggleMode()" id="vizModeBtn" class="text-[10px] bg-white/10 border border-white/5 px-4 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide">RING</button>
-                </div>
-                <div class="flex justify-between items-center px-2">
-                    <span class="text-xs font-bold">Liquid Lines</span>
-                    <input type="checkbox" checked onchange="window.viz.smooth=this.checked" class="accent-[var(--accent)] w-5 h-5">
-                </div>
-                <div class="flex justify-between items-center px-2">
-                    <span class="text-xs font-bold">Beat Flash</span>
-                    <input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()" class="accent-[var(--accent)] w-5 h-5">
-                </div>
-                <div class="flex flex-col px-2 mt-2">
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Viz Sensitivity</span> <span id="vizSensVal" class="text-[var(--accent)]">1.0x</span></div>
-                    <input type="range" id="vizSensSlider" class="setting-slider" min="0.1" max="3.0" step="0.1" value="1.0" oninput="window.vizSens=parseFloat(this.value); $('vizSensVal').innerText=parseFloat(this.value).toFixed(1)+'x'; localStorage.setItem('sv_viz_sens', this.value);">
-                </div>
-            </div>
-            <hr class="border-white/5">
-            <div class="space-y-6">
-                <label class="setting-label flex justify-between items-center">
-                    <span>Processors</span>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[10px] font-bold uppercase tracking-widest text-[#fbbf24]">Global Lock</span>
-                        <input type="checkbox" id="globalAudioToggle" class="accent-[#fbbf24] w-4 h-4" onchange="window.audioSys.toggleGlobal(this.checked)">
-                    </div>
-                </label>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Bass Boost</span> <span id="bassVal" class="text-[var(--accent)]">0dB</span></div>
-                    <input type="range" class="setting-slider" min="0" max="40" value="0" oninput="window.audioSys.setBass(this.value)">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Reverb</span> <span id="reverbVal" class="text-[var(--accent)]">0%</span></div>
-                    <input type="range" class="setting-slider" min="0" max="100" value="0" oninput="window.audioSys.setReverb(this.value)">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Warp (Pitch/Speed)</span> <span id="pitchVal" class="text-[var(--accent)]">1.0x</span></div>
-                    <input type="range" class="setting-slider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="window.audioSys.setBaseSpeed(this.value)">
-                </div>
-                
-                <!-- EQ Presets -->
-                <div class="pt-2 border-t border-white/10 mt-2">
-                    <button onclick="const p=$('eqPresetsGroup'); p.style.display=p.style.display==='none'?'block':'none'" class="w-full text-left text-xs font-bold text-white/70 hover:text-white transition flex justify-between items-center mb-2">
-                        <span><i class="fa-solid fa-sliders mr-2"></i> EQ Presets</span> <i class="fa-solid fa-chevron-down mr-1"></i>
-                    </button>
-                    <div id="eqPresetsGroup" style="display:none;" class="space-y-2">
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="window.audioSys.applyPreset('electronic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Electronic</button>
-                            <button onclick="window.audioSys.applyPreset('acoustic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Acoustic</button>
-                            <button onclick="window.audioSys.applyPreset('bass_boost')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Bass Boost</button>
-                            <button onclick="window.audioSys.applyPreset('vocal')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Vocal</button>
-                            <button onclick="window.audioSys.applyPreset('flat')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider col-span-2">Reset (Flat)</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex justify-between items-center bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
-                    <span class="text-xs font-bold text-red-400 flex items-center gap-2"><i class="fa-solid fa-burst"></i> XTREME BASS</span>
-                    <input type="checkbox" id="xtremeToggle" class="w-5 h-5 accent-red-500" onchange="window.audioSys.toggleXtreme()">
-                </div>
-                <div class="flex justify-between items-center bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl">
-                    <span class="text-xs font-bold text-blue-400 flex items-center gap-2"><i class="fa-solid fa-droplet"></i> BASS RIPPLE</span>
-                    <input type="checkbox" id="rippleToggle" class="w-5 h-5 accent-blue-500" onchange="window.viz.rippleEffect=this.checked" checked>
-                </div>
-            </div>
-            <div class="flex justify-between items-center pt-2 px-2">
-                <span class="text-xs font-bold">Auto DJ (Crossfade)</span>
-                <input type="checkbox" id="autoDjToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()" checked>
-            </div>
-            <div class="flex justify-between items-center pt-2 px-2">
-                <span class="text-xs font-bold text-[var(--accent)]">Host FX Override</span>
-                <input type="checkbox" id="hostFxToggle" class="accent-[var(--accent)] w-5 h-5" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked>
-            </div>
-            <div class="px-2 pb-2 mt-4">
-                <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Party Sync Offset</span> <span id="syncOffsetVal" class="text-[var(--accent)]">0ms</span></div>
-                <input type="range" id="syncOffsetSlider" class="setting-slider" min="-500" max="500" value="0" oninput="$('syncOffsetVal').innerText = this.value + 'ms'; window.partyMode.manualOffset = parseInt(this.value); localStorage.setItem('sv_party_sync', this.value);">
-                <p class="text-[9px] text-white/30 mt-1 leading-tight">Adjust if the phone visualizer is slightly early/late compared to PC.</p>
-            </div>
-            
-
-            
-            <div class="text-center pt-4 pb-4 border-t border-white/5">
-                <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
-            </div>
-        </div>
-    </aside>
-
-    <!-- TIMELINE EDITOR (Updated) -->
-    <div class="glass-modal" id="curveEditor" style="opacity:0; pointer-events:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:700px; padding:25px;">
-        
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-2">
-            <h3 class="font-bold text-xl text-white tracking-tight">Timeline Editor</h3>
-            <button onclick="window.curveEditor.close()" class="action-btn"><i class="fa-solid fa-xmark text-lg"></i></button>
-        </div>
-
-        <!-- NEW MODE PILLS -->
-        <div class="mode-toggle-container">
-            <button class="mode-pill speed active" id="btnModeSpeed" onclick="window.curveEditor.setMode('speed')">
-                <i class="fa-solid fa-wave-square mr-1"></i> Speed Curve
-            </button>
-            <button class="mode-pill beat" id="btnModeBeat" onclick="window.curveEditor.setMode('beat')">
-                <i class="fa-solid fa-bolt mr-1"></i> Beat Editor
-            </button>
-            <button class="mode-pill trigger" id="btnModeTrigger" onclick="window.curveEditor.setMode('trigger')">
-                <i class="fa-solid fa-wave-square mr-1"></i> Bass Trigger
-            </button>
-        </div>
-        
-        <!-- Presets -->
-        <div class="flex gap-2 mb-4 overflow-x-auto pb-2" id="presetList"></div>
-        
-        <!-- Canvas Container -->
-        <div class="flex-grow relative bg-white/5 rounded-xl mb-4 overflow-hidden cursor-crosshair border border-white/10 shadow-inner h-[300px]">
-            
-            <!-- SCAN POPUP -->
-            <div id="scanPopup" class="scan-popup-content">
-                <div class="flex justify-between items-center border-b border-white/10 pb-2">
-                    <span class="text-sm font-bold text-white">Scan Results</span>
-                    <span class="text-xs text-[var(--accent)] font-bold" id="beatsFoundCount">0 Beats</span>
-                </div>
-                
-                <div id="scanInitialActions" class="flex gap-2 mt-2">
-                    <button onclick="window.curveEditor.confirmScan()" class="flex-1 bg-green-500/20 text-green-400 hover:bg-green-500/40 py-2 rounded-lg text-xs font-bold transition">Keep</button>
-                    <button onclick="window.curveEditor.discardScan()" class="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/40 py-2 rounded-lg text-xs font-bold transition">No (Refine)</button>
-                </div>
-
-                <div id="scanRefineActions" class="hidden flex-col gap-3 mt-1">
-                    <div>
-                        <div class="flex justify-between text-[10px] uppercase font-bold text-white/50 mb-1">
-                            <span>Line Height</span> <span id="threshVal">50%</span>
-                        </div>
-                        <input type="range" class="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" min="0" max="1" step="0.01" oninput="window.curveEditor.updateScanThreshold(this.value)">
-                    </div>
-                    <div>
-                        <div class="flex justify-between text-[10px] uppercase font-bold text-white/50 mb-1">
-                            <span>Min Gap (Sensitivity)</span> <span id="gapVal">0.1s</span>
-                        </div>
-                        <input type="range" class="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" min="0.01" max="0.5" step="0.01" value="0.1" oninput="window.curveEditor.updateScanGap(this.value)">
-                    </div>
-                    <button onclick="window.curveEditor.reScan()" class="w-full bg-[var(--accent)] text-black font-bold py-2 rounded-lg text-xs hover:scale-105 transition shadow-lg mt-1"><i class="fa-solid fa-rotate-right"></i> Regenerate</button>
-                </div>
-            </div>
-
-            <canvas id="curveCanvas" width="650" height="300" class="w-full h-full"></canvas>
-            
-            <!-- Scrubbing Line -->
-            <div id="timelineCursor" class="absolute top-0 bottom-0 w-px bg-white/50 pointer-events-none" style="display:none; left:0;">
-                <div id="cursorTime" class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 bg-white/10 backdrop-blur-md border border-white/10 text-white text-[10px] font-bold px-2 py-0.5 rounded whitespace-nowrap">00:00.00</div>
-            </div>
-        </div>
-
-        <!-- Footer Controls -->
-        <div class="flex justify-between text-xs opacity-50 font-bold uppercase tracking-wider items-center">
-            <div class="flex items-center gap-2">
-                <!-- ZOOM CONTROLS -->
-                <span>H-Zoom:</span>
-                <input type="range" class="w-16 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" min="1" max="20" step="0.1" value="1" oninput="window.curveEditor.setZoom(this.value)">
-                
-                <span class="ml-2">V-Zoom:</span>
-                <input type="range" class="w-16 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" min="1" max="5" step="0.1" value="1" oninput="window.curveEditor.setVerticalZoom(this.value)">
-
-                <!-- NEW TILT TOGGLE -->
-                <button onclick="window.curveEditor.toggleTilt()" id="tiltBtn" class="tilt-toggle ml-4" title="Unlink Handles (Tilt Lines)">
-                    <i class="fa-solid fa-link" id="tiltIcon"></i>
-                </button>
-            </div>
-            <div class="flex gap-4">
-                <span class="text-[10px] opacity-50 normal-case mr-4 self-center" id="editorHint"></span>
-                <button onclick="window.curveEditor.scanTriggers()" class="hover:text-[#fbbf24] transition font-bold" id="scanBtn" style="display:none;"><i class="fa-solid fa-bolt"></i> SCAN</button>
-                <button onclick="window.curveEditor.autoGenerate()" class="hover:text-[var(--accent)] transition"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto</button>
-                <button onclick="window.curveEditor.openSaveModal()" class="hover:text-white transition">Save Preset</button>
-                <button onclick="window.curveEditor.reset()" class="hover:text-red-400 transition">Reset</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- PRESET SAVE MODAL -->
-    <div class="glass-modal" id="presetModal" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10010; padding:20px; border-radius:20px; width:300px; opacity:0; pointer-events:none; transition:0.2s;">
-        <h3 class="font-bold mb-3 text-[var(--accent)]">Save Preset</h3>
-        <input type="text" id="presetNameInput" placeholder="Preset Name" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-6 text-sm text-white outline-none focus:border-[var(--accent)] transition">
-        <div class="flex justify-end gap-2">
-            <button onclick="window.curveEditor.closeSaveModal()" class="text-xs font-bold px-4 py-2 rounded-lg hover:bg-white/5 transition">Cancel</button>
-            <button onclick="window.curveEditor.confirmSave()" class="text-xs font-bold bg-[var(--accent)] text-black px-6 py-2 rounded-lg shadow-lg hover:scale-105 transition">Save</button>
-        </div>
-    </div>
-    
-    <!-- FOLDER CREATE MODAL -->
-    <div class="glass-modal" id="folderModal" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10020; padding:20px; border-radius:20px; width:300px; opacity:0; pointer-events:none; transition:0.2s;">
-        <h3 class="font-bold mb-3 text-[var(--accent)]">Create Folder</h3>
-        <input type="text" id="folderNameInput" placeholder="Folder Name" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-6 text-sm text-white outline-none focus:border-[var(--accent)] transition">
-        <div class="flex justify-end gap-2">
-            <button onclick="window.libraryMgr.closeFolderModal()" class="text-xs font-bold px-4 py-2 rounded-lg hover:bg-white/5 transition">Cancel</button>
-            <button onclick="window.libraryMgr.confirmCreateFolder()" class="text-xs font-bold bg-[var(--accent)] text-black px-6 py-2 rounded-lg shadow-lg hover:scale-105 transition">Create</button>
-        </div>
-    </div>
-    
-    <!-- PLAYLIST IMPORTER MODAL -->
-    <div class="glass-modal" id="playlistModal" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10020; padding:24px; border-radius:24px; width:340px; opacity:0; pointer-events:none; transition:0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(29, 185, 84, 0.1);">
-        <h3 class="font-black tracking-tighter mb-2 text-2xl text-white"><i class="fa-brands fa-spotify text-[#1DB954] mr-2"></i> Playlist Link</h3>
-        <p class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-6 leading-relaxed">Paste a Spotify or YouTube Playlist link here to import it seamlessly into okMUSIC.</p>
-        
-        <input type="text" id="playlistUrlInput" placeholder="https://open.spotify.com/playlist/..." class="w-full bg-white/5 border border-white/10 rounded-xl p-4 mb-3 text-sm font-bold text-white outline-none focus:border-[#1DB954] transition shadow-inner">
-        
-        <div id="playlistStatus" class="hidden text-xs font-bold text-center p-3 mb-4 rounded-xl bg-[#1DB954]/10 text-[#1DB954] border border-[#1DB954]/20 animate-pulse">
-            Scanning...
-        </div>
-
-        <div class="flex justify-end gap-2 mt-4">
-            <button onclick="window.ui.closePlaylistImporter()" class="text-xs font-bold px-4 py-3 rounded-xl hover:bg-white/5 transition uppercase tracking-wider">Cancel</button>
-            <button onclick="window.ui.scanPlaylist()" id="btnScanPlaylist" class="text-xs font-bold bg-[#1DB954] text-black px-6 py-3 rounded-xl shadow-lg hover:scale-105 hover:shadow-[0_0_20px_rgba(29,185,84,0.4)] transition uppercase tracking-widest">Scan Link</button>
-        </div>
-    </div>
-
-    <!-- ITEM EDITOR -->
-    <div class="glass-modal" id="trackEditor" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10010; padding:20px; border-radius:20px; width:300px; opacity:0; pointer-events:none; transition:0.2s;">
-        <h3 class="font-bold mb-3 text-[var(--accent)]" id="editorTitle">Edit Item</h3>
-        <input type="text" id="editName" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-sm text-white outline-none focus:border-[var(--accent)] transition">
-        
-        <div id="editColorContainer" class="hidden mb-4 p-3 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
-            <span class="text-xs font-bold uppercase">Folder Color</span>
-            <input type="color" id="editColorInput" class="w-8 h-8 rounded-full border-0 p-0 bg-transparent cursor-pointer">
-        </div>
-
-        <div id="editArtContainer" class="hidden">
-            <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Cover Art URL (Optional)</label>
-            <input type="text" id="editArtUrl" placeholder="https://..." class="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-[var(--accent)] transition mb-4">
-            
-            <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Or Upload Custom Cover Art</label>
-        </div>
-
-        <label class="block w-full p-4 border-2 border-dashed border-white/20 rounded-xl text-center cursor-pointer hover:bg-white/5 mb-6 transition">
-            <span class="text-xs font-bold uppercase tracking-wide">Change Image</span>
-            <input type="file" id="editArtInput" class="hidden" accept="image/*" onchange="window.ui.previewEditArt(this)">
-        </label>
-        <div class="flex justify-end gap-2">
-            <button onclick="window.ui.closeEditor()" class="text-xs font-bold px-4 py-2 rounded-lg hover:bg-white/5 transition">Cancel</button>
-            <button onclick="window.ui.saveEditor()" class="text-xs font-bold bg-[var(--accent)] text-black px-6 py-2 rounded-lg shadow-lg hover:scale-105 transition">Save</button>
-        </div>
-    </div>
-
-    <!-- PARTY MODE SETUP MODAL -->
-    <div class="glass-modal" id="partySetupModal" style="display:none;">
-        <h3 class="font-bold mb-2 text-xl tracking-tight"><i class="fa-solid fa-satellite-dish text-[var(--accent)] mr-2"></i> Party Mode</h3>
-        <p class="text-xs text-white/50 mb-6 font-semibold">Join or create a synchronized session.</p>
-        
-        <div id="partySetupInitial">
-            <button onclick="window.partyMode.hostParty()" class="w-full bg-[var(--accent)] text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition mb-4"><i class="fa-solid fa-tower-broadcast mr-2"></i> Host Party</button>
-            <div class="flex items-center gap-2 mb-4">
-                <hr class="flex-grow border-white/10">
-                <span class="text-[10px] text-white/30 font-bold uppercase tracking-widest">OR JOIN</span>
-                <hr class="flex-grow border-white/10">
-            </div>
-            <input type="text" id="joinCodeInput" placeholder="Enter Party Code" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-2 text-center text-sm font-bold tracking-widest text-white outline-none focus:border-[var(--accent)] transition">
-            <button onclick="window.partyMode.joinParty()" class="w-full bg-white/10 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-white/20 transition mb-3">Join Session</button>
-        </div>
-
-        <div id="partySetupActive" style="display:none;">
-            <div class="bg-white/5 border border-white/10 rounded-xl py-6 mb-4">
-                <p class="text-[10px] uppercase text-white/50 font-bold tracking-widest mb-1">Session Code</p>
-                <p id="activePartyCode" class="text-4xl font-black tracking-widest text-[var(--accent)] filter drop-shadow-[0_0_15px_var(--accent-glow)]"></p>
-            </div>
-            
-            <div id="partySyncProgress" class="bg-white/5 border border-black/20 rounded-xl p-4 mb-4 text-center" style="display:none;">
-                <i id="partySyncIcon" class="fa-solid fa-cloud-arrow-down text-3xl text-[var(--accent)] mb-2 animate-bounce"></i>
-                <div id="partySyncTitle" class="text-xs font-bold text-white/70 mb-1">Downloading...</div>
-                <div id="partySyncPercent" class="text-xl font-black text-[var(--accent)]">0%</div>
-            </div>
-
-            <button onclick="window.partyMode.syncLibrary()" id="syncLibraryBtn" class="w-full bg-[var(--accent)] text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition mb-3" style="display:none;"><i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist</button>
-            <button onclick="window.partyMode.leave()" class="w-full bg-red-500/20 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/40 transition">Leave Party</button>
-        </div>
-        
-        <div class="mt-4 pt-4 border-t border-white/10">
-            <button onclick="window.partyMode.toggleSetup()" class="text-xs text-white/50 hover:text-white font-bold transition">Close</button>
-        </div>
-    </div>
-
-    <!-- METADATA EDITOR MODAL -->
-    <div class="glass-modal" id="metaEditModal" style="display:none; width: 320px;">
-        <h3 class="font-bold mb-4 text-xl tracking-tight"><i class="fa-solid fa-pen text-[var(--accent)] mr-2"></i> Edit Track</h3>
-        
-        <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Track Name</label>
-        <input type="text" id="metaNameInput" class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm font-bold text-white outline-none focus:border-[var(--accent)] transition mb-4">
-        
-        <label class="block text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">Cover Art URL (Optional)</label>
-        <input type="text" id="metaArtInput" placeholder="https://..." class="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm font-bold text-white outline-none focus:border-[var(--accent)] transition mb-4">
-        
-        <div class="flex gap-2 mt-2">
-            <button onclick="$('metaEditModal').style.display='none'" class="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2 rounded-lg transition text-xs">Cancel</button>
-            <button onclick="window.ui.saveMetadata()" class="flex-1 bg-[var(--accent)] hover:scale-105 text-black font-bold py-2 rounded-lg shadow-lg transition text-xs">Save Changes</button>
-        </div>
-    </div>
-
-    <!-- CONTEXT MENU -->
-    <div id="contextMenu">
-        <div class="ctx-item" onclick="window.ui.handleContextAction('edit')"><i class="fa-solid fa-pen"></i> Edit</div>
-        <div class="ctx-item delete" onclick="window.ui.handleContextAction('delete')"><i class="fa-solid fa-trash"></i> Delete</div>
-    </div>
-
-    <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref as dbRef, set, onValue, get, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
@@ -1118,7 +39,7 @@
         window.getDownloadURL = getDownloadURL;
 
         // --- GLOBAL HELPERS ---
-        window.$ = id => document.getElementById(id);
+        const $ = id => document.getElementById(id);
         const formatTime = (time) => {
             if (isNaN(time)) return "0:00";
             const min = Math.floor(time / 60);
@@ -1284,16 +205,16 @@
                 const clean=(list)=>{ for(let i=list.length-1;i>=0;i--){ if(list[i].type==='song'){ if(!dbIds.has(list[i].id))list.splice(i,1); else structIds.add(list[i].id); } else if(list[i].type==='folder') clean(list[i].items); } };
                 clean(this.structure); songs.forEach(s=>{ if(!structIds.has(s.id)) this.structure.push({type:'song',id:s.id}); }); this.save(); window.ui.renderLibrary();
             }
-            openFolderModal(){ window.$('folderModal').style.opacity='1'; window.$('folderModal').style.pointerEvents='auto'; window.$('folderNameInput').value=''; window.$('folderNameInput').focus(); }
-            closeFolderModal(){ window.$('folderModal').style.opacity='0'; window.$('folderModal').style.pointerEvents='none'; }
-            confirmCreateFolder(){ const name=window.$('folderNameInput').value||"New Folder"; const id=crypto.randomUUID(); this.structure.unshift({type:'folder',id:id,name:name,art:null,items:[],isOpen:true, color: null}); this.save(); this.closeFolderModal(); window.ui.renderLibrary(); }
+            openFolderModal(){ $('folderModal').style.opacity='1'; $('folderModal').style.pointerEvents='auto'; $('folderNameInput').value=''; $('folderNameInput').focus(); }
+            closeFolderModal(){ $('folderModal').style.opacity='0'; $('folderModal').style.pointerEvents='none'; }
+            confirmCreateFolder(){ const name=$('folderNameInput').value||"New Folder"; const id=crypto.randomUUID(); this.structure.unshift({type:'folder',id:id,name:name,art:null,items:[],isOpen:true, color: null}); this.save(); this.closeFolderModal(); window.ui.renderLibrary(); }
             deleteItem(id){ const remove=(list)=>{ const idx=list.findIndex(x=>x.id===id); if(idx>-1){ const item=list[idx]; if(item.type==='song') window.player.db.delete(item.id); else if(item.type==='folder'&&item.items.length>0) this.structure.push(...item.items); list.splice(idx,1); return true; } for(let item of list) if(item.type==='folder'&&remove(item.items)) return true; return false; }; remove(this.structure); this.save(); window.ui.renderLibrary(); }
             findItem(id,list=this.structure){ for(let item of list){ if(item.id===id)return item; if(item.type==='folder'){ const found=this.findItem(id,item.items); if(found)return found; }} return null; }
             updateFolder(id,d){ const f=this.findItem(id); if(f){ Object.assign(f,d); this.save(); window.ui.renderLibrary(); } }
             
             async shareLibrary() {
                 if(!window.db || !window.storage) return alert("Firebase not connected.");
-                const btn = window.$('shareLibBtn');
+                const btn = $('shareLibBtn');
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
                 btn.style.backgroundColor = 'var(--accent)';
                 btn.style.color = 'black';
@@ -1331,7 +252,7 @@
             
             async loadSharedLibrary(shareId) {
                 if(!window.db) return;
-                const status = window.$('syncStatus');
+                const status = $('syncStatus');
                 status.innerText = "Downloading Shared Library..."; status.style.display = 'inline-block';
                 try {
                     const snap = await window.getDb(window.dbRef(window.db, 'sharedLibs/' + shareId));
@@ -1358,47 +279,6 @@
                     }
                 } catch(e) { console.error("Load shared lib error", e); status.style.display='none'; }
             }
-
-            async exportLibrary() {
-                try {
-                    const allSongs = window.player.songs;
-                    const exportData = { structure: this.structure, songs: [] };
-                    for (const s of allSongs) {
-                        const base64 = await new Promise(r => { const reader = new FileReader(); reader.onloadend = () => r(reader.result); reader.readAsDataURL(s.blob); });
-                        exportData.songs.push({ id: s.id, name: s.name, b64: base64, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
-                    }
-                    const jsonStr = JSON.stringify(exportData);
-                    const blob = new Blob([jsonStr], { type: "application/json" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = `okMUSIC_Library_${Date.now()}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    window.ui.showToast("Library Exported!");
-                } catch (e) { console.error(e); window.ui.showToast("Export Failed!"); }
-            }
-
-            async importLibrary(input) {
-                if (!input.files || input.files.length === 0) return;
-                try {
-                    const file = input.files[0];
-                    const text = await file.text();
-                    const data = JSON.parse(text);
-                    if (data && data.songs) {
-                        for (const s of data.songs) {
-                            if (!s.b64) continue;
-                            const res = await fetch(s.b64);
-                            const blob = await res.blob();
-                            blob.name = s.name + ".mp3";
-                            await window.player.db.add(blob, { beatSignals: s.beatSignals, speedPoints: s.speedPoints });
-                        }
-                        this.structure = data.structure || [];
-                        this.save();
-                        await window.player.loadLib();
-                        window.ui.showToast("Library Imported Successfully!");
-                    } else { window.ui.showToast("Invalid library file."); }
-                } catch(e) { console.error(e); window.ui.showToast("Import Failed!"); }
-            }
         };
 
         class AudioSystem {
@@ -1409,51 +289,35 @@
             toggleGlobal(on) { this.globalAudio = on; localStorage.setItem('sv_global_audio', on); }
             
             setBass(v){
-                if(this.ctx)this.bass.gain.value=v; this.bassVal=v; window.$('bassVal').innerText=`+${v}dB`; 
+                if(this.ctx)this.bass.gain.value=v; this.bassVal=v; $('bassVal').innerText=`+${v}dB`; 
                 if(this.globalAudio) localStorage.setItem('sv_bass',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.bassVal=v; window.player.db.update(window.player.currentTrack.id, {bassVal:v}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
-                this.broadcastFx();
             }
             setReverb(v){
-                if(this.ctx)this.revGain.gain.value=v/50; this.reverbVal=v; window.$('reverbVal').innerText=v+'%'; 
+                if(this.ctx)this.revGain.gain.value=v/50; this.reverbVal=v; $('reverbVal').innerText=v+'%'; 
                 if(this.globalAudio) localStorage.setItem('sv_reverb',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.reverbVal=v; window.player.db.update(window.player.currentTrack.id, {reverbVal:v}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
-                this.broadcastFx();
             }
             setVolume(v){if(this.ctx)this.gain.gain.value=v;}
             setBaseSpeed(v){
-                this.baseSpeed=parseFloat(v); window.$('pitchVal').innerText=v+"x"; 
+                this.baseSpeed=parseFloat(v); $('pitchVal').innerText=v+"x"; 
                 if(this.globalAudio) localStorage.setItem('sv_pitch',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.baseSpeed=parseFloat(v); window.player.db.update(window.player.currentTrack.id, {baseSpeed:parseFloat(v)}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
-                this.broadcastFx();
             }
             toggleXtreme(){
-                const on=window.$('xtremeToggle').checked; this.xtremeOn = on;
+                const on=$('xtremeToggle').checked; this.xtremeOn = on;
                 if(this.ctx){this.bass.frequency.value=on?100:200; this.bass.Q.value=on?10:1;}
                 if(this.globalAudio) localStorage.setItem('sv_xtreme',on);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
-                this.broadcastFx();
-            }
-            
-            broadcastFx() {
-                if(window.partyMode && window.partyMode.active && window.partyMode.isHost && window.partyMode.hostFxOverride) {
-                    window.partyMode.broadcast({
-                        type: 'FX_SYNC',
-                        bass: this.bassVal,
-                        reverb: this.reverbVal,
-                        speed: this.baseSpeed,
-                        xtreme: this.xtremeOn
-                    });
-                }
             }
         };
 
         class Visualizer {
             constructor() { 
-                this.cv=window.$('vizCanvas'); 
+                this.cv=$('vizCanvas'); 
                 this.ctx=this.cv.getContext('2d'); 
                 this.mode='ring'; 
                 this.smooth=true; 
@@ -1469,8 +333,8 @@
             }
             resize(){ this.cv.width=window.innerWidth; this.cv.height=window.innerHeight; }
             start(){ this.draw(); }
-            toggleMode(){ this.mode=this.mode==='ring'?'bar':'ring'; window.$('vizModeBtn').innerText=this.mode.toUpperCase(); window.$('albumArt').className=`album-art glass-panel ${this.mode==='ring'?'circle':''}`; }
-            clearFlash(){ window.$('beat-flash').style.opacity=0; }
+            toggleMode(){ this.mode=this.mode==='ring'?'bar':'ring'; $('vizModeBtn').innerText=this.mode.toUpperCase(); $('albumArt').className=`album-art glass-panel ${this.mode==='ring'?'circle':''}`; }
+            clearFlash(){ $('beat-flash').style.opacity=0; }
             triggerXEffect(intensity = 1.0){ 
                 this.xMode = true; 
                 this.xStrength = intensity; 
@@ -1501,16 +365,15 @@
                      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`; ctx.fillRect(-w, -h, w*3, h*3); 
                 }
                 ctx.clearRect(-w, -h, w*3, h*3);
-                const sens = window.vizSens || 1.0;
-                let bass=0; for(let i=0;i<4;i++)bass+=buf[i]*sens; bass/=4;
+                let bass=0; for(let i=0;i<4;i++)bass+=buf[i]; bass/=4;
                 if(this.flash){ 
                     const th=120; 
-                    if(bass>th){const int=(bass-th)/(255-th); window.$('beat-flash').style.opacity=int*0.7;}else window.$('beat-flash').style.opacity=0; 
-                    window.$('beat-flash').style.transform = `translate(-50%, -50%) scale(${baseZoom})`;
+                    if(bass>th){const int=(bass-th)/(255-th); $('beat-flash').style.opacity=int*0.7;}else $('beat-flash').style.opacity=0; 
+                    $('beat-flash').style.transform = `translate(-50%, -50%) scale(${baseZoom})`;
                 }
                 
                 // Bass Reactive Background
-                const bgLayer = window.$('bg-layer');
+                const bgLayer = $('bg-layer');
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 if (bgLayer) {
                      const baseOp = parseFloat(localStorage.getItem('sv_bg_bright') || 0.15);
@@ -1545,14 +408,13 @@
             drawRing(ctx,w,h,d){
                 const cx=w/2, cy=h/2-40, r=140, bars=100;
                 const lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/bars)||1;
-                const sens = window.vizSens || 1.0;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent');
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 if(this.xStrength > 0.2) { ctx.strokeStyle = "#ffffff"; ctx.shadowColor = "#ffffff"; } else { ctx.strokeStyle=col; ctx.shadowColor=col; }
                 ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
                 for(let i=0;i<bars;i++){ 
-                    const idx=Math.floor(i*step), v=d[idx]*sens, val=v*1.5, ang=(i/bars)*Math.PI*2; 
+                    const idx=Math.floor(i*step), v=d[idx], val=v*1.5, ang=(i/bars)*Math.PI*2; 
                     let x = cx+Math.cos(ang)*(r+val); let y = cy+Math.sin(ang)*(r+val);
                     if(this.xStrength > 0.01) {
                         const rad = (i/bars) * Math.PI * 2; const lobe = Math.sin(rad * 2 + Math.PI/4); const distortion = lobe > 0 ? lobe * 30 : lobe * 120; const dist = this.xStrength * distortion;
@@ -1574,7 +436,7 @@
                     ctx.stroke(path); 
                 } else { 
                     for(let i=0;i<bars;i++){ 
-                        const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*sens*1.5), y=cy+Math.sin(ang)*(r+d[idx]*sens*1.5); 
+                        const ang=(i/bars)*Math.PI*2, idx=Math.floor(i*step), x=cx+Math.cos(ang)*(r+d[idx]*1.5), y=cy+Math.sin(ang)*(r+d[idx]*1.5); 
                         path.moveTo((cx+Math.cos(ang)*r)|0,(cy+Math.sin(ang)*r)|0); path.lineTo(x|0,y|0); 
                     } 
                     ctx.stroke(path); 
@@ -1582,17 +444,16 @@
             }
             drawBars(ctx,w,h,d){
                 const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
-                const sens = window.vizSens || 1.0;
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=isMobile ? 0 : 10; ctx.shadowColor=col;
                 const path = new Path2D();
                 if(this.smooth){ 
                     path.moveTo(0,h); 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx]*sens, y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
+                        const idx=Math.floor(i*step), v=d[idx], y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
                         if(i===0) path.lineTo(x|0,y|0); 
                         else { 
-                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]*sens/255)*(h*0.8); 
+                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]/255)*(h*0.8); 
                             path.quadraticCurveTo(px|0, py|0, ((px+x)/2)|0, ((py+y)/2)|0); 
                         } 
                     } 
@@ -1600,9 +461,8 @@
                     ctx.fill(path); 
                 } else { 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx]*sens, bh=(v/255)*(h*0.8); 
+                        const idx=Math.floor(i*step), v=d[idx], bh=(v/255)*(h*0.8); 
                         path.rect((i*sp)|0, (h-bh)|0, (sp-2)|0, bh|0); 
-
                     } 
                     ctx.fill(path);
                 }
@@ -1611,7 +471,7 @@
 
         class CurveEditor {
             constructor() { 
-                this.cv = window.$('curveCanvas');
+                this.cv = $('curveCanvas');
                 this.ctx = this.cv.getContext('2d'); 
                 
                 this.move = this.move.bind(this);
@@ -1701,7 +561,7 @@
                 this.rendPre(); 
             }
             
-            get isOpen() { return window.$('curveEditor').style.opacity === '1'; }
+            get isOpen() { return $('curveEditor').style.opacity === '1'; }
 
             saveState() {
                 const state = {
@@ -1778,8 +638,8 @@
             
             toggleTilt() {
                 this.tiltEnabled = !this.tiltEnabled;
-                const btn = window.$('tiltBtn');
-                const icon = window.$('tiltIcon');
+                const btn = $('tiltBtn');
+                const icon = $('tiltIcon');
                 if(this.tiltEnabled) {
                     btn.classList.add('active');
                     icon.className = 'fa-solid fa-link-slash';
@@ -1792,8 +652,8 @@
             }
 
             open() {
-                window.$('curveEditor').style.opacity = '1';
-                window.$('curveEditor').style.pointerEvents = 'auto'; 
+                $('curveEditor').style.opacity = '1';
+                $('curveEditor').style.pointerEvents = 'auto'; 
                 if(window.player.currentTrack) {
                     this.beatSignals = window.player.currentTrack.beatSignals || [];
                     this.triggers = window.player.currentTrack.triggers || [];
@@ -1805,8 +665,8 @@
             } 
 
             close() {
-                window.$('curveEditor').style.opacity = '0';
-                window.$('curveEditor').style.pointerEvents = 'none';
+                $('curveEditor').style.opacity = '0';
+                $('curveEditor').style.pointerEvents = 'none';
                 cancelAnimationFrame(this.animId);
             }
 
@@ -1832,22 +692,22 @@
 
             setMode(mode) {
                 this.editMode = mode;
-                window.$('btnModeSpeed').classList.remove('active');
-                window.$('btnModeBeat').classList.remove('active');
-                window.$('btnModeTrigger').classList.remove('active');
-                window.$('scanBtn').style.display = 'none';
-                window.$('editorHint').innerText = "";
+                $('btnModeSpeed').classList.remove('active');
+                $('btnModeBeat').classList.remove('active');
+                $('btnModeTrigger').classList.remove('active');
+                $('scanBtn').style.display = 'none';
+                $('editorHint').innerText = "";
 
                 if (mode === 'speed') {
-                    window.$('btnModeSpeed').classList.add('active');
-                    window.$('editorHint').innerText = "Speed: Click line to add point (Q: Seek, D: Delete)";
+                    $('btnModeSpeed').classList.add('active');
+                    $('editorHint').innerText = "Speed: Click line to add point (Q: Seek, D: Delete)";
                 } else if (mode === 'beat') {
-                    window.$('btnModeBeat').classList.add('active');
-                    window.$('editorHint').innerText = "Beat: Drag to Box Select. Ctrl+C/V to Copy/Paste. Ctrl+Z/B to Undo/Redo.";
+                    $('btnModeBeat').classList.add('active');
+                    $('editorHint').innerText = "Beat: Drag to Box Select. Ctrl+C/V to Copy/Paste. Ctrl+Z/B to Undo/Redo.";
                 } else if (mode === 'trigger') {
-                    window.$('btnModeTrigger').classList.add('active');
-                    window.$('editorHint').innerText = "Trigger: Drag green areas. Click SCAN to auto-mark beats.";
-                    window.$('scanBtn').style.display = 'block';
+                    $('btnModeTrigger').classList.add('active');
+                    $('editorHint').innerText = "Trigger: Drag green areas. Click SCAN to auto-mark beats.";
+                    $('scanBtn').style.display = 'block';
                 }
                 this.selectedBeats.clear();
             }
@@ -1868,7 +728,7 @@
             }
 
             updateCursor() {
-                const el = window.$('timelineCursor');
+                const el = $('timelineCursor');
                 el.style.display = 'block';
                 const rect = this.cv.getBoundingClientRect();
                 const cssX = (this.mouseX / this.cv.width) * rect.width;
@@ -1876,16 +736,16 @@
                 
                 if(this.isDPressed) {
                      el.style.background = '#ef4444'; 
-                     window.$('cursorTime').style.background = '#ef4444';
-                     window.$('cursorTime').innerText = "ERASER";
+                     $('cursorTime').style.background = '#ef4444';
+                     $('cursorTime').innerText = "ERASER";
                 } else {
                      el.style.background = 'rgba(255,255,255,0.5)';
-                     window.$('cursorTime').style.background = 'rgba(255,255,255,0.1)';
+                     $('cursorTime').style.background = 'rgba(255,255,255,0.1)';
                      const time = this.xToTime(this.mouseX);
                      const ms = Math.floor((time % 1) * 100);
                      const s = Math.floor(time % 60);
                      const m = Math.floor(time / 60);
-                     window.$('cursorTime').innerText = `${m}:${s < 10 ? '0'+s : s}.${ms < 10 ? '0'+ms : ms}`;
+                     $('cursorTime').innerText = `${m}:${s < 10 ? '0'+s : s}.${ms < 10 ? '0'+ms : ms}`;
                 }
             }
 
@@ -2138,16 +998,16 @@
                 if (!this.waveform || !this.triggers.length) return alert("No triggers or waveform loaded.");
                 this.prevBeats = [...this.beatSignals];
                 this.performScan();
-                window.$('scanPopup').classList.add('active');
-                window.$('scanInitialActions').classList.remove('hidden');
-                window.$('scanInitialActions').classList.add('flex');
-                window.$('scanRefineActions').classList.add('hidden');
-                window.$('scanRefineActions').classList.remove('flex');
+                $('scanPopup').classList.add('active');
+                $('scanInitialActions').classList.remove('hidden');
+                $('scanInitialActions').classList.add('flex');
+                $('scanRefineActions').classList.add('hidden');
+                $('scanRefineActions').classList.remove('flex');
                 if (this.triggers.length > 0) {
                     const t = this.triggers[0]; 
                     const avgLvl = t.level || 0.5;
-                    window.$('threshVal').innerText = Math.round(avgLvl * 100) + "%";
-                    window.$('scanRefineActions').querySelector('input[type=range]').value = avgLvl;
+                    $('threshVal').innerText = Math.round(avgLvl * 100) + "%";
+                    $('scanRefineActions').querySelector('input[type=range]').value = avgLvl;
                 }
             }
 
@@ -2182,30 +1042,30 @@
                 });
                 this.beatSignals.sort((a,b) => a-b);
                 this.saveSignals();
-                window.$('beatsFoundCount').innerText = `${addedCount} Beats Found`;
+                $('beatsFoundCount').innerText = `${addedCount} Beats Found`;
             }
 
-            confirmScan() { window.$('scanPopup').classList.remove('active'); this.prevBeats = null; }
+            confirmScan() { $('scanPopup').classList.remove('active'); this.prevBeats = null; }
             discardScan() {
                 if(this.prevBeats) { this.beatSignals = [...this.prevBeats]; this.saveSignals(); }
-                window.$('scanInitialActions').classList.add('hidden');
-                window.$('scanInitialActions').classList.remove('flex');
-                window.$('scanRefineActions').classList.remove('hidden');
-                window.$('scanRefineActions').classList.add('flex');
+                $('scanInitialActions').classList.add('hidden');
+                $('scanInitialActions').classList.remove('flex');
+                $('scanRefineActions').classList.remove('hidden');
+                $('scanRefineActions').classList.add('flex');
             }
             updateScanThreshold(val) {
                 const v = parseFloat(val);
-                window.$('threshVal').innerText = Math.round(v * 100) + "%";
+                $('threshVal').innerText = Math.round(v * 100) + "%";
                 this.triggers.forEach(t => { t.level = v; t.startLevel = v; t.endLevel = v; });
                 this.saveSignals();
             }
-            updateScanGap(val) { this.scanMinGap = parseFloat(val); window.$('gapVal').innerText = this.scanMinGap + "s"; }
+            updateScanGap(val) { this.scanMinGap = parseFloat(val); $('gapVal').innerText = this.scanMinGap + "s"; }
             reScan() {
                 this.performScan();
-                window.$('scanInitialActions').classList.remove('hidden');
-                window.$('scanInitialActions').classList.add('flex');
-                window.$('scanRefineActions').classList.add('hidden');
-                window.$('scanRefineActions').classList.remove('flex');
+                $('scanInitialActions').classList.remove('hidden');
+                $('scanInitialActions').classList.add('flex');
+                $('scanRefineActions').classList.add('hidden');
+                $('scanRefineActions').classList.remove('flex');
             }
 
             draw() {
@@ -2347,10 +1207,10 @@
                 alert("Auto-generated beats (Simulated 140 BPM)"); 
             }
             reset() { this.saveState(); this.pts=[{x:0,y:0.5},{x:1,y:0.5}]; this.triggers = []; this.beatSignals = []; this.saveSignals(); }
-            rendPre() { const l=window.$('presetList'); l.innerHTML=''; this.presets.forEach(p=>{const b=document.createElement('button'); b.className='preset-chip'; b.innerText=p.name; b.onclick=()=>{this.pts=JSON.parse(JSON.stringify(p.pts));}; l.appendChild(b)}); }
-            openSaveModal() { window.$('presetModal').style.opacity='1'; window.$('presetModal').style.pointerEvents='auto'; window.$('presetNameInput').value=''; window.$('presetNameInput').focus(); }
-            closeSaveModal() { window.$('presetModal').style.opacity='0'; window.$('presetModal').style.pointerEvents='none'; }
-            confirmSave() { const n=window.$('presetNameInput').value; if(n){this.presets.push({name:n,pts:JSON.parse(JSON.stringify(this.pts))}); localStorage.setItem('sv_presets',JSON.stringify(this.presets)); this.rendPre(); this.closeSaveModal(); } }
+            rendPre() { const l=$('presetList'); l.innerHTML=''; this.presets.forEach(p=>{const b=document.createElement('button'); b.className='preset-chip'; b.innerText=p.name; b.onclick=()=>{this.pts=JSON.parse(JSON.stringify(p.pts));}; l.appendChild(b)}); }
+            openSaveModal() { $('presetModal').style.opacity='1'; $('presetModal').style.pointerEvents='auto'; $('presetNameInput').value=''; $('presetNameInput').focus(); }
+            closeSaveModal() { $('presetModal').style.opacity='0'; $('presetModal').style.pointerEvents='none'; }
+            confirmSave() { const n=$('presetNameInput').value; if(n){this.presets.push({name:n,pts:JSON.parse(JSON.stringify(this.pts))}); localStorage.setItem('sv_presets',JSON.stringify(this.presets)); this.rendPre(); this.closeSaveModal(); } }
         };
 
         class UI {
@@ -2358,16 +1218,14 @@
                 this.editType=null; this.editId=null; this.tempArt=null;
                 this.activeContextId = null;
                 this.lastActiveTop = -1; // Initialize to -1
-                this.selectMode = false;
-                this.selectedIds = [];
                 
                 document.addEventListener('click', (e) => {
                     if (!e.target.closest('#contextMenu')) {
-                        window.$('contextMenu').style.display = 'none';
+                        $('contextMenu').style.display = 'none';
                     }
                 });
 
-                window.$('progressBar').addEventListener('input',e=>{
+                $('progressBar').addEventListener('input',e=>{
                     if(window.audioSys.audio.duration){
                         const t = (e.target.value/100)*window.audioSys.audio.duration;
                         window.audioSys.audio.currentTime=t;
@@ -2396,7 +1254,7 @@
                 this.activeContextId = id;
                 this.activeContextType = type;
                 
-                const menu = window.$('contextMenu');
+                const menu = $('contextMenu');
                 menu.style.display = 'flex';
                 
                 let x = e.clientX;
@@ -2419,7 +1277,7 @@
                     window.libraryMgr.deleteItem(this.activeContextId);
                 }
                 
-                window.$('contextMenu').style.display = 'none';
+                $('contextMenu').style.display = 'none';
             }
             
             // Add handler for dropping onto the root area from a folder
@@ -2436,7 +1294,7 @@
 
             // CRITICAL: UPDATES ACTIVE STATE WITHOUT RE-RENDERING DOM
             highlightActiveTrack(id) {
-                const el = window.$('libraryList');
+                const el = $('libraryList');
                 // Remove old active
                 el.querySelectorAll('.lib-card.active').forEach(c => c.classList.remove('active'));
                 
@@ -2467,7 +1325,7 @@
                     // Fade back in only if we found a valid target
                     if (this.lastActiveTop !== -1 && indicator) {
                          // Only if target exists on screen
-                         const el = window.$('libraryList');
+                         const el = $('libraryList');
                          const target = el.querySelector('.lib-card.active') || el.querySelector('.active-parent');
                          if (target) indicator.style.opacity = '1';
                     }
@@ -2549,41 +1407,8 @@
                 window.libraryMgr.save();
             }
 
-            toggleSelectMode() {
-                this.selectMode = !this.selectMode;
-                if (!this.selectMode) this.selectedIds = [];
-                window.$('multiSelectBar').classList.toggle('hidden', !this.selectMode);
-                window.$('selectBtn').classList.toggle('text-[var(--accent)]', this.selectMode);
-                this.updateSelectCount();
-                this.renderLibrary();
-            }
-
-            toggleSelection(id) {
-                if (this.selectedIds.includes(id)) {
-                    this.selectedIds = this.selectedIds.filter(x => x !== id);
-                } else {
-                    this.selectedIds.push(id);
-                }
-                this.updateSelectCount();
-                this.renderLibrary(); // Re-render to update checks
-            }
-
-            updateSelectCount() {
-                if (window.$('selectCountDisplay')) window.$('selectCountDisplay').innerText = `${this.selectedIds.length} Selected`;
-            }
-
-            async deleteSelected() {
-                if(this.selectedIds.length === 0) return;
-                if(confirm(`Are you sure you want to delete ${this.selectedIds.length} items?`)) {
-                    for(const id of this.selectedIds) {
-                        await new Promise(r => window.libraryMgr.deleteItem(id, r));
-                    }
-                    this.toggleSelectMode(); // Will disable mode and clear selections
-                }
-            }
-
             renderLibrary(filterText = "") {
-                const el = window.$('libraryList');
+                const el = $('libraryList');
                 if (!el) return;
                 
                 el.innerHTML = '';
@@ -2738,16 +1563,7 @@
                     // CONTENT
                     const iconBox = document.createElement('div');
                     iconBox.className = 'lib-card-icon';
-                    
-                    if (this.selectMode) {
-                        const isSelected = this.selectedIds.includes(item.id);
-                        iconBox.innerHTML = isSelected 
-                            ? '<i class="fa-solid fa-circle-check text-[var(--accent)] text-lg"></i>' 
-                            : '<i class="fa-regular fa-circle text-white/30 text-lg"></i>';
-                        if (isSelected) card.classList.add('border-[var(--accent)]', 'bg-[var(--accent-dim)]');
-                    } else {
-                        iconBox.innerHTML = '<i class="fa-solid fa-music text-sm opacity-50"></i>';
-                    }
+                    iconBox.innerHTML = '<i class="fa-solid fa-music"></i>';
 
                     const infoBox = document.createElement('div');
                     infoBox.className = 'lib-card-info';
@@ -2791,11 +1607,6 @@
 
                     // PLAY CLICK - CHANGED TO NOT RE-RENDER
                     card.onclick = () => {
-                        if (this.selectMode) {
-                            this.toggleSelection(item.id);
-                            return;
-                        }
-                        
                         // Mark New
                         if(song.isNew) {
                             window.player.db.markAsSeen(song.id);
@@ -2836,20 +1647,6 @@
                     // Folder Header
                     const header = document.createElement('div');
                     header.className = 'lib-folder-header';
-                    
-                    if (this.selectMode) {
-                        const isSelected = this.selectedIds.includes(item.id);
-                        if (isSelected) folderDiv.classList.add('border-[var(--accent)]', 'bg-[var(--accent-dim)]');
-                        
-                        header.onclick = (e) => {
-                            e.stopPropagation();
-                            this.toggleSelection(item.id);
-                        };
-                    } else {
-                        header.onclick = () => {
-                            this.toggleFolder(item.id);
-                        };
-                    }
                     
                     // Tint the whole folder background slightly if color exists
                     if(item.color) {
@@ -2919,6 +1716,9 @@
                         header.classList.add('active-parent'); // Marker class
                     }
 
+                    header.onclick = () => {
+                        this.toggleFolder(item.id);
+                    };
                     header.oncontextmenu = (e) => this.showContextMenu(e, 'folder', item.id);
 
                     // Folder Content - Changed for Grid Animation
@@ -3009,122 +1809,54 @@
             }
 
             getFlatList(){const l=[]; const scan=i=>{i.forEach(x=>{if(x.type==='song')l.push(x.id); else if(x.type==='folder')scan(x.items);});}; scan(window.libraryMgr.structure); return l;}
-            setTrack(s){ window.$('trackTitle').innerText=s.name; window.$('trackArtist').innerText=""; if(s.art){window.$('albumArt').style.backgroundImage=`url(${s.art})`; window.$('artPlaceholder').style.display='none';}else{window.$('albumArt').style.backgroundImage='none'; window.$('artPlaceholder').style.display='flex';} 
+            setTrack(s){ $('trackTitle').innerText=s.name; $('trackArtist').innerText=""; if(s.art){$('albumArt').style.backgroundImage=`url(${s.art})`; $('artPlaceholder').style.display='none';}else{$('albumArt').style.backgroundImage='none'; $('artPlaceholder').style.display='flex';} 
                 // REMOVED RE-RENDER CALL HERE TO PREVENT FLASHING
                 // this.renderLibrary(); 
             }
-            updatePlayBtn(p){ window.$('btnPlay').innerHTML=p?'<i class="fa-solid fa-pause"></i>':'<i class="fa-solid fa-play ml-1"></i>'; }
-            updateProgress(){ const a=window.audioSys.audio; if(!a.duration)return; window.$('progressBar').value=(a.currentTime/a.duration)*100; const f=s=>`${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; window.$('currTime').innerText=f(a.currentTime); window.$('totTime').innerText=f(a.duration); }
-            toggleLibrary(){ window.$('libraryPanel').classList.toggle('open'); }
-            toggleSettings(){ window.$('settingsPanel').classList.toggle('open'); }
+            updatePlayBtn(p){ $('btnPlay').innerHTML=p?'<i class="fa-solid fa-pause"></i>':'<i class="fa-solid fa-play ml-1"></i>'; }
+            updateProgress(){ const a=window.audioSys.audio; if(!a.duration)return; $('progressBar').value=(a.currentTime/a.duration)*100; const f=s=>`${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; $('currTime').innerText=f(a.currentTime); $('totTime').innerText=f(a.duration); }
+            toggleLibrary(){ $('libraryPanel').classList.toggle('open'); }
+            toggleSettings(){ $('settingsPanel').classList.toggle('open'); }
             setTheme(c){ document.documentElement.style.setProperty('--accent',c); localStorage.setItem('sv_theme',c); const h=parseInt(c.replace('#',''),16); const r=(h>>16)&255,g=(h>>8)&255,b=h&255; document.documentElement.style.setProperty('--accent-dim',`rgba(${r},${g},${b},0.15)`); document.documentElement.style.setProperty('--accent-glow',`rgba(${r},${g},${b},0.3)`); let min=Math.min(r,g,b),max=Math.max(r,g,b),d=max-min,hue=0; if(d>0){if(max==r)hue=((g-b)/d)%6;else if(max==g)hue=(b-r)/d+2;else hue=(r-g)/d+4;} hue=Math.round(hue*60);if(hue<0)hue+=360; document.documentElement.style.setProperty('--bg-hue',hue); }
             
             openEdit(t,id){ 
                 this.editType=t; this.editId=id; 
-                window.$('trackEditor').style.opacity='1'; window.$('trackEditor').style.pointerEvents='auto'; 
+                $('trackEditor').style.opacity='1'; $('trackEditor').style.pointerEvents='auto'; 
                 
-                const colorInputDiv = window.$('editColorContainer');
-                const artInputDiv = window.$('editArtContainer');
-                const colorInput = window.$('editColorInput');
+                const colorInputDiv = $('editColorContainer');
+                const colorInput = $('editColorInput');
                 
                 if(t==='song'){
                     const s=window.player.songs.find(x=>x.id===id); 
-                    window.$('editorTitle').innerText="Edit Track"; 
-                    window.$('editName').value=s?s.name:"";
-                    if(window.$('editArtUrl')) window.$('editArtUrl').value=s?(s.customArtUrl||""):"";
+                    $('editorTitle').innerText="Edit Track"; 
+                    $('editName').value=s?s.name:"";
                     colorInputDiv.classList.add('hidden');
-                    artInputDiv.classList.remove('hidden');
                 } else {
                     const f=window.libraryMgr.findItem(id); 
-                    window.$('editorTitle').innerText="Edit Folder"; 
-                    window.$('editName').value=f?f.name:"";
+                    $('editorTitle').innerText="Edit Folder"; 
+                    $('editName').value=f?f.name:"";
                     colorInputDiv.classList.remove('hidden');
-                    artInputDiv.classList.add('hidden');
                     colorInput.value = f.color || "#60a5fa";
                 } 
             }
             
-            closeEditor(){ window.$('trackEditor').style.opacity='0'; window.$('trackEditor').style.pointerEvents='none'; this.tempArt=null; }
+            closeEditor(){ $('trackEditor').style.opacity='0'; $('trackEditor').style.pointerEvents='none'; this.tempArt=null; }
             previewEditArt(i){ const f=i.files[0]; const r=new FileReader(); r.onload=e=>this.tempArt=e.target.result; r.readAsDataURL(f); }
             async saveEditor(){ 
-                const n=window.$('editName').value; 
+                const n=$('editName').value; 
                 if(this.editType==='song'){
-                    const u={name:n}; 
-                    const customUrl = window.$('editArtUrl') ? window.$('editArtUrl').value.trim() : "";
-                    if(this.tempArt) u.art=this.tempArt; 
-                    else if(customUrl) { u.customArtUrl = customUrl; u.art = customUrl; }
-                    
-                    await window.player.db.update(this.editId,u); window.player.loadLib();
+                    const u={name:n}; if(this.tempArt)u.art=this.tempArt; await window.player.db.update(this.editId,u); window.player.loadLib();
                 } else {
                     const u={name:n}; 
                     if(this.tempArt)u.art=this.tempArt; 
-                    u.color = window.$('editColorInput').value;
+                    u.color = $('editColorInput').value;
                     window.libraryMgr.updateFolder(this.editId,u);
                 } 
                 this.closeEditor(); 
             }
-
-            openPlaylistImporter() {
-                window.$('playlistModal').style.opacity = '1';
-                window.$('playlistModal').style.pointerEvents = 'auto';
-                window.$('playlistUrlInput').value = '';
-                window.$('playlistStatus').classList.add('hidden');
-                window.$('btnScanPlaylist').innerText = "SCAN LINK";
-            }
-
-            closePlaylistImporter() {
-                window.$('playlistModal').style.opacity = '0';
-                window.$('playlistModal').style.pointerEvents = 'none';
-            }
-
-            scanPlaylist() {
-                const url = window.$('playlistUrlInput').value.trim();
-                if(!url) return;
-                
-                const btn = window.$('btnScanPlaylist');
-                const stat = window.$('playlistStatus');
-                
-                if(btn.innerText.includes("IMPORT")) {
-                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> IMPORTING...';
-                    
-                    // Simulate fetching and parsing tracks
-                    setTimeout(async () => {
-                        this.showToast("Playlist structure imported! (Audio fetch requires backend API linking)");
-                        
-                        // Fake tracks insertion to test UI rendering
-                        for(let i=1; i<=15; i++) {
-                             const fakeId = "spotify-mock-" + Date.now() + "-" + i;
-                             const fakeSong = {
-                                 id: fakeId,
-                                 name: `Spotify Imported Track ${i}`,
-                                 blob: new Blob([], {type: 'audio/mp3'}), // Empty blob placeholder
-                                 beatSignals: [],
-                                 speedPoints: []
-                             };
-                             await window.player.db.add(fakeSong);
-                        }
-                        await window.player.loadLib(); // Reloads struct and triggers renderLibrary()
-                        
-                        this.closePlaylistImporter();
-                    }, 800);
-                    return;
-                }
-
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> SCANNING...';
-                btn.style.pointerEvents = 'none';
-                
-                setTimeout(() => {
-                    stat.classList.remove('hidden');
-                    stat.classList.remove('animate-pulse');
-                    stat.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Found 18 Tracks! Ready to import.';
-                    btn.innerHTML = 'IMPORT TRACKS';
-                    btn.style.pointerEvents = 'auto';
-                }, 1500);
-            }
-
-            setBgBrightness(v){ window.$('bg-layer').style.opacity=v; localStorage.setItem('sv_bg_bright',v); }
+            setBgBrightness(v){ $('bg-layer').style.opacity=v; localStorage.setItem('sv_bg_bright',v); }
             updateMetaTags(){ 
-                const c=window.$('metaTags'); c.innerHTML=''; 
+                const c=$('metaTags'); c.innerHTML=''; 
                 if(window.audioSys.baseSpeed!=1) c.innerHTML+=`<span class="tag" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.3); color: #e879f9;">WARP ${window.audioSys.baseSpeed}x</span>`; 
                 if(window.audioSys.bassVal>0) c.innerHTML+=`<span class="tag" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171;">BASS +${window.audioSys.bassVal}</span>`; 
                 if(window.audioSys.reverbVal>0) c.innerHTML+=`<span class="tag" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: #7dd3fc;">REVERB ${window.audioSys.reverbVal}%</span>`; 
@@ -3132,32 +1864,35 @@
             }
 
             showToast(msg){
-                const t = window.$('toast');
+                const t = $('toast');
                 t.innerText = msg;
                 t.classList.add('show');
                 if(this.toastTimer) clearTimeout(this.toastTimer);
                 this.toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
             }
             showSyncPopup(title, pct) {
-                const pop = window.$('partySyncProgress');
+                const pop = $('syncPopup');
                 if(!pop) return;
-                const icon = window.$('partySyncIcon');
+                const icon = pop.querySelector('i');
                 if (title.includes('Uploading') || title.includes('Streaming')) {
-                    icon.className = 'fa-solid fa-cloud-arrow-up text-3xl text-[var(--accent)] mb-2 animate-bounce';
+                    icon.className = 'fa-solid fa-cloud-arrow-up';
                 } else {
-                    icon.className = 'fa-solid fa-cloud-arrow-down text-3xl text-[var(--accent)] mb-2 animate-bounce';
+                    icon.className = 'fa-solid fa-cloud-arrow-down';
                 }
-                window.$('partySyncTitle').innerText = title;
-                window.$('partySyncPercent').innerText = pct;
-                pop.style.display = 'block';
-                window.$('partySetupModal').style.display = 'block';
+                $('syncPopupTitle').innerText = title;
+                $('syncPopupPercent').innerText = pct;
+                pop.classList.add('show');
+                document.body.classList.add('sync-active');
             }
             updateSyncPopup(pct) {
-                if(window.$('partySyncPercent')) window.$('partySyncPercent').innerText = pct;
+                if($('syncPopupPercent')) $('syncPopupPercent').innerText = pct;
             }
             hideSyncPopup() {
-                const pop = window.$('partySyncProgress');
-                if(pop) pop.style.display = 'none';
+                const pop = $('syncPopup');
+                if(pop) {
+                    pop.classList.remove('show');
+                    document.body.classList.remove('sync-active');
+                }
             }
             
             // Helper: Convert Hex to RGBA
@@ -3177,7 +1912,7 @@
 
             // New Animation Logic
             updateActiveIndicator() {
-                const el = window.$('libraryList');
+                const el = $('libraryList');
                 const indicator = document.getElementById('active-indicator');
                 
                 // Find visible target
@@ -3326,7 +2061,7 @@
                     document.querySelectorAll('.setting-slider')[1].value = bass;
                     document.querySelectorAll('.setting-slider')[2].value = rev;
                     document.querySelectorAll('.setting-slider')[3].value = spd;
-                    window.$('xtremeToggle').checked = xtr;
+                    $('xtremeToggle').checked = xtr;
                     
                     if(window.audioSys.ctx) {
                          window.audioSys.bass.gain.value = bass;
@@ -3339,9 +2074,9 @@
                     window.audioSys.reverbVal = rev;
                     window.audioSys.xtremeOn = xtr;
                     window.audioSys.baseSpeed = parseFloat(spd);
-                    window.$('bassVal').innerText = `+${bass}dB`;
-                    window.$('pitchVal').innerText = spd + "x";
-                    window.$('reverbVal').innerText = rev + "%";
+                    $('bassVal').innerText = `+${bass}dB`;
+                    $('pitchVal').innerText = spd + "x";
+                    $('reverbVal').innerText = rev + "%";
                 }
                 window.ui.updateMetaTags();
 
@@ -3350,7 +2085,7 @@
                 
                 if(window.partyMode && window.partyMode.active && window.partyMode.isHost) {
                     window.ui.showSyncPopup("Loading sounds...", "0%");
-                    const finalStatus = window.$('syncStatus');
+                    const finalStatus = $('syncStatus');
                     if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
                     window.audioSys.audio.pause();
                 } else {
@@ -3411,7 +2146,7 @@
                     const s = { id: id, name: name, art: null, blob: blob, beatSignals: [], speedPoints: [] };
                     this.currentTrack = s;
                     window.ui.setTrack(s); window.ui.updatePlayBtn(true);
-                    const status = window.$('syncStatus');
+                    const status = $('syncStatus');
                     status.innerText = "Downloading Track...";
                     status.style.display = 'inline-block';
                     setTimeout(() => status.style.display = 'none', 3000);
@@ -3490,54 +2225,20 @@
                     window.audioSys.audio.playbackRate=window.curveEditor.getSpeedAt(pct)*window.audioSys.baseSpeed;
                     
                     if(this.autoDj && window.audioSys.audio.duration-window.audioSys.audio.currentTime<5 && !this.fading){
-                        this.fading=true;
-                        
-                        // Dual-deck crossfade logic
-                        if (!window.fadeAudio) {
-                            window.fadeAudio = new Audio();
-                            window.fadeGain = window.audioSys.ctx.createGain();
-                            
-                            // To prevent CORS policy issues with AudioContext and MediaElementSource, 
-                            // crossOrigin must be anonymous if needed, but since we use blob URLs, it's fine.
-                            const src = window.audioSys.ctx.createMediaElementSource(window.fadeAudio);
-                            src.connect(window.fadeGain);
-                            window.fadeGain.connect(window.audioSys.analyzer);
-                        }
-                        
-                        // Swap tracks
-                        window.fadeAudio.src = window.audioSys.audio.src;
-                        window.fadeAudio.currentTime = window.audioSys.audio.currentTime;
-                        window.fadeAudio.play().catch(e=>console.log("Fader unallowed playback", e));
-                        
-                        let oldVol = window.audioSys.gain.gain.value || 1.0;
-                        window.fadeGain.gain.value = oldVol;
-                        
-                        const fadeOut = setInterval(() => {
-                            if (oldVol > 0.05) { oldVol -= 0.05; window.fadeGain.gain.value = oldVol; }
-                            else { window.fadeGain.gain.value = 0; clearInterval(fadeOut); window.fadeAudio.pause(); }
-                        }, 200);
-                        
-                        let newVol = 0;
-                        window.audioSys.gain.gain.value = 0;
-                        this.next(); // Load new track into main audio
-                        
-                        const fadeIn = setInterval(() => {
-                            if (newVol < 1.0) { newVol += 0.05; window.audioSys.gain.gain.value = newVol; }
-                            else { window.audioSys.gain.gain.value = 1.0; clearInterval(fadeIn); this.fading = false; }
-                        }, 200);
+                        this.fading=true; setTimeout(()=>{this.next(); this.fading=false;},4500);
                     }
                 }
             }
             onEnd(){ if(this.loop)this.play(this.currId); else this.next(); }
-            toggleRepeat(){ this.loop=!this.loop; window.$('btnLoop').style.color=this.loop?'var(--accent)':'inherit'; }
+            toggleRepeat(){ this.loop=!this.loop; $('btnLoop').style.color=this.loop?'var(--accent)':'inherit'; }
             loadSettings(){
                 const b=localStorage.getItem('sv_bass'); if(b){document.querySelectorAll('.setting-slider')[1].value=b; window.audioSys.setBass(b);}
                 const r=localStorage.getItem('sv_reverb'); if(r){document.querySelectorAll('.setting-slider')[2].value=r; window.audioSys.setReverb(r);}
                 const p=localStorage.getItem('sv_pitch'); if(p){document.querySelectorAll('.setting-slider')[3].value=p; window.audioSys.setBaseSpeed(p);}
                 const c=localStorage.getItem('sv_theme'); if(c)window.ui.setTheme(c);
-                const xtr=localStorage.getItem('sv_xtreme') === 'true'; window.$('xtremeToggle').checked=xtr; window.audioSys.toggleXtreme();
-                const glob=localStorage.getItem('sv_global_audio') === 'true'; window.$('globalAudioToggle').checked=glob; window.audioSys.globalAudio=glob;
-                const sync=localStorage.getItem('sv_party_sync'); if(sync){ if(window.$('syncOffsetSlider')) { window.$('syncOffsetSlider').value=sync; window.$('syncOffsetVal').innerText=sync+'ms'; } }
+                const xtr=localStorage.getItem('sv_xtreme') === 'true'; $('xtremeToggle').checked=xtr; window.audioSys.toggleXtreme();
+                const glob=localStorage.getItem('sv_global_audio') === 'true'; $('globalAudioToggle').checked=glob; window.audioSys.globalAudio=glob;
+                const sync=localStorage.getItem('sv_party_sync'); if(sync){ if($('syncOffsetSlider')) { $('syncOffsetSlider').value=sync; $('syncOffsetVal').innerText=sync+'ms'; } }
             }
         };
 
@@ -3549,7 +2250,7 @@
                 this.manualOffset = parseInt(localStorage.getItem('sv_party_sync')) || 0;
             }
             toggleSetup() {
-                const el = window.$('partySetupModal');
+                const el = $('partySetupModal');
                 if(el.style.display === 'none') {
                     el.style.display = 'block';
                     this.updateUI();
@@ -3557,14 +2258,13 @@
             }
             updateUI() {
                 if(this.active) {
-                    window.$('partySetupInitial').style.display = 'none';
-                    window.$('partySetupActive').style.display = 'block';
-                    window.$('activePartyCode').innerText = this.sessionId;
-                    window.$('syncLibraryBtn').style.display = 'block';
+                    $('partySetupInitial').style.display = 'none';
+                    $('partySetupActive').style.display = 'block';
+                    $('activePartyCode').innerText = this.sessionId;
                 } else {
-                    window.$('partySetupInitial').style.display = 'block';
-                    window.$('partySetupActive').style.display = 'none';
-                    window.$('joinCodeInput').value = '';
+                    $('partySetupInitial').style.display = 'block';
+                    $('partySetupActive').style.display = 'none';
+                    $('joinCodeInput').value = '';
                 }
             }
             hostParty() {
@@ -3573,7 +2273,7 @@
                 this.connect();
             }
             joinParty() {
-                const code = window.$('joinCodeInput').value.trim().toUpperCase();
+                const code = $('joinCodeInput').value.trim().toUpperCase();
                 if(!code) return alert("Please enter a party code.");
                 this.sessionId = code;
                 this.isHost = false;
@@ -3582,10 +2282,10 @@
             connect() {
                 if(this.active) this.leave();
                 this.active = true;
-                window.$('partyBtn').classList.add('active');
-                window.$('syncStatus').innerText = `Party: ${this.sessionId}`;
-                window.$('syncStatus').style.display = 'inline-block';
-                window.$('partyBtn').style.color = '#fbbf24';
+                $('partyBtn').classList.add('active');
+                $('syncStatus').innerText = `Party: ${this.sessionId}`;
+                $('syncStatus').style.display = 'inline-block';
+                $('partyBtn').style.color = '#fbbf24';
                 
                 try {
                     const sessionRef = window.dbRef(window.db, 'sessions/' + this.sessionId);
@@ -3616,9 +2316,9 @@
                 this.active = false;
                 this.listeners.forEach(unsub => unsub());
                 this.listeners = [];
-                window.$('partyBtn').classList.remove('active');
-                window.$('partyBtn').style = '';
-                window.$('syncStatus').style.display = 'none';
+                $('partyBtn').classList.remove('active');
+                $('partyBtn').style = '';
+                $('syncStatus').style.display = 'none';
                 this.updateUI();
                 window.ui.showToast("Left Session");
             }
@@ -3629,57 +2329,6 @@
                 window.setDb(window.dbRef(window.db, 'sessions/' + this.sessionId), {
                     ...data, timestamp: serverTime, sender: window.player.myId
                 });
-            }
-
-            syncLibrary() {
-                if (!this.active) return;
-                if (!this.isHost) {
-                    this.broadcast({type: 'REQ_SYNC_ALL'});
-                    window.ui.showToast("Requested full sync from Host...");
-                    return;
-                }
-                
-                const btn = window.$('syncLibraryBtn');
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
-                
-                const pushAll = async () => {
-                    const payload = [];
-                    for(const s of window.player.songs) {
-                        try {
-                            const sRef = window.storageRef(window.storage, `partyData/${this.sessionId}/${s.id}.mp3`);
-                            await window.uploadBytes(sRef, s.blob);
-                            const downloadUrl = await window.getDownloadURL(sRef);
-                            payload.push({id: s.id, name: s.name, storageUrl: downloadUrl, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
-                        } catch(e) { console.error("Failed to host song chunk", e); }
-                    }
-                    this.broadcast({type: 'SYNC_ALL', songs: payload});
-                    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist';
-                    window.ui.showToast("Playlist Sync Broadcasted!");
-                };
-                pushAll();
-            }
-
-            async processSyncAll(songs) {
-                window.$('syncStatus').style.display = 'inline-block';
-                window.$('partySetupModal').style.display = 'none';
-                
-                let count = 0;
-                for(const s of songs) {
-                    count++;
-                    window.$('syncStatus').innerText = `Syncing ${count}/${songs.length}`;
-                    try {
-                        const existing = window.player.songs.find(x => x.id === s.id || x.name === s.name);
-                        if (!existing) {
-                            const res = await fetch(s.storageUrl);
-                            const blob = await res.blob();
-                            blob.name = s.name + ".mp3";
-                            await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
-                        }
-                    } catch(e) { console.error(e); }
-                }
-                await window.player.loadLib();
-                window.$('syncStatus').innerText = "Playlist Synced!";
-                setTimeout(() => window.$('syncStatus').style.display='none', 3000);
             }
             
             async broadcastInChunks(song) {
@@ -3710,13 +2359,13 @@
                         await window.setDb(window.dbRef(window.db, `partyData/${this.sessionId}/${i}`), chunk);
                         
                         // Update UI on host to show streaming progress
-                        const status = window.$('syncStatus');
+                        const status = $('syncStatus');
                         const pct = Math.round(((i+1)/totalChunks)*100);
                         if (status) status.innerText = `Streaming: ${pct}%`;
                         window.ui.showSyncPopup("Streaming to Party...", pct + "%");
                     }
                     // Host waits for READY event from Client to hide popup
-                    const finalStatus = window.$('syncStatus');
+                    const finalStatus = $('syncStatus');
                     if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
                 };
                 reader.readAsDataURL(song.blob);
@@ -3742,7 +2391,7 @@
                     } else if (data.storageUrl || data.chunks) {
                         window.ui.showToast("Downloading Shared Track...");
                         window.ui.showSyncPopup("Downloading Track...", "0%");
-                        const status = window.$('syncStatus');
+                        const status = $('syncStatus');
                         status.style.display = 'inline-block';
                         this.isDownloading = true; // Block STATUS seeking
                         this.pauseRequestedDuringBuffer = false;
@@ -3858,22 +2507,6 @@
                         }
                     }
                 }
-                else if (data.type === 'FX_SYNC' && !this.isHost) {
-                    const sl = document.querySelectorAll('.setting-slider');
-                    if (data.bass !== undefined) { sl[1].value = data.bass; window.audioSys.setBass(data.bass); }
-                    if (data.reverb !== undefined) { sl[2].value = data.reverb; window.audioSys.setReverb(data.reverb); }
-                    if (data.speed !== undefined) { sl[3].value = data.speed; window.audioSys.setBaseSpeed(data.speed); }
-                    if (data.xtreme !== undefined) { $('xtremeToggle').checked = data.xtreme; window.audioSys.toggleXtreme(); }
-                    window.ui.showToast("Host adjusted audio FX");
-                }
-                else if (data.type === 'SYNC_ALL' && !this.isHost) {
-                    window.ui.showToast("Downloading exact Host Playlist...");
-                    this.processSyncAll(data.songs);
-                }
-                else if (data.type === 'REQ_SYNC_ALL' && this.isHost) {
-                    window.ui.showToast("A Client requested Full Sync...");
-                    this.syncLibrary();
-                }
             }
         };
 
@@ -3931,15 +2564,4 @@
         if(playlistParam && window.libraryMgr) {
             setTimeout(() => window.libraryMgr.loadSharedLibrary(playlistParam), 1500);
         }
-
-        // PWA SERVICE WORKER
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').then(reg => {
-                    console.log('SW registered!', reg);
-                }).catch(err => console.log('SW failed', err));
-            });
-        }
-    </script>
-</body>
-</html>
+    
