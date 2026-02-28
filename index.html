@@ -3077,49 +3077,75 @@
                 window.$('playlistModal').style.pointerEvents = 'none';
             }
 
-            scanPlaylist() {
+            async scanPlaylist() {
                 const url = window.$('playlistUrlInput').value.trim();
                 if(!url) return;
                 
                 const btn = window.$('btnScanPlaylist');
                 const stat = window.$('playlistStatus');
+                const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3000' : 'https://okmusic-api.vercel.app';
                 
                 if(btn.innerText.includes("IMPORT")) {
-                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> IMPORTING...';
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> PREPARING...';
+                    btn.style.pointerEvents = 'none';
                     
-                    // Simulate fetching and parsing tracks
-                    setTimeout(async () => {
-                        this.showToast("Playlist structure imported! (Audio fetch requires backend API linking)");
-                        
-                        // Fake tracks insertion to test UI rendering
-                        for(let i=1; i<=15; i++) {
-                             const fakeId = "spotify-mock-" + Date.now() + "-" + i;
-                             const fakeSong = {
-                                 id: fakeId,
-                                 name: `Spotify Imported Track ${i}`,
-                                 blob: new Blob([], {type: 'audio/mp3'}), // Empty blob placeholder
-                                 beatSignals: [],
-                                 speedPoints: []
-                             };
-                             await window.player.db.add(fakeSong);
+                    try {
+                        const tracks = this._pendingPlaylistTracks || [];
+                        let successCount = 0;
+                        for(let i=0; i<tracks.length; i++) {
+                            const t = tracks[i];
+                            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> DOWNLOADING ${i+1}/${tracks.length}`;
+                            try {
+                                const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.name || t.url)}`;
+                                const res = await fetch(fetchUrl);
+                                if (!res.ok) throw new Error("Failed to stream");
+                                const blob = await res.blob();
+                                
+                                const newSong = {
+                                    id: "stream-" + Date.now() + "-" + i,
+                                    name: t.name,
+                                    blob: blob,
+                                    beatSignals: [],
+                                    speedPoints: [] // Future: could also fetch artwork via play-dl if needed
+                                };
+                                await window.player.db.add(newSong);
+                                successCount++;
+                            } catch(e) {
+                                console.warn("Skipped track:", t.name);
+                            }
                         }
-                        await window.player.loadLib(); // Reloads struct and triggers renderLibrary()
                         
+                        await window.player.loadLib();
+                        this.showToast(`Imported ${successCount} tracks successfully!`);
                         this.closePlaylistImporter();
-                    }, 800);
+                    } catch (e) {
+                        alert("Import stopped: " + e.message);
+                        btn.innerHTML = 'IMPORT FAILED - TRY AGAIN';
+                        btn.style.pointerEvents = 'auto';
+                    }
                     return;
                 }
 
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> SCANNING...';
                 btn.style.pointerEvents = 'none';
                 
-                setTimeout(() => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/playlist?url=${encodeURIComponent(url)}`);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Failed to scan playlist");
+                    
+                    this._pendingPlaylistTracks = data.tracks;
+                    
                     stat.classList.remove('hidden');
                     stat.classList.remove('animate-pulse');
-                    stat.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Found 18 Tracks! Ready to import.';
+                    stat.innerHTML = `<i class="fa-solid fa-check mr-1"></i> Found ${data.tracks.length} Tracks! Ready to import.`;
                     btn.innerHTML = 'IMPORT TRACKS';
                     btn.style.pointerEvents = 'auto';
-                }, 1500);
+                } catch (e) {
+                    alert("Scan failed: " + e.message);
+                    btn.innerHTML = 'SCAN LINK';
+                    btn.style.pointerEvents = 'auto';
+                }
             }
 
             setBgBrightness(v){ window.$('bg-layer').style.opacity=v; localStorage.setItem('sv_bg_bright',v); }
