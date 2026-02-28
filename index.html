@@ -1115,6 +1115,8 @@
             app = initializeApp(firebaseConfig);
             db = getDatabase(app);
             storage = getStorage(app);
+            storage.maxUploadRetryTime = 1200000; // Increase to 20 minutes for large libraries
+            storage.maxOperationRetryTime = 1200000;
             
             window.serverTimeOffset = 0;
             onValue(dbRef(db, '.info/serverTimeOffset'), (snap) => {
@@ -1317,7 +1319,7 @@
             async shareLibrary() {
                 if(!window.db || !window.storage) return alert("Firebase not connected.");
                 const btn = window.$('shareLibBtn');
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                const oldHtml = btn.innerHTML;
                 btn.style.backgroundColor = 'var(--accent)';
                 btn.style.color = 'black';
                 
@@ -1325,17 +1327,32 @@
                     const shareId = Math.random().toString(36).substring(2,8).toUpperCase();
                     const songsToShare = [];
                     const flatList = window.ui.getFlatList();
-                    for(const id of flatList) {
+                    const total = flatList.length;
+
+                    for(let i=0; i<total; i++) {
+                        const id = flatList[i];
                         const song = window.player.songs.find(s=>s.id===id);
                         if(song) {
+                            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${i+1}/${total}`;
                             const sRef = window.storageRef(window.storage, `sharedLibs/${shareId}/${song.id}.mp3`);
-                            await window.uploadBytes(sRef, song.blob);
-                            const downloadUrl = await window.getDownloadURL(sRef);
                             
-                            songsToShare.push({
-                                id: song.id, name: song.name, storageUrl: downloadUrl,
-                                beatSignals: song.beatSignals || [], speedPoints: song.speedPoints || []
-                            });
+                            let success = false;
+                            for(let attempt=0; attempt<3; attempt++) {
+                                try {
+                                    await window.uploadBytes(sRef, song.blob);
+                                    const downloadUrl = await window.getDownloadURL(sRef);
+                                    songsToShare.push({
+                                        id: song.id, name: song.name, storageUrl: downloadUrl,
+                                        beatSignals: song.beatSignals || [], speedPoints: song.speedPoints || []
+                                    });
+                                    success = true;
+                                    break;
+                                } catch(err) {
+                                    console.error(`Upload failed (Attempt ${attempt+1}/3): ${song.name}`, err);
+                                    if(attempt === 2) throw err;
+                                    await new Promise(r => setTimeout(r, 2000));
+                                }
+                            }
                         }
                     }
                     
@@ -1347,8 +1364,12 @@
                     const shareUrl = window.location.origin + window.location.pathname + "?playlist=" + shareId;
                     navigator.clipboard.writeText(shareUrl);
                     alert("Library Uploaded! Link copied to clipboard:\n" + shareUrl);
-                } catch(e) { alert("Share Failed: " + e.message); console.error(e); }
-                btn.innerHTML = '<i class="fa-solid fa-share-nodes"></i>';
+                } catch(e) { 
+                    alert("Share Failed: " + e.message); 
+                    console.error(e); 
+                    window.ui.showToast("Network Error: Sharing stopped.");
+                }
+                btn.innerHTML = oldHtml;
                 btn.style.backgroundColor = ''; btn.style.color = '';
             }
             
@@ -3790,20 +3811,38 @@
                 }
                 
                 const btn = window.$('syncLibraryBtn');
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
                 
                 const pushAll = async () => {
                     const payload = [];
-                    for(const s of window.player.songs) {
+                    const songs = window.player.songs;
+                    const total = songs.length;
+                    btn.disabled = true;
+                    
+                    for(let i=0; i<total; i++) {
+                        const s = songs[i];
+                        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> [${i+1}/${total}]`;
                         try {
                             const sRef = window.storageRef(window.storage, `partyData/${this.sessionId}/${s.id}.mp3`);
-                            await window.uploadBytes(sRef, s.blob);
-                            const downloadUrl = await window.getDownloadURL(sRef);
-                            payload.push({id: s.id, name: s.name, storageUrl: downloadUrl, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                            
+                            let success = false;
+                            for(let attempt=0; attempt<3; attempt++) {
+                                try {
+                                    await window.uploadBytes(sRef, s.blob);
+                                    const downloadUrl = await window.getDownloadURL(sRef);
+                                    payload.push({id: s.id, name: s.name, storageUrl: downloadUrl, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                                    success = true;
+                                    break;
+                                } catch(err) {
+                                    console.warn(`Party sync retry ${attempt+1} for ${s.name}`);
+                                    if(attempt === 2) throw err;
+                                    await new Promise(r => setTimeout(r, 2000));
+                                }
+                            }
                         } catch(e) { console.error("Failed to host song chunk", e); }
                     }
                     this.broadcast({type: 'SYNC_ALL', songs: payload});
                     btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist';
+                    btn.disabled = false;
                     window.ui.showToast("Playlist Sync Broadcasted!");
                 };
                 pushAll();
