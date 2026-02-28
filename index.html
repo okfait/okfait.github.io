@@ -648,6 +648,7 @@
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
             <button onclick="window.voiceControl.toggle()" class="top-icon" id="micBtn" title="Voice Control"><i class="fa-solid fa-microphone"></i></button>
+            <button onclick="window.ui.toggleQueue()" class="top-icon" title="Queue"><i class="fa-solid fa-list-ul"></i></button>
             <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
             <button onclick="window.ui.toggleSettings()" class="top-icon" title="Settings"><i class="fa-solid fa-sliders"></i></button>
         </div>
@@ -1073,9 +1074,21 @@
 
     <!-- CONTEXT MENU -->
     <div id="contextMenu">
+        <div class="ctx-item" onclick="window.ui.handleContextAction('queue')"><i class="fa-solid fa-plus"></i> Add to Queue</div>
         <div class="ctx-item" onclick="window.ui.handleContextAction('edit')"><i class="fa-solid fa-pen"></i> Edit</div>
         <div class="ctx-item delete" onclick="window.ui.handleContextAction('delete')"><i class="fa-solid fa-trash"></i> Delete</div>
     </div>
+
+    <!-- QUEUE PANEL -->
+    <aside class="side-panel right-panel" id="queuePanel">
+        <div class="panel-header">
+            <span>PLAY QUEUE</span>
+            <button onclick="window.ui.toggleQueue()" class="action-btn"><i class="fa-solid fa-xmark text-white text-lg"></i></button>
+        </div>
+        <div class="panel-content custom-scrollbar space-y-2" id="queueList">
+            <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
+        </div>
+    </aside>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -1422,7 +1435,11 @@
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
                 this.broadcastFx();
             }
-            setVolume(v){if(this.ctx)this.gain.gain.value=v;}
+            setVolume(v){
+                if(this.ctx)this.gain.gain.value=v;
+                const sl = document.querySelector('.vol-slider');
+                if(sl) sl.style.background = `linear-gradient(to top, var(--accent) ${v*100}%, rgba(255,255,255,0.1) ${v*100}%)`;
+            }
             setBaseSpeed(v){
                 this.baseSpeed=parseFloat(v); window.$('pitchVal').innerText=v+"x"; 
                 if(this.globalAudio) localStorage.setItem('sv_pitch',v);
@@ -1436,6 +1453,20 @@
                 if(this.globalAudio) localStorage.setItem('sv_xtreme',on);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
                 this.broadcastFx();
+            }
+            applyPreset(type) {
+                let bass = 0, rev = 0;
+                switch(type) {
+                    case 'electronic': bass = 12; rev = 15; break;
+                    case 'acoustic': bass = 2; rev = 30; break;
+                    case 'bass_boost': bass = 30; rev = 0; break;
+                    case 'vocal': bass = -5; rev = 10; break;
+                    case 'flat': bass = 0; rev = 0; break;
+                }
+                document.querySelectorAll('.setting-slider')[1].value = bass;
+                document.querySelectorAll('.setting-slider')[2].value = rev;
+                this.setBass(bass);
+                this.setReverb(rev);
             }
             
             broadcastFx() {
@@ -2326,7 +2357,7 @@
                 }
             }
 
-            getSpeedAt(p){ this.pts.sort((a,b)=>a.x-b.x); let p1=this.pts[0],p2=this.pts[this.pts.length-1]; for(let i=0;i<this.pts.length-1;i++)if(p>=this.pts[i].x&&p<=this.pts[i+1].x){p1=this.pts[i];p2=this.pts[i+1];break;} const r=p2.x-p1.x; if(r===0)return 0.5+(p1.y*1.5); const t=(p-p1.x)/r; return 0.5+((p1.y+(p2.y-p1.y)*t)*1.5); }
+            getSpeedAt(p){ this.pts.sort((a,b)=>a.x-b.x); let p1=this.pts[0],p2=this.pts[this.pts.length-1]; for(let i=0;i<this.pts.length-1;i++)if(p>=this.pts[i].x&&p<=this.pts[i+1].x){p1=this.pts[i];p2=this.pts[i+1];break;} const r=p2.x-p1.x; if(r===0)return p1.y*2.0; const t=(p-p1.x)/r; return (p1.y+(p2.y-p1.y)*t)*2.0; }
             saveSignals() { 
                 if(window.player.currentTrack) { 
                     window.player.currentTrack.beatSignals = this.beatSignals;
@@ -2417,6 +2448,12 @@
                     this.openEdit(this.activeContextType, this.activeContextId);
                 } else if (action === 'delete') {
                     window.libraryMgr.deleteItem(this.activeContextId);
+                } else if (action === 'queue') {
+                    if (this.activeContextType === 'song') {
+                        window.player.queue.push(this.activeContextId);
+                        this.showToast("Added to Queue");
+                        this.renderQueue();
+                    }
                 }
                 
                 window.$('contextMenu').style.display = 'none';
@@ -3014,9 +3051,43 @@
                 // this.renderLibrary(); 
             }
             updatePlayBtn(p){ window.$('btnPlay').innerHTML=p?'<i class="fa-solid fa-pause"></i>':'<i class="fa-solid fa-play ml-1"></i>'; }
-            updateProgress(){ const a=window.audioSys.audio; if(!a.duration)return; window.$('progressBar').value=(a.currentTime/a.duration)*100; const f=s=>`${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; window.$('currTime').innerText=f(a.currentTime); window.$('totTime').innerText=f(a.duration); }
-            toggleLibrary(){ window.$('libraryPanel').classList.toggle('open'); }
-            toggleSettings(){ window.$('settingsPanel').classList.toggle('open'); }
+            updateProgress(){ 
+                const a=window.audioSys.audio; 
+                if(!a.duration)return; 
+                const pct = (a.currentTime/a.duration)*100;
+                const bar = window.$('progressBar');
+                bar.value = pct; 
+                bar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, rgba(255,255,255,0.3) ${pct}%)`;
+                const f=s=>`${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; 
+                window.$('currTime').innerText=f(a.currentTime); 
+                window.$('totTime').innerText=f(a.duration); 
+            }
+            toggleLibrary(){ window.$('libraryPanel').classList.toggle('open'); window.$('settingsPanel').classList.remove('open'); window.$('queuePanel').classList.remove('open'); }
+            toggleSettings(){ window.$('settingsPanel').classList.toggle('open'); window.$('libraryPanel').classList.remove('open'); window.$('queuePanel').classList.remove('open'); }
+            toggleQueue(){ window.$('queuePanel').classList.toggle('open'); window.$('settingsPanel').classList.remove('open'); window.$('libraryPanel').classList.remove('open'); this.renderQueue(); }
+
+            renderQueue() {
+                const list = window.$('queueList');
+                list.innerHTML = '';
+                if(window.player.queue.length === 0) {
+                    list.innerHTML = '<div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>';
+                    return;
+                }
+                window.player.queue.forEach((id, idx) => {
+                    const song = window.player.songs.find(s => s.id === id);
+                    if(!song) return;
+                    const card = document.createElement('div');
+                    card.className = 'w-full bg-white/5 border border-white/10 p-3 rounded-lg flex items-center gap-3 relative';
+                    card.innerHTML = `
+                        <div class="w-8 h-8 rounded shrink-0 bg-white/10 bg-cover bg-center" style="background-image: url(${song.art || ''})"></div>
+                        <div class="flex-1 truncate">
+                            <div class="text-xs font-bold text-white truncate">${song.name}</div>
+                        </div>
+                        <button class="text-white/50 hover:text-red-400" onclick="window.player.removeFromQueue(${idx})"><i class="fa-solid fa-xmark"></i></button>
+                    `;
+                    list.appendChild(card);
+                });
+            }
             setTheme(c){ document.documentElement.style.setProperty('--accent',c); localStorage.setItem('sv_theme',c); const h=parseInt(c.replace('#',''),16); const r=(h>>16)&255,g=(h>>8)&255,b=h&255; document.documentElement.style.setProperty('--accent-dim',`rgba(${r},${g},${b},0.15)`); document.documentElement.style.setProperty('--accent-glow',`rgba(${r},${g},${b},0.3)`); let min=Math.min(r,g,b),max=Math.max(r,g,b),d=max-min,hue=0; if(d>0){if(max==r)hue=((g-b)/d)%6;else if(max==g)hue=(b-r)/d+2;else hue=(r-g)/d+4;} hue=Math.round(hue*60);if(hue<0)hue+=360; document.documentElement.style.setProperty('--bg-hue',hue); }
             
             openEdit(t,id){ 
@@ -3083,7 +3154,7 @@
                 
                 const btn = window.$('btnScanPlaylist');
                 const stat = window.$('playlistStatus');
-                const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3000' : 'https://okmusic-api.vercel.app';
+                const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3000' : 'https://okfait-github-io.vercel.app';
                 
                 if(btn.innerText.includes("IMPORT")) {
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> PREPARING...';
@@ -3288,6 +3359,7 @@
                 this.songs=[]; this.currId=null; this.loop=0; this.autoDj=false; this.playlist=[];
                 this.shuffle = false;
                 this.shuffleHistory = [];
+                this.queue = [];
                 this.db=new MusicDB(); this.db.init().then(()=>this.loadLib()); this.loadSettings();
                 this.currentTrack = null; 
             }
@@ -3467,7 +3539,20 @@
                 }
             }
             
+            removeFromQueue(idx) {
+                if (this.queue && idx >= 0 && idx < this.queue.length) {
+                    this.queue.splice(idx, 1);
+                    window.ui.renderQueue();
+                }
+            }
+
             next(){ 
+                if (this.queue && this.queue.length > 0) {
+                    const nextId = this.queue.shift();
+                    window.ui.renderQueue();
+                    this.play(nextId);
+                    return;
+                }
                 const l = this.playlist.length ? this.playlist : window.ui.getFlatList(); 
                 if (l.length === 0) return;
 
