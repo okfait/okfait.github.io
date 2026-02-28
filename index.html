@@ -93,10 +93,10 @@
 
         .scrubber { width: 100%; margin-top: 20px; padding: 0 30px; position: relative; }
         input[type=range] { appearance: none; -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
-        /* UPDATED: Brighter track */
-        input[type=range].seek-bar::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255,255,255,0.3); border-radius: 99px; backdrop-filter: blur(4px); }
+        /* UPDATED: Brighter track with rounded corners */
+        input[type=range].seek-bar::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255,255,255,0.3); border-radius: 99px; backdrop-filter: blur(4px); overflow: hidden; }
         /* UPDATED: Theme colored thumb */
-        input[type=range].seek-bar::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; margin-top: -3px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.2s; }
+        input[type=range].seek-bar::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; margin-top: -3px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.2s; position: relative; z-index: 2; }
         input[type=range].seek-bar:hover::-webkit-slider-thumb { transform: scale(1.3); }
         .time-labels { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); margin-top: 8px; font-weight: 500;}
 
@@ -117,7 +117,9 @@
             width: 12px;
             height: 100px;
             accent-color: var(--accent);
-            background: transparent;
+            background: rgba(255,255,255,0.1);
+            border-radius: 99px;
+            overflow: hidden;
         }
 
         .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
@@ -135,8 +137,8 @@
 
         .setting-row { margin-bottom: 20px; }
         .setting-label { font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; display: block; }
-        input[type=range].setting-slider { appearance: none; -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
-        input[type=range].setting-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; height: 16px; width: 16px; margin-top: -6px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.1s; }
+        input[type=range].setting-slider { appearance: none; -webkit-appearance: none; width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
+        input[type=range].setting-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; height: 16px; width: 16px; margin-top: -4px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.1s; position: relative; z-index: 2; }
         input[type=range].setting-slider:hover::-webkit-slider-thumb { transform: scale(1.2); }
 
         /* Unified Transparent Glass Modal Style */
@@ -1303,6 +1305,14 @@
             deleteItem(id){ const remove=(list)=>{ const idx=list.findIndex(x=>x.id===id); if(idx>-1){ const item=list[idx]; if(item.type==='song') window.player.db.delete(item.id); else if(item.type==='folder'&&item.items.length>0) this.structure.push(...item.items); list.splice(idx,1); return true; } for(let item of list) if(item.type==='folder'&&remove(item.items)) return true; return false; }; remove(this.structure); this.save(); window.ui.renderLibrary(); }
             findItem(id,list=this.structure){ for(let item of list){ if(item.id===id)return item; if(item.type==='folder'){ const found=this.findItem(id,item.items); if(found)return found; }} return null; }
             updateFolder(id,d){ const f=this.findItem(id); if(f){ Object.assign(f,d); this.save(); window.ui.renderLibrary(); } }
+            removeItemFromStructure(id, list = this.structure) {
+                const idx = list.findIndex(x => x.id === id);
+                if (idx > -1) { list.splice(idx, 1); return true; }
+                for (const item of list) {
+                    if (item.type === 'folder' && this.removeItemFromStructure(id, item.items)) return true;
+                }
+                return false;
+            }
             
             async shareLibrary() {
                 if(!window.db || !window.storage) return alert("Firebase not connected.");
@@ -1575,7 +1585,8 @@
             }
             drawRing(ctx,w,h,d){
                 const cx=w/2, cy=h/2-40, r=140, bars=100;
-                const lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/bars)||1;
+                // IMPROVED: Use a wider range of the buffer to avoid static/dead lines
+                const lim=Math.floor(d.length * 0.6), step=Math.max(1, Math.floor(lim/bars));
                 const sens = window.vizSens || 1.0;
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent');
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
@@ -1612,7 +1623,8 @@
                 }
             }
             drawBars(ctx,w,h,d){
-                const cnt=100, sp=w/cnt, lim=Math.floor(d.length*Math.min(1,window.audioSys.baseSpeed-0.05)), step=Math.floor(lim/cnt)||1;
+                const cnt=100, sp=w/cnt;
+                const lim=Math.floor(d.length * 0.6), step=Math.max(1, Math.floor(lim/cnt));
                 const sens = window.vizSens || 1.0;
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 const col=getComputedStyle(document.documentElement).getPropertyValue('--accent'); ctx.fillStyle=col; ctx.shadowBlur=isMobile ? 0 : 10; ctx.shadowColor=col;
@@ -2682,18 +2694,26 @@
                     card.ondragstart = e => {
                         e.stopPropagation();
                         // 1. Create the Custom Proxy Element
+                        const isSelected = this.selectedIds.includes(item.id);
                         const proxy = document.createElement('div');
                         proxy.className = 'lib-drag-proxy';
-                        proxy.innerHTML = `<i class="fa-solid fa-music"></i><span>${song.name}</span>`;
+                        proxy.innerHTML = isSelected && this.selectMode 
+                            ? `<i class="fa-solid fa-layer-group"></i><span>Moving ${this.selectedIds.length} Items</span>`
+                            : `<i class="fa-solid fa-music"></i><span>${song.name}</span>`;
                         document.body.appendChild(proxy);
                         
-                        // 2. Set it as the drag image (Offset centers cursor roughly)
+                        // 2. Set it as the drag image
                         e.dataTransfer.setDragImage(proxy, 20, 22);
-                        
-                        // 3. Remove from DOM immediately (browser takes snapshot)
                         setTimeout(() => document.body.removeChild(proxy), 0);
 
-                        window.libraryMgr.dragSrc = { item, parentList, idx };
+                        if (this.selectMode && isSelected) {
+                            window.libraryMgr.dragSrc = { 
+                                items: this.selectedIds.map(id => window.libraryMgr.findItem(id)).filter(x => x), 
+                                type: 'multi' 
+                            };
+                        } else {
+                            window.libraryMgr.dragSrc = { item, parentList, idx, type: 'single' };
+                        }
                         card.style.opacity = '0.5';
                     };
                     card.ondragend = () => {
@@ -2751,21 +2771,12 @@
                         e.stopPropagation();
                         const src = window.libraryMgr.dragSrc;
                         const tgt = window.libraryMgr.dropTarget;
+                        if (!src || !tgt || src.type === 'multi') return; // Multi-drag only supported for folder drops for now
                         
-                        if (!src || !tgt) return;
-                        
-                        // Logic to move item
-                        // 1. Remove from old
                         src.parentList.splice(src.idx, 1);
-                        
-                        // 2. Adjust target index if in same list and removed before target
                         let insertIdx = tgt.idx;
-                        if (src.parentList === tgt.list && src.idx < tgt.idx) {
-                             insertIdx--;
-                        }
+                        if (src.parentList === tgt.list && src.idx < tgt.idx) insertIdx--;
                         if (tgt.pos === 'after') insertIdx++;
-                        
-                        // 3. Insert
                         tgt.list.splice(insertIdx, 0, src.item);
                         
                         window.libraryMgr.save();
@@ -2901,7 +2912,12 @@
                     header.ondragstart = e => {
                          e.stopPropagation();
                          e.dataTransfer.setDragImage(emptyImg, 0, 0);
-                         window.libraryMgr.dragSrc = { item, parentList, idx };
+                         const isSelected = this.selectedIds.includes(item.id);
+                         if (this.selectMode && isSelected) {
+                             window.libraryMgr.dragSrc = { items: this.selectedIds.map(id => window.libraryMgr.findItem(id)).filter(x => x), type: 'multi' };
+                         } else {
+                             window.libraryMgr.dragSrc = { item, parentList, idx, type: 'single' };
+                         }
                          folderDiv.style.opacity = '0.5';
                     }
                     header.ondragend = () => {
@@ -2924,11 +2940,18 @@
                         const src = window.libraryMgr.dragSrc;
                         if (!src) return;
                         
-                        // If dropping onto self, do nothing
-                        if (src.item.id === item.id) return;
+                        if (src.type === 'multi') {
+                            src.items.forEach(dragItem => {
+                                if (dragItem.id === item.id) return; // Don't drop folder into itself
+                                window.libraryMgr.removeItemFromStructure(dragItem.id);
+                                item.items.push(dragItem);
+                            });
+                        } else {
+                            if (src.item.id === item.id) return;
+                            src.parentList.splice(src.idx, 1);
+                            item.items.push(src.item);
+                        }
                         
-                        src.parentList.splice(src.idx, 1);
-                        item.items.push(src.item);
                         item.isOpen = true;
                         window.libraryMgr.save();
                         this.renderLibrary();
@@ -3062,6 +3085,12 @@
                 window.$('currTime').innerText=f(a.currentTime); 
                 window.$('totTime').innerText=f(a.duration); 
             }
+            updateVolume(v){ 
+                const pct = v * 100;
+                const vs = window.$('volSlider');
+                vs.style.background = `linear-gradient(to top, var(--accent) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`;
+                window.audioSys.setVolume(v); 
+            }
             toggleLibrary(){ window.$('libraryPanel').classList.toggle('open'); window.$('settingsPanel').classList.remove('open'); window.$('queuePanel').classList.remove('open'); }
             toggleSettings(){ window.$('settingsPanel').classList.toggle('open'); window.$('libraryPanel').classList.remove('open'); window.$('queuePanel').classList.remove('open'); }
             toggleQueue(){ window.$('queuePanel').classList.toggle('open'); window.$('settingsPanel').classList.remove('open'); window.$('libraryPanel').classList.remove('open'); this.renderQueue(); }
@@ -3162,30 +3191,39 @@
                     
                     try {
                         const tracks = this._pendingPlaylistTracks || [];
+                        const folderId = crypto.randomUUID();
+                        const folderName = this._pendingPlaylistName || "Imported Playlist";
+                        
+                        // Create Folder FIRST
+                        window.libraryMgr.structure.unshift({
+                            type: 'folder', id: folderId, name: folderName, 
+                            items: [], isOpen: true, color: '#1db954' // Spotify Green
+                        });
+
                         let successCount = 0;
+                        const folder = window.libraryMgr.findItem(folderId);
+
                         for(let i=0; i<tracks.length; i++) {
                             const t = tracks[i];
                             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> DOWNLOADING ${i+1}/${tracks.length}`;
                             try {
-                                const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.name || t.url)}`;
+                                const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.url || t.name)}`;
                                 const res = await fetch(fetchUrl);
                                 if (!res.ok) throw new Error("Failed to stream");
                                 const blob = await res.blob();
                                 
-                                const newSong = {
-                                    id: "stream-" + Date.now() + "-" + i,
-                                    name: t.name,
-                                    blob: blob,
-                                    beatSignals: [],
-                                    speedPoints: [] // Future: could also fetch artwork via play-dl if needed
-                                };
+                                const songId = "stream-" + Date.now() + "-" + i;
+                                const newSong = { id: songId, name: t.name, blob: blob, beatSignals: [], speedPoints: [] };
                                 await window.player.db.add(newSong);
+                                
+                                // Push to new folder
+                                if(folder) folder.items.push({ type: 'song', id: songId });
+                                
                                 successCount++;
-                            } catch(e) {
-                                console.warn("Skipped track:", t.name);
-                            }
+                            } catch(e) { console.warn("Skipped track:", t.name); }
                         }
                         
+                        window.libraryMgr.save();
                         await window.player.loadLib();
                         this.showToast(`Imported ${successCount} tracks successfully!`);
                         this.closePlaylistImporter();
@@ -3206,6 +3244,7 @@
                     if (!res.ok) throw new Error(data.error || "Failed to scan playlist");
                     
                     this._pendingPlaylistTracks = data.tracks;
+                    this._pendingPlaylistName = data.title || "Imported Playlist";
                     
                     stat.classList.remove('hidden');
                     stat.classList.remove('animate-pulse');
