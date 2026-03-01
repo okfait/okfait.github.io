@@ -3228,13 +3228,13 @@
                         const folderName = this._pendingPlaylistName || "Imported Playlist";
                         
                         // Create Folder FIRST
-                        window.libraryMgr.structure.unshift({
+                        const newFolder = {
                             type: 'folder', id: folderId, name: folderName, 
                             items: [], isOpen: true, color: '#1db954' // Spotify Green
-                        });
+                        };
+                        window.libraryMgr.structure.unshift(newFolder);
 
                         let successCount = 0;
-                        const folder = window.libraryMgr.findItem(folderId);
 
                         for(let i=0; i<tracks.length; i++) {
                             const t = tracks[i];
@@ -3250,7 +3250,7 @@
                                 await window.player.db.add(newSong);
                                 
                                 // Push to new folder
-                                if(folder) folder.items.push({ type: 'song', id: songId });
+                                newFolder.items.push({ type: 'song', id: songId });
                                 
                                 successCount++;
                             } catch(e) { console.warn("Skipped track:", t.name); }
