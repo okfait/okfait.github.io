@@ -7,6 +7,31 @@ const app = express();
 // Whitelist the origin so okMUSIC can reach the API without CORS issues
 app.use(cors({ origin: '*' }));
 
+let isSpotifyAuthorized = false;
+async function initSpotify() {
+    if (isSpotifyAuthorized) return;
+    try {
+        if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
+            play.setToken({
+                spotify: {
+                    client_id: process.env.SPOTIFY_CLIENT_ID,
+                    client_secret: process.env.SPOTIFY_CLIENT_SECRET,
+                    market: 'US'
+                }
+            });
+            await play.refreshToken();
+        } else {
+            console.log("No Spotify API Keys found in Env variables. Trying anonymous token...");
+            const clientID = await play.getFreeClientID();
+            play.setToken({ spotify: { client_id: clientID } });
+        }
+        isSpotifyAuthorized = true;
+        console.log("Spotify successfully configured.");
+    } catch (err) {
+        console.error('Spotify Init Error:', err);
+    }
+}
+
 app.get('/api/fetch', async (req, res) => {
     const url = req.query.url;
     if (!url) {
@@ -14,6 +39,8 @@ app.get('/api/fetch', async (req, res) => {
     }
 
     try {
+        await initSpotify();
+
         // play-dl handles both YouTube and Spotify links automatically
         // If it's a Youtube link, it gets stream. If Spotify, it finds the YT equivalent automatically!
         
@@ -63,6 +90,8 @@ app.get('/api/playlist', async (req, res) => {
     if (!url) return res.status(400).json({ error: 'Missing Spotify/YouTube Playlist URL.' });
 
     try {
+        await initSpotify();
+
         let pType = play.yt_validate(url);
         let tracks = [];
 
