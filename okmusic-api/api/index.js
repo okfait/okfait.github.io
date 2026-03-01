@@ -7,16 +7,38 @@ const app = express();
 // Whitelist the origin so okMUSIC can reach the API without CORS issues
 app.use(cors({ origin: '*' }));
 
+const fs = require('fs');
+const path = require('path');
+
 let isSpotifyAuthorized = false;
 async function initSpotify() {
     if (isSpotifyAuthorized) return;
     try {
-        if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
+        if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET && process.env.SPOTIFY_REFRESH_TOKEN) {
+            
+            // Vercel Serverless Functions only allow writing to /tmp
+            const dataDir = path.join('/tmp', '.data');
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+            
+            const spotifyDataPath = path.join(dataDir, 'spotify.data');
+            const tokenData = {
+                client_id: process.env.SPOTIFY_CLIENT_ID,
+                client_secret: process.env.SPOTIFY_CLIENT_SECRET,
+                refresh_token: process.env.SPOTIFY_REFRESH_TOKEN,
+                market: 'US'
+            };
+            
+            // Write the file exactly as play-dl expects it
+            fs.writeFileSync(spotifyDataPath, JSON.stringify(tokenData));
+            
+            // Force play-dl to look in /tmp/.data instead of ./.data
             play.setToken({
                 spotify: {
                     client_id: process.env.SPOTIFY_CLIENT_ID,
                     client_secret: process.env.SPOTIFY_CLIENT_SECRET,
-                    refresh_token: process.env.SPOTIFY_REFRESH_TOKEN || undefined,
+                    refresh_token: process.env.SPOTIFY_REFRESH_TOKEN,
                     market: 'US'
                 }
             });
