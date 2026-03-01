@@ -95,31 +95,35 @@ app.get('/api/playlist', async (req, res) => {
 
         let pType = play.yt_validate(url);
         let tracks = [];
+        let pTitle = "Imported Playlist";
 
         if (pType === 'playlist') {
             const playlist = await play.playlist_info(url, { incomplete: true });
             await playlist.fetch();
+            pTitle = playlist.title;
             playlist.page(1).forEach(v => tracks.push({ name: v.title, url: v.url }));
         } else if (play.sp_validate(url) === 'playlist') {
             if (play.is_expired()) await play.refreshToken();
             const spPlaylist = await play.spotify(url);
+            pTitle = spPlaylist.name;
             const all_tracks = await spPlaylist.all_tracks();
             
             // We just return the names + artists so frontend can call /api/fetch sequentially
             tracks = all_tracks.map(t => ({
-                name: `${t.name} ${t.artists[0].name}`,
+                name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}`,
                 originalUrl: url // They don't have direct YT URLs yet, /api/fetch will do the conversion!
             }));
         } else if (play.sp_validate(url) === 'album') {
             if (play.is_expired()) await play.refreshToken();
             const spAlbum = await play.spotify(url);
+            pTitle = spAlbum.name;
             const all_tracks = await spAlbum.all_tracks();
-            tracks = all_tracks.map(t => ({ name: `${t.name} ${t.artists[0].name}` }));
+            tracks = all_tracks.map(t => ({ name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}` }));
         } else {
              return res.status(400).json({ error: 'Not recognized as a valid YouTube or Spotify playlist.' });
         }
 
-        res.json({ title: "Imported Playlist", tracks: tracks.slice(0, 50) }); // Cap at 50 to avoid massive API abuse
+        res.json({ title: pTitle || "Imported Playlist", tracks: tracks.slice(0, 50) }); // Cap at 50 to avoid massive API abuse
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to parse playlist.', details: err.message });
