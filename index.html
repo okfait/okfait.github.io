@@ -94,7 +94,7 @@
         .scrubber { width: 100%; margin-top: 20px; padding: 0 30px; position: relative; }
         input[type=range] { appearance: none; -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
         /* UPDATED: Brighter track with rounded corners */
-        input[type=range].seek-bar::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255,255,255,0.3); border-radius: 99px; backdrop-filter: blur(4px); overflow: hidden; }
+        input[type=range].seek-bar::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255,255,255,0.3); border-radius: 99px; backdrop-filter: blur(4px); }
         /* UPDATED: Theme colored thumb */
         input[type=range].seek-bar::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; margin-top: -3px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); transition: transform 0.2s; position: relative; z-index: 2; }
         input[type=range].seek-bar:hover::-webkit-slider-thumb { transform: scale(1.3); }
@@ -119,7 +119,6 @@
             accent-color: var(--accent);
             background: rgba(255,255,255,0.1);
             border-radius: 99px;
-            overflow: hidden;
         }
 
         .side-panel { position: absolute; top: 0; bottom: 0; width: 380px; max-width: 90%; z-index: 60; transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1); display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.01); backdrop-filter: blur(8px) saturate(110%); border-right: 1px solid rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.05); }
@@ -2196,8 +2195,18 @@
                 if(isFinite(time)) window.audioSys.audio.currentTime = Math.max(0, Math.min(time, dur));
             }
 
-            dbl(e) {}
-
+            dbl(e) {
+                if (this.editMode === 'beat') {
+                    const rect = this.cv.getBoundingClientRect();
+                    const scaleX = this.cv.width / rect.width;
+                    const mouseX = (e.clientX - rect.left) * scaleX;
+                    const time = this.xToTime(mouseX);
+                    this.saveState();
+                    this.beatSignals.push(time);
+                    this.beatSignals.sort((a,b) => a-b);
+                    this.saveSignals();
+                }
+            }
             scanTriggers() {
                 if (!this.waveform || !this.triggers.length) return alert("No triggers or waveform loaded.");
                 this.prevBeats = [...this.beatSignals];
@@ -2399,6 +2408,7 @@
                     window.player.db.update(window.player.currentTrack.id, { 
                         beatSignals: this.beatSignals, triggers: this.triggers, speedPoints: this.pts 
                     }); 
+                    if(window.libraryMgr && window.libraryMgr.save) window.libraryMgr.save();
                 } 
             }
             autoGenerate() { 
@@ -3101,7 +3111,8 @@
                 const pct = (a.currentTime/a.duration)*100;
                 const bar = window.$('progressBar');
                 bar.value = pct; 
-                bar.style.background = `linear-gradient(to right, var(--accent) ${pct}%, rgba(255,255,255,0.3) ${pct}%)`;
+                const precisePct = ((pct / 100) * (bar.offsetWidth - 12)) + 6;
+                bar.style.background = `linear-gradient(to right, var(--accent) ${precisePct}px, rgba(255,255,255,0.3) ${precisePct}px)`;
                 const f=s=>`${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; 
                 window.$('currTime').innerText=f(a.currentTime); 
                 window.$('totTime').innerText=f(a.duration); 
@@ -3109,7 +3120,8 @@
             updateVolume(v){ 
                 const pct = v * 100;
                 const vs = window.$('volSlider');
-                vs.style.background = `linear-gradient(to top, var(--accent) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`;
+                const precisePct = ((pct / 100) * (vs.offsetHeight - 12)) + 6;
+                vs.style.background = `linear-gradient(to top, var(--accent) ${precisePct}px, rgba(255,255,255,0.1) ${precisePct}px)`;
                 window.audioSys.setVolume(v); 
             }
             toggleLibrary(){ window.$('libraryPanel').classList.toggle('open'); window.$('settingsPanel').classList.remove('open'); window.$('queuePanel').classList.remove('open'); }
