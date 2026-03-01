@@ -189,6 +189,26 @@ app.get('/api/playlist', async (req, res) => {
     }
 });
 
+app.get('/api/proxy', async (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing Proxy URL.' });
+    try {
+        const response = await fetch(decodeURIComponent(url));
+        if (!response.ok) throw new Error(`Proxy Error: ${response.status}`);
+        
+        // Pass Content-Type
+        const ct = response.headers.get('content-type');
+        if (ct) res.setHeader('Content-Type', ct);
+        
+        // Convert to buffer and send
+        const arrayBuffer = await response.arrayBuffer();
+        res.send(Buffer.from(arrayBuffer));
+    } catch (err) {
+        console.error('Proxy err:', err);
+        res.status(500).json({ error: err.message || 'Failed to proxy.' });
+    }
+});
+
 // For local testing (Vercel uses the exported default object)
 if (require.main === module) {
     const PORT = process.env.PORT || 3000;
