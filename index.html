@@ -19,7 +19,7 @@
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500&display=swap');
         
         :root {
             --glass-base: rgba(255, 255, 255, 0.01);
@@ -40,7 +40,7 @@
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
         body {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Nunito', sans-serif;
             background-color: #000;
             color: var(--text);
             overflow: hidden;
@@ -794,7 +794,8 @@
                 <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl mb-4">
                     <span class="text-sm font-bold ml-2">Font Style</span>
                     <select id="fontSelector" onchange="window.ui.setFontFamily(this.value)" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition">
-                        <option value="'Outfit', sans-serif">Outfit (Default)</option>
+                        <option value="'Nunito', sans-serif">Nunito (Default)</option>
+                        <option value="'Outfit', sans-serif">Outfit</option>
                         <option value="'Poppins', sans-serif">Poppins</option>
                         <option value="'Righteous', cursive">Righteous</option>
                         <option value="'Inter', sans-serif">Inter</option>
@@ -805,7 +806,6 @@
                         <option value="'Oswald', sans-serif">Oswald</option>
                         <option value="'Raleway', sans-serif">Raleway</option>
                         <option value="'Playfair Display', serif">Playfair Display</option>
-                        <option value="'Nunito', sans-serif">Nunito</option>
                         <option value="'Ubuntu', sans-serif">Ubuntu</option>
                         <option value="'Rubik', sans-serif">Rubik</option>
                         <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
@@ -878,20 +878,16 @@
                         <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition"><i class="fa-solid fa-burst"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">XTREME BASS</span>
                     </div>
-                    <div class="relative inline-flex items-center">
-                        <input type="checkbox" id="xtremeToggle" class="sr-only peer" onchange="window.audioSys.toggleXtreme()">
-                        <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50"></div>
-                    </div>
+                    <input type="checkbox" id="xtremeToggle" class="sr-only peer" onchange="window.audioSys.toggleXtreme()">
+                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
                 </label>
                 <label class="flex justify-between items-center bg-gradient-to-r from-blue-900/40 to-black/40 border border-blue-500/30 p-4 rounded-2xl cursor-pointer hover:border-blue-500/60 transition-all group">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition"><i class="fa-solid fa-droplet"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">BASS RIPPLE</span>
                     </div>
-                    <div class="relative inline-flex items-center">
-                        <input type="checkbox" id="rippleToggle" class="sr-only peer" onchange="window.viz.rippleEffect=this.checked" checked>
-                        <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-blue-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50"></div>
-                    </div>
+                    <input type="checkbox" id="rippleToggle" class="sr-only peer" onchange="window.viz.rippleEffect=this.checked" checked>
+                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
                 </label>
             </div>
             
