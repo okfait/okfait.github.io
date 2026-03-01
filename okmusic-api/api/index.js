@@ -10,49 +10,106 @@ app.use(cors({ origin: '*' }));
 const fs = require('fs');
 const path = require('path');
 
-let isSpotifyAuthorized = false;
-async function initSpotify() {
-    if (isSpotifyAuthorized) return;
-    try {
-        if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET && process.env.SPOTIFY_REFRESH_TOKEN) {
-            
-            // Vercel Serverless Functions only allow writing to /tmp
-            const dataDir = path.join('/tmp', '.data');
-            if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-            }
-            
-            const spotifyDataPath = path.join(dataDir, 'spotify.data');
-            const tokenData = {
-                client_id: process.env.SPOTIFY_CLIENT_ID,
-                client_secret: process.env.SPOTIFY_CLIENT_SECRET,
-                refresh_token: process.env.SPOTIFY_REFRESH_TOKEN,
-                market: 'US'
-            };
-            
-            // Write the file exactly as play-dl expects it
-            fs.writeFileSync(spotifyDataPath, JSON.stringify(tokenData));
-            
-            // Force play-dl to look in /tmp/.data instead of ./.data
-            play.setToken({
-                spotify: {
-                    client_id: process.env.SPOTIFY_CLIENT_ID,
-                    client_secret: process.env.SPOTIFY_CLIENT_SECRET,
-                    refresh_token: process.env.SPOTIFY_REFRESH_TOKEN,
-                    market: 'US'
-                }
-            });
-            await play.refreshToken();
-        } else {
-            console.log("No Spotify API Keys found in Env variables. Trying anonymous token...");
-            const clientID = await play.getFreeClientID();
-            play.setToken({ spotify: { client_id: clientID } });
-        }
-        isSpotifyAuthorized = true;
-        console.log("Spotify successfully configured.");
-    } catch (err) {
-        console.error('Spotify Init Error:', err);
+let spAccessToken = null;
+let spTokenExpires = 0;
+
+async function getSpotifyToken() {
+    if (spAccessToken && Date.now() < spTokenExpires) return spAccessToken;
+    
+    const client_id = process.env.SPOTIFY_CLIENT_ID;
+    const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+    const refresh_token = process.env.SPOTIFY_REFRESH_TOKEN;
+    
+    if (!client_id || !client_secret) {
+        console.warn("Missing Spotify Client ID or Secret in environment.");
+        return null;
     }
+    
+    const basicAuth = Buffer.from(client_id + ':' + client_secret).toString('base64');
+    
+    // Function to run the fetch
+    const fetchToken = async (body) => {
+        const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + basicAuth
+            },
+            body: body
+        });
+        return res.json();
+    };
+
+    let data;
+    if (refresh_token) {
+        data = await fetchToken(new URLSearchParams({ grant_type: 'refresh_token', refresh_token }));
+        if (!data.access_token) {
+            console.warn("Refresh token failed, falling back to client_credentials...", data.error);
+            data = await fetchToken(new URLSearchParams({ grant_type: 'client_credentials' }));
+        }
+    } else {
+        data = await fetchToken(new URLSearchParams({ grant_type: 'client_credentials' }));
+    }
+    
+    if (data.access_token) {
+        spAccessToken = data.access_token;
+        spTokenExpires = Date.now() + (data.expires_in * 1000) - 60000;
+        console.log("Successfully fetched new Spotify Access Token.");
+        return spAccessToken;
+    }
+    
+    console.error("Failed to fetch Spotify Access Token:", data);
+    return null;
+}
+
+// Helper to manually fetch Spotify Track info
+async function fetchSpotifyTrack(url) {
+    const token = await getSpotifyToken();
+    if (!token) throw new Error("No Spotify API Token available.");
+    const match = url.match(/track\/([a-zA-Z0-9]+)/);
+    if (!match) throw new Error("Invalid Spotify Track URL");
+    const res = await fetch(`https://api.spotify.com/v1/tracks/${match[1]}`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) throw new Error(`Spotify Track API Error: ${res.status}`);
+    const data = await res.json();
+    return `${data.name} ${data.artists?.[0]?.name || ''}`.trim();
+}
+
+// Helper to manually fetch Spotify Playlist or Album
+async function fetchSpotifyPlaylistOrAlbum(url) {
+    const token = await getSpotifyToken();
+    if (!token) throw new Error("No Spotify API Token available.");
+    const match = url.match(/(playlist|album)\/([a-zA-Z0-9]+)/);
+    if (!match) throw new Error("Invalid Spotify Playlist/Album URL");
+    const type = match[1]; // 'playlist' or 'album'
+    
+    const res = await fetch(`https://api.spotify.com/v1/${type}s/${match[2]}`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) {
+        const errBody = await res.json().catch(()=>({}));
+        throw new Error(`Spotify ${type} API Error: ${errBody.error?.message || res.status}`);
+    }
+    const data = await res.json();
+    
+    let tracks = [];
+    if (type === 'playlist') {
+        tracks = data.tracks.items.map(i => {
+            if (!i.track) return null;
+            return {
+                name: `${i.track.name} - ${i.track.artists?.[0]?.name || 'Unknown Artist'}`,
+                originalUrl: url
+            };
+        }).filter(Boolean);
+    } else {
+        tracks = data.tracks.items.map(t => ({
+            name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}`,
+            originalUrl: url
+        }));
+    }
+    
+    return { title: data.name, tracks };
 }
 
 app.get('/api/fetch', async (req, res) => {
@@ -62,20 +119,15 @@ app.get('/api/fetch', async (req, res) => {
     }
 
     try {
-        await initSpotify();
-
-        // play-dl handles both YouTube and Spotify links automatically
-        // If it's a Youtube link, it gets stream. If Spotify, it finds the YT equivalent automatically!
-        
         let targetUrl = url;
         let pType = play.yt_validate(targetUrl);
         
         if (pType !== 'video') {
              // Handle Spotify Track URL (playlist fetching will be handled later or differently, just track for now to test)
             if (play.sp_validate(targetUrl) === 'track') {
-                const spData = await play.spotify(targetUrl);
+                const trackQuery = await fetchSpotifyTrack(targetUrl);
                 // Search for the youtube equivalent
-                const searched = await play.search(`${spData.name} ${spData.artists[0].name}`, { limit: 1 });
+                const searched = await play.search(trackQuery, { limit: 1 });
                 if (searched.length === 0) {
                     return res.status(404).json({ error: 'Could not find a YouTube alternative for the Spotify track.' });
                 }
@@ -104,7 +156,7 @@ app.get('/api/fetch', async (req, res) => {
         
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to fetch audio stream.', details: err.message });
+        res.status(500).json({ error: err.message || 'Failed to fetch audio stream.' });
     }
 });
 
@@ -113,8 +165,6 @@ app.get('/api/playlist', async (req, res) => {
     if (!url) return res.status(400).json({ error: 'Missing Spotify/YouTube Playlist URL.' });
 
     try {
-        await initSpotify();
-
         let pType = play.yt_validate(url);
         let tracks = [];
         let pTitle = "Imported Playlist";
@@ -124,23 +174,10 @@ app.get('/api/playlist', async (req, res) => {
             await playlist.fetch();
             pTitle = playlist.title;
             playlist.page(1).forEach(v => tracks.push({ name: v.title, url: v.url }));
-        } else if (play.sp_validate(url) === 'playlist') {
-            if (play.is_expired()) await play.refreshToken();
-            const spPlaylist = await play.spotify(url);
-            pTitle = spPlaylist.name;
-            const all_tracks = await spPlaylist.all_tracks();
-            
-            // We just return the names + artists so frontend can call /api/fetch sequentially
-            tracks = all_tracks.map(t => ({
-                name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}`,
-                originalUrl: url // They don't have direct YT URLs yet, /api/fetch will do the conversion!
-            }));
-        } else if (play.sp_validate(url) === 'album') {
-            if (play.is_expired()) await play.refreshToken();
-            const spAlbum = await play.spotify(url);
-            pTitle = spAlbum.name;
-            const all_tracks = await spAlbum.all_tracks();
-            tracks = all_tracks.map(t => ({ name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}` }));
+        } else if (play.sp_validate(url) === 'playlist' || play.sp_validate(url) === 'album') {
+            const data = await fetchSpotifyPlaylistOrAlbum(url);
+            pTitle = data.title;
+            tracks = data.tracks;
         } else {
              return res.status(400).json({ error: 'Not recognized as a valid YouTube or Spotify playlist.' });
         }
@@ -148,7 +185,7 @@ app.get('/api/playlist', async (req, res) => {
         res.json({ title: pTitle || "Imported Playlist", tracks: tracks.slice(0, 50) }); // Cap at 50 to avoid massive API abuse
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to parse playlist.', details: err.message });
+        res.status(500).json({ error: err.message || 'Failed to parse playlist.' });
     }
 });
 
