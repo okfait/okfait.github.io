@@ -360,8 +360,66 @@
             }
         };
 
+        class VolumeAnim {
+            constructor(elementId) {
+                this.elementId = elementId;
+                this.currentValue = 0;
+                this.targetValue = 0;
+                this.velocity = 0;
+                this.animFrame = null;
+                this.lastTime = 0;
+                this.active = false;
+            }
+
+            animateTo(targetV) {
+                const target = targetV * 100;
+                this.targetValue = target;
+                if(!this.active) {
+                    this.active = true;
+                    this.lastTime = performance.now();
+                    this.step();
+                }
+            }
+
+            step() {
+                const now = performance.now();
+                const dt = Math.min((now - this.lastTime) / 1000, 0.05); // Cap dt
+                this.lastTime = now;
+
+                // Simple Spring Physics parameters
+                const tension = 150;
+                const friction = 16;
+                
+                const force = (this.targetValue - this.currentValue) * tension;
+                this.velocity += force * dt;
+                this.velocity *= (1 - friction * dt);
+                this.currentValue += this.velocity * dt;
+
+                if(Math.abs(this.targetValue - this.currentValue) < 0.1 && Math.abs(this.velocity) < 0.1) {
+                    this.currentValue = this.targetValue;
+                    this.active = false;
+                }
+
+                const display = window.$(this.elementId);
+                if(display && document.activeElement !== display) {
+                    display.value = Math.round(this.currentValue) + '%';
+                    
+                    // Dynamic glow and pop based on target percentage
+                    const targetGlow = Math.max(0, this.targetValue) / 100;
+                    display.style.textShadow = `0 0 ${targetGlow * 20}px rgba(255,42,42,${targetGlow}), 0 0 ${targetGlow * 10}px rgba(255,42,42,${targetGlow * 0.8})`;
+                    display.style.color = '#fff';
+                    display.style.opacity = 0.5 + (0.5 * targetGlow);
+                    display.style.transform = `scale(${1 + (targetGlow * 0.25)})`;
+                }
+
+                if(this.active) {
+                    this.animFrame = requestAnimationFrame(() => this.step());
+                }
+            }
+        }
+
         class AudioSystem {
-            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassCurve=[]; this.initBassCurve(); }
+            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassCurve=[]; this.initBassCurve(); this.volAnim = new VolumeAnim('volPercentDisplay'); setTimeout(()=>this.volAnim.animateTo(1), 500); }
             init() { if(this.ctx)return; const AC=window.AudioContext||window.webkitAudioContext; this.ctx=new AC(); this.src=this.ctx.createMediaElementSource(this.audio); this.bass=this.ctx.createBiquadFilter(); this.bass.type="lowshelf"; this.bass.frequency.value=200; this.analyser=this.ctx.createAnalyser(); this.analyser.fftSize=512; this.reverb=this.ctx.createConvolver(); this.reverb.buffer=this.impulse(3); this.revGain=this.ctx.createGain(); this.revGain.gain.value=0; this.gain=this.ctx.createGain(); this.src.connect(this.bass); this.bass.connect(this.analyser); this.bass.connect(this.reverb); this.reverb.connect(this.revGain); this.revGain.connect(this.gain); this.bass.connect(this.gain); this.gain.connect(this.ctx.destination); window.viz.start(); }
             impulse(d){const r=this.ctx.sampleRate,l=r*d,b=this.ctx.createBuffer(2,l,r);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,2);}return b;}
             
@@ -537,11 +595,11 @@
             setVolume(v){
                 if(this.ctx)this.gain.gain.value=v;
                 const sl = document.querySelector('.vol-slider');
-                if(sl) sl.style.background = `linear-gradient(to top, var(--accent) ${v*100}%, rgba(255,255,255,0.1) ${v*100}%)`;
+                // The slider is rotated 270deg, so left-to-right is bottom-to-top visually.
+                if(sl) sl.style.background = `linear-gradient(to right, #ff2a2a ${v*100}%, rgba(255,255,255,0.1) ${v*100}%)`;
                 this.updateDynamicBass();
                 
-                const display = window.$('volPercentDisplay');
-                if(display && document.activeElement !== display) display.value = Math.round(v * 100) + '%';
+                if(this.volAnim) this.volAnim.animateTo(v);
             }
             
             setVolFromTextInput(v) {
