@@ -1,0 +1,8 @@
+Version Tracking for okMUSIC:
+Current Real Version: v2.6.0
+
+Explanation of Versioning:
+[Major].[Minor].[Patch]
+- Major (2): Big updates. Only changed when explicitly requested.
+- Minor (1): New features (e.g., Party Mode connect feature).
+- Patch (0): Bug fixes, patches, and small UI tweaks.
