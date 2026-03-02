@@ -3319,6 +3319,42 @@
             setTimeout(() => window.libraryMgr.loadSharedLibrary(playlistParam), 1500);
         }
 
+        // DPPD Setup
+        window.updateDPPD = function() {
+            const sens = parseFloat(document.getElementById('dppdSensSlider').value);
+            const gap = parseFloat(document.getElementById('dppdGapSlider').value);
+            const algoData = {
+                version: "2.0-DPPD-Manual",
+                learnedAt: Date.now(),
+                minGap: gap,
+                threshold: sens / 7.0, // Scale back to the 0.0-1.0 range internally
+                frequencyBand: "Full Spectrum (RMS Decimated)"
+            };
+            localStorage.setItem('okmusic_bass_algorithm', JSON.stringify(algoData));
+        };
+        
+        window.initDPPDSliders = function() {
+            const cached = localStorage.getItem('okmusic_bass_algorithm');
+            if(cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    const sensSlider = document.getElementById('dppdSensSlider');
+                    const gapSlider = document.getElementById('dppdGapSlider');
+                    if(parsed.threshold && sensSlider) {
+                        const sensDisplay = (parsed.threshold * 7.0).toFixed(1);
+                        sensSlider.value = sensDisplay;
+                        if(document.getElementById('dppdSensVal')) document.getElementById('dppdSensVal').innerText = sensDisplay;
+                    }
+                    if(parsed.minGap && gapSlider) {
+                        const gapDisplay = parsed.minGap;
+                        gapSlider.value = gapDisplay;
+                        if(document.getElementById('dppdGapVal')) document.getElementById('dppdGapVal').innerText = gapDisplay + 's';
+                    }
+                } catch(e) {}
+            }
+        };
+        setTimeout(() => window.initDPPDSliders(), 500);
+
         // PWA SERVICE WORKER
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
