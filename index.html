@@ -706,7 +706,8 @@
         <div class="vol-container">
             <div class="vol-bridge"></div>
             <div class="vol-popup">
-                <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="window.audioSys.setVolume(this.value)">
+                <input type="text" id="volPercentDisplay" value="100%" class="absolute top-2 left-0 w-full text-center font-bold text-[10px] text-white/50 bg-transparent outline-none cursor-text hover:text-white transition focus:text-[var(--accent)]" onchange="window.audioSys.setVolFromTextInput(this.value)" onfocus="this.select()">
+                <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="window.audioSys.setVolume(this.value); $('volPercentDisplay').value = Math.round(this.value * 100) + '%'">
             </div>
             <button class="btn"><i class="fa-solid fa-volume-high"></i></button>
         </div>
@@ -873,7 +874,7 @@
                         </div>
                     </div>
                 </div>
-                <label class="flex justify-between items-center bg-gradient-to-r from-red-900/40 to-black/40 border border-red-500/30 p-4 rounded-2xl cursor-pointer hover:border-red-500/60 transition-all group">
+                <label class="flex justify-between items-center bg-gradient-to-r from-red-900/40 to-black/40 border border-red-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-red-500/60 transition-all group">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition"><i class="fa-solid fa-burst"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">XTREME BASS</span>
@@ -881,7 +882,7 @@
                     <input type="checkbox" id="xtremeToggle" class="sr-only peer" onchange="window.audioSys.toggleXtreme()">
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
                 </label>
-                <label class="flex justify-between items-center bg-gradient-to-r from-blue-900/40 to-black/40 border border-blue-500/30 p-4 rounded-2xl cursor-pointer hover:border-blue-500/60 transition-all group">
+                <label class="flex justify-between items-center bg-gradient-to-r from-blue-900/40 to-black/40 border border-blue-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-blue-500/60 transition-all group">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition"><i class="fa-solid fa-droplet"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">BASS RIPPLE</span>
@@ -889,9 +890,22 @@
                     <input type="checkbox" id="rippleToggle" class="sr-only peer" onchange="window.viz.rippleEffect=this.checked" checked>
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
                 </label>
+                <label class="flex justify-between items-center bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-purple-500/60 transition-all group">
+                    <div class="flex flex-col justify-center">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition"><i class="fa-solid fa-lock"></i></div>
+                            <span class="text-xs font-black text-white/90 tracking-widest uppercase">DYNAMIC BASS LOCK</span>
+                        </div>
+                        <span class="text-[9px] text-white/30 ml-11 font-bold mt-1 max-w-[180px] leading-tight" style="text-shadow: none;">Maintains bass impact at lower volumes.</span>
+                    </div>
+                    <div class="relative inline-flex items-center">
+                        <input type="checkbox" id="bassLockToggle" class="sr-only peer" onchange="window.audioSys.toggleBassLock(this.checked)" checked>
+                        <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-purple-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-900/50 border border-white/10 peer-checked:border-purple-500/50"></div>
+                    </div>
+                </label>
             </div>
             
-            <label class="flex justify-between items-center bg-gradient-to-r from-green-900/40 to-black/40 border border-green-500/30 p-4 mx-2 mt-4 rounded-2xl cursor-pointer hover:border-green-500/60 transition-all group">
+            <label class="flex justify-between items-center bg-gradient-to-r from-green-900/40 to-black/40 border border-green-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-green-500/60 transition-all group">
                 <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 group-hover:scale-110 transition"><i class="fa-solid fa-list-ol"></i></div>
                     <span class="text-xs font-black text-white/90 tracking-widest uppercase">Auto DJ (Crossfade)</span>
@@ -902,14 +916,14 @@
                 </div>
             </label>
             
-            <label class="flex justify-between items-center bg-gradient-to-r from-red-900/40 to-black/40 border border-red-500/30 p-4 mx-2 mt-4 rounded-2xl cursor-pointer hover:border-red-500/60 transition-all group">
+            <label class="flex justify-between items-center bg-gradient-to-r from-orange-900/40 to-black/40 border border-orange-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-orange-500/60 transition-all group">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition"><i class="fa-solid fa-satellite-dish"></i></div>
+                    <div class="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500 group-hover:scale-110 transition"><i class="fa-solid fa-satellite-dish"></i></div>
                     <span class="text-xs font-black text-white/90 tracking-widest uppercase">Host FX Override</span>
                 </div>
                 <div class="relative inline-flex items-center">
                     <input type="checkbox" id="hostFxToggle" class="sr-only peer" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked>
-                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50"></div>
+                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-900/50 border border-white/10 peer-checked:border-orange-500/50"></div>
                 </div>
             </label>
             <div class="px-2 pb-2 mt-4">
@@ -919,6 +933,11 @@
             </div>
             
 
+            <div class="px-2 pb-2 mt-4 mb-4">
+                <button onclick="window.curveEditor.exportAlgorithmData()" class="w-full bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 font-bold py-3 rounded-lg text-xs uppercase tracking-widest transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-export"></i> Download Algorithm Data
+                </button>
+            </div>
             
             <div class="text-center pt-4 pb-4 border-t border-white/5">
                 <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
@@ -1010,6 +1029,7 @@
                 <span class="text-[10px] opacity-50 normal-case mr-4 self-center" id="editorHint"></span>
                 <button onclick="window.curveEditor.scanTriggers()" class="hover:text-[#fbbf24] transition font-bold" id="scanBtn" style="display:none;"><i class="fa-solid fa-bolt"></i> SCAN</button>
                 <button onclick="window.curveEditor.autoGenerate()" class="hover:text-[var(--accent)] transition"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto</button>
+                <button onclick="window.curveEditor.teachAlgorithm()" class="px-3 py-1 bg-[var(--accent)] text-black rounded font-bold hover:scale-105 transition shadow-[0_0_15px_var(--accent-glow)]"><i class="fa-solid fa-brain"></i> Teach Algorithm</button>
                 <button onclick="window.curveEditor.openSaveModal()" class="hover:text-white transition">Save Preset</button>
                 <button onclick="window.curveEditor.reset()" class="hover:text-red-400 transition">Reset</button>
             </div>
@@ -1517,15 +1537,36 @@
         };
 
         class AudioSystem {
-            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; }
+            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassLockOn=localStorage.getItem('sv_bass_lock')==='true'; }
             init() { if(this.ctx)return; const AC=window.AudioContext||window.webkitAudioContext; this.ctx=new AC(); this.src=this.ctx.createMediaElementSource(this.audio); this.bass=this.ctx.createBiquadFilter(); this.bass.type="lowshelf"; this.bass.frequency.value=200; this.analyser=this.ctx.createAnalyser(); this.analyser.fftSize=512; this.reverb=this.ctx.createConvolver(); this.reverb.buffer=this.impulse(3); this.revGain=this.ctx.createGain(); this.revGain.gain.value=0; this.gain=this.ctx.createGain(); this.src.connect(this.bass); this.bass.connect(this.analyser); this.bass.connect(this.reverb); this.reverb.connect(this.revGain); this.revGain.connect(this.gain); this.bass.connect(this.gain); this.gain.connect(this.ctx.destination); window.viz.start(); }
             impulse(d){const r=this.ctx.sampleRate,l=r*d,b=this.ctx.createBuffer(2,l,r);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,2);}return b;}
             
             toggleGlobal(on) { this.globalAudio = on; localStorage.setItem('sv_global_audio', on); }
             
+            toggleBassLock(on) {
+                this.bassLockOn = on;
+                localStorage.setItem('sv_bass_lock', on);
+                this.updateDynamicBass();
+            }
+
+            updateDynamicBass() {
+                if(!this.ctx || !this.gain || !this.bass) return;
+                const vol = this.gain.gain.value;
+                let extraBass = 0;
+                if(this.bassLockOn && vol < 0.8 && vol > 0.02) { 
+                    extraBass = (0.8 - vol) * 20; 
+                }
+                const baseBass = this.xtremeOn ? parseInt(this.bassVal) + 5 : parseInt(this.bassVal);
+                if(this.bass.gain.setTargetAtTime) {
+                    this.bass.gain.setTargetAtTime(baseBass + extraBass, this.ctx.currentTime, 0.1);
+                } else {
+                    this.bass.gain.value = baseBass + extraBass;
+                }
+            }
+            
             setBass(v){
                 this.bassVal=v; window.$('bassVal').innerText=`+${v}dB`; 
-                if(this.ctx) this.bass.gain.value = this.xtremeOn ? parseInt(v) + 5 : parseInt(v);
+                this.updateDynamicBass();
                 if(this.globalAudio) localStorage.setItem('sv_bass',v);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.bassVal=v; window.player.db.update(window.player.currentTrack.id, {bassVal:v}); }
                 if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
@@ -1542,7 +1583,29 @@
                 if(this.ctx)this.gain.gain.value=v;
                 const sl = document.querySelector('.vol-slider');
                 if(sl) sl.style.background = `linear-gradient(to top, var(--accent) ${v*100}%, rgba(255,255,255,0.1) ${v*100}%)`;
+                this.updateDynamicBass();
+                
+                const display = window.$('volPercentDisplay');
+                if(display && document.activeElement !== display) display.value = Math.round(v * 100) + '%';
             }
+            
+            setVolFromTextInput(v) {
+                let parsed = parseFloat(v.replace('%', ''));
+                if(isNaN(parsed)) parsed = 100;
+                parsed = Math.max(0, Math.min(200, parsed));
+                const normalized = parsed / 100;
+                let slider = document.querySelector('.vol-slider');
+                if(slider) {
+                    slider.value = normalized;
+                    this.setVolume(normalized);
+                }
+                const display = window.$('volPercentDisplay');
+                if(display) {
+                    display.value = parsed + '%';
+                    display.blur();
+                }
+            }
+            
             setBaseSpeed(v){
                 this.baseSpeed=parseFloat(v); window.$('pitchVal').innerText=v+"x"; 
                 if(this.globalAudio) localStorage.setItem('sv_pitch',v);
@@ -1553,7 +1616,7 @@
             toggleXtreme(){
                 const on=window.$('xtremeToggle').checked; this.xtremeOn = on;
                 if(this.ctx){this.bass.type=on?"peaking":"lowshelf"; this.bass.frequency.value=on?60:200; this.bass.Q.value=on?1.5:1;}
-                this.setBass(this.bassVal);
+                this.updateDynamicBass();
                 if(this.globalAudio) localStorage.setItem('sv_xtreme',on);
                 else if(window.player && window.player.currentTrack) { window.player.currentTrack.xtremeOn=on; window.player.db.update(window.player.currentTrack.id, {xtremeOn:on}); }
                 this.broadcastFx();
@@ -2493,14 +2556,95 @@
                     if(window.libraryMgr && window.libraryMgr.save) window.libraryMgr.save();
                 } 
             }
+            teachAlgorithm() {
+                if(!this.waveform || !this.beatSignals.length) return window.ui.showToast("Add some beats first to teach the algorithm!");
+                
+                let gaps = [];
+                for(let i=1; i<this.beatSignals.length; i++) {
+                    gaps.push(this.beatSignals[i] - this.beatSignals[i-1]);
+                }
+                gaps.sort((a,b)=>a-b);
+                let optimalGap = gaps.length > 0 ? gaps[Math.floor(gaps.length * 0.15)] * 0.9 : 0.1;
+                if(optimalGap < 0.05) optimalGap = 0.05;
+
+                let peakAmps = [];
+                const data = this.waveform;
+                const duration = window.audioSys.audio.duration || 100;
+                
+                this.beatSignals.forEach(t => {
+                    const idx = Math.floor((t / duration) * data.length);
+                    if(idx >= 0 && Math.abs(idx) !== Infinity && idx < data.length) {
+                        let localMax = 0;
+                        for(let i = Math.max(0, idx - 500); i < Math.min(data.length, idx + 500); i++) {
+                            if(Math.abs(data[i]) > localMax) localMax = Math.abs(data[i]);
+                        }
+                        if(localMax > 0) peakAmps.push(localMax);
+                    }
+                });
+                peakAmps.sort((a,b)=>a-b);
+                let optimalThresh = peakAmps.length > 0 ? peakAmps[Math.floor(peakAmps.length * 0.1)] * 0.8 : 0.5;
+                if(optimalThresh > 0.9) optimalThresh = 0.9;
+                
+                const algoData = {
+                    version: "1.0",
+                    learnedAt: Date.now(),
+                    minGap: optimalGap,
+                    threshold: optimalThresh,
+                    frequencyBand: "20-120Hz"
+                };
+                
+                localStorage.setItem('okmusic_bass_algorithm', JSON.stringify(algoData));
+                window.ui.showToast("Algorithm Taught & Saved!");
+            }
+
+            exportAlgorithmData() {
+                const data = localStorage.getItem('okmusic_bass_algorithm');
+                if(!data) return window.ui.showToast("You haven't taught the algorithm yet!");
+                const blob = new Blob([data], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `okmusic_bass_algorithm_${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
             autoGenerate() { 
-                if(!window.player.currentTrack) return; 
+                if(!window.player.currentTrack || !this.waveform) return window.ui.showToast("Wait for track to finish loading."); 
                 this.saveState();
-                const dur = window.audioSys.audio.duration || 60; 
+                
+                let minGap = 0.1;
+                let thresh = 0.5;
+                const cached = localStorage.getItem('okmusic_bass_algorithm');
+                if(cached) {
+                    try {
+                        const parsed = JSON.parse(cached);
+                        minGap = parsed.minGap || 0.1;
+                        thresh = parsed.threshold || 0.5;
+                        window.ui.showToast(`Applying cached algorithm...`);
+                    } catch(e) {}
+                } else {
+                    window.ui.showToast("Applying default algorithm.");
+                }
+
+                const data = this.waveform;
+                const duration = window.audioSys.audio.duration || 100;
+                
                 this.beatSignals = []; 
-                for(let t=0; t<dur; t+=0.428) { this.beatSignals.push(t); } 
+                let lastMarkTime = -1;
+                const step = Math.max(1, Math.floor(data.length / 50000)); 
+                
+                for(let i = 0; i < data.length; i+=step) {
+                    const t = (i / data.length) * duration;
+                    const amp = Math.abs(data[i]);
+                    if (amp > thresh) {
+                        if (lastMarkTime === -1 || (t - lastMarkTime) > minGap) {
+                            this.beatSignals.push(t);
+                            lastMarkTime = t;
+                        }
+                    }
+                }
+                
                 this.saveSignals(); 
-                alert("Auto-generated beats (Simulated 140 BPM)"); 
             }
             reset() { this.saveState(); this.pts=[{x:0,y:0.5},{x:1,y:0.5}]; this.triggers = []; this.beatSignals = []; this.saveSignals(); }
             rendPre() { const l=window.$('presetList'); l.innerHTML=''; this.presets.forEach(p=>{const b=document.createElement('button'); b.className='preset-chip'; b.innerText=p.name; b.onclick=()=>{this.pts=JSON.parse(JSON.stringify(p.pts));}; l.appendChild(b)}); }
