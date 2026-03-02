@@ -1388,7 +1388,9 @@
                     gaps.push(this.beatSignals[i] - this.beatSignals[i-1]);
                 }
                 gaps.sort((a,b)=>a-b);
-                let optimalGap = gaps.length > 0 ? gaps[Math.floor(gaps.length * 0.15)] * 0.9 : 0.1;
+                // Worker uses minGapMs in seconds converted to ms natively. 
+                // So if optimal gap is 0.18s, minGap exported is 0.18
+                let optimalGap = gaps.length > 0 ? gaps[Math.floor(gaps.length * 0.15)] * 0.9 : 0.18;
                 if(optimalGap < 0.05) optimalGap = 0.05;
 
                 let peakAmps = [];
@@ -1406,15 +1408,20 @@
                     }
                 });
                 peakAmps.sort((a,b)=>a-b);
+                
+                // Converting raw peak amplitude into a conceptual Z-Score multiplier
+                // A normal song peak is around 0.5 amplitude. Z-Score threshold of 3.5 is standard.
+                // We map 0.5 amplitude -> 0.5 threshold (which autoGenerate multiplies by 7 to get 3.5)
                 let optimalThresh = peakAmps.length > 0 ? peakAmps[Math.floor(peakAmps.length * 0.1)] * 0.8 : 0.5;
                 if(optimalThresh > 0.9) optimalThresh = 0.9;
-                
+                if(optimalThresh < 0.1) optimalThresh = 0.1;
+
                 const algoData = {
-                    version: "1.0",
+                    version: "2.0-DPPD",
                     learnedAt: Date.now(),
                     minGap: optimalGap,
                     threshold: optimalThresh,
-                    frequencyBand: "20-120Hz"
+                    frequencyBand: "Full Spectrum (RMS Decimated)"
                 };
                 
                 localStorage.setItem('okmusic_bass_algorithm', JSON.stringify(algoData));
@@ -1434,41 +1441,128 @@
 
             autoGenerate() { 
                 if(!window.player.currentTrack || !this.waveform) return window.ui.showToast("Wait for track to finish loading."); 
-                this.saveState();
                 
-                let minGap = 0.1;
-                let thresh = 0.5;
+                let minGapMs = 180;
+                let zThresh = 3.5;
                 const cached = localStorage.getItem('okmusic_bass_algorithm');
                 if(cached) {
                     try {
                         const parsed = JSON.parse(cached);
-                        minGap = parsed.minGap || 0.1;
-                        thresh = parsed.threshold || 0.5;
+                        minGapMs = parsed.minGap ? parsed.minGap * 1000 : 180;
+                        zThresh = parsed.threshold ? parsed.threshold * 7.0 : 3.5;
                         window.ui.showToast(`Applying cached algorithm...`);
                     } catch(e) {}
                 } else {
-                    window.ui.showToast("Applying default algorithm.");
+                    window.ui.showToast("Extracting Transient DPPD Peaks...");
                 }
 
-                const data = this.waveform;
-                const duration = window.audioSys.audio.duration || 100;
+                // Protect UI by putting up a loading state visually if needed
+                window.$('vizCanvas').style.opacity = '0.5';
+
+                this.saveState();
+
+                // 1. Create Web Worker Blob String
+                const AutoBeatWorkerCode = `
+                self.onmessage = function(e) {
+                   const { audioData, sampleRate, windowMs, zThreshold, influence, minGapMs } = e.data;
+                   
+                   const windowSize = Math.floor(sampleRate * (windowMs / 1000));
+                   const minGapSeconds = minGapMs / 1000;
+                   
+                   const envelope = [];
+                   const timestamps = [];
+                   
+                   // RMS Envelope Extraction
+                   for (let i = 0; i < audioData.length; i += windowSize) {
+                       let sumSquares = 0;
+                       let validSamples = 0;
+                       for (let j = 0; j < windowSize && (i + j) < audioData.length; j++) {
+                           const amplitude = audioData[i + j];
+                           sumSquares += (amplitude * amplitude);
+                           validSamples++;
+                       }
+                       const rms = Math.sqrt(sumSquares / validSamples);
+                       envelope.push(rms);
+                       timestamps.push(i / sampleRate);
+                   }
+                   
+                   // Dynamic Parametric Peak Detection (DPPD) via Z-Scores
+                   const detectedBeats = [];
+                   let lastBeatTime = -1;
+                   const lag = 40; 
+                   const filteredEnv = new Float32Array(envelope);
+                   
+                   const calculateMean = (startIndex, length, arr) => {
+                       let sum = 0;
+                       for(let i = startIndex; i < startIndex + length; i++) sum += arr[i];
+                       return sum / length;
+                   };
+                   
+                   const calculateStdDev = (startIndex, length, arr, mean) => {
+                       let sumVariance = 0;
+                       for(let i = startIndex; i < startIndex + length; i++) {
+                           const diff = arr[i] - mean;
+                           sumVariance += (diff * diff);
+                       }
+                       return Math.sqrt(sumVariance / length);
+                   };
+
+                   for (let i = lag; i < envelope.length; i++) {
+                       const localMean = calculateMean(i - lag, lag, filteredEnv);
+                       const localStdDev = calculateStdDev(i - lag, lag, filteredEnv, localMean);
+                       
+                       const currentVal = envelope[i];
+                       const currentTime = timestamps[i];
+                       
+                       if (Math.abs(currentVal - localMean) > zThreshold * localStdDev) {
+                           if (currentTime - lastBeatTime > minGapSeconds) {
+                               detectedBeats.push(currentTime);
+                               lastBeatTime = currentTime;
+                               filteredEnv[i] = (influence * currentVal) + ((1 - influence) * filteredEnv[i - 1]);
+                           } else {
+                               filteredEnv[i] = currentVal;
+                           }
+                       } else {
+                           filteredEnv[i] = currentVal;
+                       }
+                   }
+                   self.postMessage({ beats: detectedBeats });
+                };
+                `;
+
+                const blob = new Blob([AutoBeatWorkerCode], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                const worker = new Worker(workerUrl);
+
+                worker.onmessage = (e) => {
+                    this.beatSignals = e.data.beats;
+                    this.saveSignals();
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                    window.$('vizCanvas').style.opacity = '1';
+                    window.ui.showToast(`Found ${this.beatSignals.length} DPPD Beats!`);
+                };
+
+                worker.onerror = (err) => {
+                    console.error("Worker failed:", err);
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                    window.$('vizCanvas').style.opacity = '1';
+                    window.ui.showToast("Worker Error!");
+                };
+
+                // The this.waveform float32 array cannot be zero-copy transferred away because 
+                // we need it for UI drawing continuously. So we pass a cloned slice down.
+                const bufferToProc = this.waveform.slice(0); // Clones buffer
                 
-                this.beatSignals = []; 
-                let lastMarkTime = -1;
-                const step = Math.max(1, Math.floor(data.length / 50000)); 
-                
-                for(let i = 0; i < data.length; i+=step) {
-                    const t = (i / data.length) * duration;
-                    const amp = Math.abs(data[i]);
-                    if (amp > thresh) {
-                        if (lastMarkTime === -1 || (t - lastMarkTime) > minGap) {
-                            this.beatSignals.push(t);
-                            lastMarkTime = t;
-                        }
-                    }
-                }
-                
-                this.saveSignals(); 
+                worker.postMessage({
+                    audioData: bufferToProc,
+                    sampleRate: window.audioSys.audio.sampleRate || 44100, // Approximate UI playback node rate
+                    windowMs: 15,
+                    zThreshold: zThresh,
+                    influence: 0.1,
+                    minGapMs: minGapMs
+                }, [bufferToProc.buffer]); // Zero copy the slice
             }
             reset() { this.saveState(); this.pts=[{x:0,y:0.5},{x:1,y:0.5}]; this.triggers = []; this.beatSignals = []; this.saveSignals(); }
             rendPre() { const l=window.$('presetList'); l.innerHTML=''; this.presets.forEach(p=>{const b=document.createElement('button'); b.className='preset-chip'; b.innerText=p.name; b.onclick=()=>{this.pts=JSON.parse(JSON.stringify(p.pts));}; l.appendChild(b)}); }
