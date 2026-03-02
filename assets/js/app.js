@@ -367,13 +367,38 @@
             
             toggleGlobal(on) { this.globalAudio = on; localStorage.setItem('sv_global_audio', on); }
             
+            toggleXtreme() {
+                const check = window.$('xtremeToggle');
+                const on = check ? check.checked : false; 
+                this.xtremeOn = on;
+                if(this.globalAudio) localStorage.setItem('sv_xtreme', on);
+                else if(window.player && window.player.currentTrack) { 
+                    window.player.currentTrack.xtremeOn = on; 
+                    window.player.db.update(window.player.currentTrack.id, {xtremeOn: on}); 
+                }
+                if(window.ui && window.ui.updateMetaTags) window.ui.updateMetaTags();
+                this.updateDynamicBass();
+                this.broadcastFx();
+            }
+
+            toggleBassCurve(on) {
+                this.curveEnabled = on;
+                localStorage.setItem('sv_curve_enabled', on);
+                this.updateDynamicBass();
+            }
+
             initBassCurve() {
+                this.curveEnabled = localStorage.getItem('sv_curve_enabled') !== 'false';
                 this.bassCurve = JSON.parse(localStorage.getItem('sv_bass_curve')) || [
                     { id: 1, vol: 20, bass: 14 },
                     { id: 2, vol: 90, bass: 3 }
                 ];
-                // Try to render if DOM is ready
-                setTimeout(() => this.renderCurveNodes(), 500);
+                // Try to render and sync if DOM is ready
+                setTimeout(() => {
+                    this.renderCurveNodes();
+                    const toggle = window.$('curveToggle');
+                    if(toggle) toggle.checked = this.curveEnabled;
+                }, 500);
             }
 
             saveBassCurve() {
@@ -427,17 +452,24 @@
                 let html = '';
                 this.bassCurve.forEach((node, index) => {
                     html += `
-                        <div class="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-2 z-10 relative">
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid fa-volume-high text-[10px] text-white/50"></i>
-                                <input type="number" class="w-12 bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-center font-bold text-white outline-none focus:border-purple-500" value="${node.vol}" onchange="window.audioSys.updateCurveNode(${node.id}, 'vol', this.value)" min="0" max="100">%
+                        <div class="flex items-center justify-between bg-black/40 border border-white/5 rounded-[20px] p-2 pr-3 z-10 relative shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
+                            <div class="flex items-center bg-black/60 rounded-full px-3 py-1.5 border border-white/5 gap-2 focus-within:border-white/20 transition">
+                                <i class="fa-solid fa-volume-high text-[11px] text-white/40"></i>
+                                <input type="number" class="w-8 bg-transparent text-[12px] text-center font-bold text-white outline-none" value="${node.vol}" onchange="window.audioSys.updateCurveNode(${node.id}, 'vol', this.value)" min="0" max="100">
+                                <span class="text-white/40 font-bold text-[10px]">%</span>
                             </div>
-                            <span class="text-white/30 font-bold text-[10px] mx-1">=</span>
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid fa-burst text-[10px] text-purple-400"></i>
-                                <input type="number" class="w-12 bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-center font-bold text-purple-200 outline-none focus:border-purple-500" value="${node.bass}" onchange="window.audioSys.updateCurveNode(${node.id}, 'bass', this.value)" min="-10" max="40">dB
+
+                            <span class="text-white/20 font-bold text-[12px] mx-1">=</span>
+
+                            <div class="flex items-center bg-black/60 rounded-full px-3 py-1.5 border border-purple-500/20 gap-2 focus-within:border-purple-500/50 transition shadow-[inset_0_0_10px_rgba(168,85,247,0.1)]">
+                                <i class="fa-solid fa-burst text-[11px] text-purple-400"></i>
+                                <input type="number" class="w-8 bg-transparent text-[12px] text-center font-bold text-purple-200 outline-none flex-grow" value="${node.bass}" onchange="window.audioSys.updateCurveNode(${node.id}, 'bass', this.value)" min="-10" max="40">
+                                <span class="text-purple-300 font-bold text-[10px]">dB</span>
                             </div>
-                            <button onclick="window.audioSys.removeCurveNode(${node.id})" class="text-red-400/50 hover:text-red-400 hover:scale-110 transition ml-2"><i class="fa-solid fa-xmark text-[12px]"></i></button>
+
+                            <button onclick="window.audioSys.removeCurveNode(${node.id})" class="text-red-400/40 hover:text-red-400 hover:scale-110 hover:bg-red-500/10 rounded-full w-6 h-6 flex items-center justify-center transition ml-2">
+                                <i class="fa-solid fa-xmark text-[11px]"></i>
+                            </button>
                         </div>
                     `;
                     if (index < this.bassCurve.length - 1) {
@@ -457,7 +489,7 @@
                 
                 let targetBass = parseInt(this.bassVal || 0);
 
-                if (this.bassCurve && this.bassCurve.length > 0) {
+                if (this.curveEnabled && this.bassCurve && this.bassCurve.length > 0) {
                     if (this.bassCurve.length === 1) {
                         targetBass = this.bassCurve[0].bass;
                     } else if (volPct <= this.bassCurve[0].vol) {

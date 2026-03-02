@@ -266,15 +266,22 @@
                 </label>
                 <!-- DYNAMIC BASS CURVE -->
                 <div class="mx-2 mt-4">
-                    <button id="perfCurveBtn" onclick="const p=$('perfCurveGroup'); const icon=$('perfCurveIcon'); const isActive=p.style.display==='none'; p.style.display=isActive?'block':'none'; icon.className=isActive?'fa-solid fa-chevron-up':'fa-solid fa-chevron-down'; this.classList.toggle('from-purple-900/60', isActive);" class="w-full bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 text-left text-xs font-bold text-white/90 hover:border-purple-500/60 transition-all p-4 rounded-xl flex justify-between items-center group">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition shadow-[0_0_15px_rgba(168,85,247,0.2)]"><i class="fa-solid fa-chart-line"></i></div>
-                            <span class="font-black tracking-widest uppercase text-shadow-sm">DYNAMIC BASS CURVE</span>
+                    <div class="bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 rounded-xl flex flex-col group overflow-hidden transition-all shadow-lg">
+                        <div class="flex justify-between items-center p-4 cursor-pointer hover:bg-white/5 transition-all w-full" onclick="$('perfCurveBtnInternal').click()">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition shadow-[0_0_15px_rgba(168,85,247,0.2)]"><i class="fa-solid fa-chart-line"></i></div>
+                                <span class="text-xs font-black tracking-widest uppercase text-white/90">DYNAMIC BASS CURVE</span>
+                            </div>
+                            <div class="flex items-center gap-3" onclick="event.stopPropagation()">
+                                <label class="relative inline-flex items-center cursor-pointer mb-0">
+                                    <input type="checkbox" id="curveToggle" class="sr-only peer" onchange="window.audioSys.toggleBassCurve(this.checked)" checked>
+                                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-purple-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-900/50 border border-white/10 peer-checked:border-purple-500/50"></div>
+                                </label>
+                                <button id="perfCurveBtnInternal" onclick="const p=$('perfCurveGroup'); const icon=$('perfCurveIcon'); const isActive=p.style.display==='none'; p.style.display=isActive?'block':'none'; icon.className=isActive?'fa-solid fa-chevron-up':'fa-solid fa-chevron-down';" class="text-purple-400 w-6 h-6 flex justify-center items-center hover:bg-white/10 rounded-full transition"><i id="perfCurveIcon" class="fa-solid fa-chevron-down"></i></button>
+                            </div>
                         </div>
-                        <i id="perfCurveIcon" class="fa-solid fa-chevron-down text-purple-400"></i>
-                    </button>
-                    
-                    <div id="perfCurveGroup" style="display:none;" class="bg-black/40 border-x border-b border-purple-500/20 rounded-b-xl -mt-2 pt-6 pb-4 px-4 shadow-inner">
+                        
+                        <div id="perfCurveGroup" style="display:none;" class="bg-black/40 border-t border-purple-500/20 pt-6 pb-4 px-4 shadow-inner">
                         <p class="text-[9px] text-white/40 font-bold mb-3 tracking-wide leading-tight text-center">Map specific volumes to precise bass boosts. The system will smoothly interpolate between your points!</p>
                         
                         <div id="bassCurveNodes" class="flex flex-col gap-2 relative">
