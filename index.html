@@ -264,19 +264,33 @@
                     <input type="checkbox" id="rippleToggle" class="sr-only peer" onchange="window.viz.rippleEffect=this.checked" checked>
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
                 </label>
-                <label class="flex justify-between items-center bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-purple-500/60 transition-all group">
-                    <div class="flex flex-col justify-center">
+                <!-- DYNAMIC BASS CURVE -->
+                <div class="mx-2 mt-4">
+                    <button id="perfCurveBtn" onclick="const p=$('perfCurveGroup'); const icon=$('perfCurveIcon'); const isActive=p.style.display==='none'; p.style.display=isActive?'block':'none'; icon.className=isActive?'fa-solid fa-chevron-up':'fa-solid fa-chevron-down'; this.classList.toggle('from-purple-900/60', isActive);" class="w-full bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 text-left text-xs font-bold text-white/90 hover:border-purple-500/60 transition-all p-4 rounded-xl flex justify-between items-center group">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition"><i class="fa-solid fa-lock"></i></div>
-                            <span class="text-xs font-black text-white/90 tracking-widest uppercase">DYNAMIC BASS LOCK</span>
+                            <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition shadow-[0_0_15px_rgba(168,85,247,0.2)]"><i class="fa-solid fa-chart-line"></i></div>
+                            <span class="font-black tracking-widest uppercase text-shadow-sm">DYNAMIC BASS CURVE</span>
                         </div>
-                        <span class="text-[9px] text-white/30 ml-11 font-bold mt-1 max-w-[180px] leading-tight" style="text-shadow: none;">Maintains bass impact at lower volumes.</span>
+                        <i id="perfCurveIcon" class="fa-solid fa-chevron-down text-purple-400"></i>
+                    </button>
+                    
+                    <div id="perfCurveGroup" style="display:none;" class="bg-black/40 border-x border-b border-purple-500/20 rounded-b-xl -mt-2 pt-6 pb-4 px-4 shadow-inner">
+                        <p class="text-[9px] text-white/40 font-bold mb-3 tracking-wide leading-tight text-center">Map specific volumes to precise bass boosts. The system will smoothly interpolate between your points!</p>
+                        
+                        <div id="bassCurveNodes" class="flex flex-col gap-2 relative">
+                            <!-- Populated by JS -->
+                        </div>
+                        
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="window.audioSys.addCurveNodeLive()" class="flex-1 bg-purple-600/20 border border-purple-500/30 hover:bg-purple-500 hover:text-black hover:border-purple-400 text-purple-300 font-bold py-2 px-3 rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-[0_4px_10px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2 group">
+                                <i class="fa-regular fa-copy group-hover:scale-110 transition"></i> Catch Current
+                            </button>
+                            <button onclick="window.audioSys.addCurveNodeBlank()" class="w-12 bg-white/5 border border-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-lg transition flex items-center justify-center" title="Add blank node">
+                                <i class="fa-solid fa-plus text-[12px]"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="relative inline-flex items-center">
-                        <input type="checkbox" id="bassLockToggle" class="sr-only peer" onchange="window.audioSys.toggleBassLock(this.checked)" checked>
-                        <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-purple-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-900/50 border border-white/10 peer-checked:border-purple-500/50"></div>
-                    </div>
-                </label>
+                </div>
             </div>
             
             <label class="flex justify-between items-center bg-gradient-to-r from-green-900/40 to-black/40 border border-green-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-green-500/60 transition-all group">

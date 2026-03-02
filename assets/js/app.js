@@ -361,30 +361,129 @@
         };
 
         class AudioSystem {
-            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassLockOn=localStorage.getItem('sv_bass_lock')==='true'; }
+            constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassCurve=[]; this.initBassCurve(); }
             init() { if(this.ctx)return; const AC=window.AudioContext||window.webkitAudioContext; this.ctx=new AC(); this.src=this.ctx.createMediaElementSource(this.audio); this.bass=this.ctx.createBiquadFilter(); this.bass.type="lowshelf"; this.bass.frequency.value=200; this.analyser=this.ctx.createAnalyser(); this.analyser.fftSize=512; this.reverb=this.ctx.createConvolver(); this.reverb.buffer=this.impulse(3); this.revGain=this.ctx.createGain(); this.revGain.gain.value=0; this.gain=this.ctx.createGain(); this.src.connect(this.bass); this.bass.connect(this.analyser); this.bass.connect(this.reverb); this.reverb.connect(this.revGain); this.revGain.connect(this.gain); this.bass.connect(this.gain); this.gain.connect(this.ctx.destination); window.viz.start(); }
             impulse(d){const r=this.ctx.sampleRate,l=r*d,b=this.ctx.createBuffer(2,l,r);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,2);}return b;}
             
             toggleGlobal(on) { this.globalAudio = on; localStorage.setItem('sv_global_audio', on); }
             
-            toggleBassLock(on) {
-                this.bassLockOn = on;
-                localStorage.setItem('sv_bass_lock', on);
+            initBassCurve() {
+                this.bassCurve = JSON.parse(localStorage.getItem('sv_bass_curve')) || [
+                    { id: 1, vol: 20, bass: 14 },
+                    { id: 2, vol: 90, bass: 3 }
+                ];
+                // Try to render if DOM is ready
+                setTimeout(() => this.renderCurveNodes(), 500);
+            }
+
+            saveBassCurve() {
+                localStorage.setItem('sv_bass_curve', JSON.stringify(this.bassCurve));
                 this.updateDynamicBass();
+            }
+
+            addCurveNodeLive() {
+                if(!this.gain) return;
+                const currentVol = Math.round(this.gain.gain.value * 100);
+                const currentBass = parseInt(this.bassVal);
+                this.bassCurve.push({ id: Date.now(), vol: currentVol, bass: currentBass });
+                this.bassCurve.sort((a,b) => a.vol - b.vol);
+                this.renderCurveNodes();
+                this.saveBassCurve();
+            }
+
+            addCurveNodeBlank() {
+                const defaultVol = this.gain ? Math.round(this.gain.gain.value * 100) : 50;
+                this.bassCurve.push({ id: Date.now(), vol: defaultVol, bass: 0 });
+                this.bassCurve.sort((a,b) => a.vol - b.vol);
+                this.renderCurveNodes();
+                this.saveBassCurve();
+            }
+
+            removeCurveNode(id) {
+                this.bassCurve = this.bassCurve.filter(n => n.id !== id);
+                this.renderCurveNodes();
+                this.saveBassCurve();
+            }
+
+            updateCurveNode(id, key, val) {
+                const node = this.bassCurve.find(n => n.id === id);
+                if(node) {
+                    node[key] = parseFloat(val) || 0;
+                    this.bassCurve.sort((a,b) => a.vol - b.vol);
+                    this.renderCurveNodes();
+                    this.saveBassCurve();
+                }
+            }
+
+            renderCurveNodes() {
+                const container = window.$('bassCurveNodes');
+                if(!container) return;
+                
+                if(!this.bassCurve || this.bassCurve.length === 0) {
+                    container.innerHTML = '<div class="text-center text-[10px] text-white/30 font-bold py-2">No points mapped. Add a node below.</div>';
+                    return;
+                }
+                
+                let html = '';
+                this.bassCurve.forEach((node, index) => {
+                    html += `
+                        <div class="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-2 z-10 relative">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-volume-high text-[10px] text-white/50"></i>
+                                <input type="number" class="w-12 bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-center font-bold text-white outline-none focus:border-purple-500" value="${node.vol}" onchange="window.audioSys.updateCurveNode(${node.id}, 'vol', this.value)" min="0" max="100">%
+                            </div>
+                            <span class="text-white/30 font-bold text-[10px] mx-1">=</span>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-burst text-[10px] text-purple-400"></i>
+                                <input type="number" class="w-12 bg-black/40 border border-white/10 rounded px-1 py-0.5 text-[10px] text-center font-bold text-purple-200 outline-none focus:border-purple-500" value="${node.bass}" onchange="window.audioSys.updateCurveNode(${node.id}, 'bass', this.value)" min="-10" max="40">dB
+                            </div>
+                            <button onclick="window.audioSys.removeCurveNode(${node.id})" class="text-red-400/50 hover:text-red-400 hover:scale-110 transition ml-2"><i class="fa-solid fa-xmark text-[12px]"></i></button>
+                        </div>
+                    `;
+                    if (index < this.bassCurve.length - 1) {
+                        html += `
+                            <div class="flex justify-center -my-2 relative z-0">
+                                <div class="w-px h-4 bg-white/10"></div>
+                            </div>
+                        `;
+                    }
+                });
+                container.innerHTML = html;
             }
 
             updateDynamicBass() {
                 if(!this.ctx || !this.gain || !this.bass) return;
-                const vol = this.gain.gain.value;
-                let extraBass = 0;
-                if(this.bassLockOn && vol < 0.8 && vol > 0.02) { 
-                    extraBass = (0.8 - vol) * 20; 
+                const volPct = this.gain.gain.value * 100;
+                
+                let targetBass = parseInt(this.bassVal || 0);
+
+                if (this.bassCurve && this.bassCurve.length > 0) {
+                    if (this.bassCurve.length === 1) {
+                        targetBass = this.bassCurve[0].bass;
+                    } else if (volPct <= this.bassCurve[0].vol) {
+                        targetBass = this.bassCurve[0].bass;
+                    } else if (volPct >= this.bassCurve[this.bassCurve.length - 1].vol) {
+                        targetBass = this.bassCurve[this.bassCurve.length - 1].bass;
+                    } else {
+                        // Linear interpolation between points
+                        for (let i = 0; i < this.bassCurve.length - 1; i++) {
+                            const p1 = this.bassCurve[i];
+                            const p2 = this.bassCurve[i + 1];
+                            if (volPct >= p1.vol && volPct <= p2.vol) {
+                                const t = (volPct - p1.vol) / (p2.vol - p1.vol);
+                                targetBass = p1.bass + t * (p2.bass - p1.bass);
+                                break;
+                            }
+                        }
+                    }
                 }
-                const baseBass = this.xtremeOn ? parseInt(this.bassVal) + 5 : parseInt(this.bassVal);
+
+                if(this.xtremeOn) targetBass += 5;
+                
                 if(this.bass.gain.setTargetAtTime) {
-                    this.bass.gain.setTargetAtTime(baseBass + extraBass, this.ctx.currentTime, 0.1);
+                    this.bass.gain.setTargetAtTime(targetBass, this.ctx.currentTime, 0.1);
                 } else {
-                    this.bass.gain.value = baseBass + extraBass;
+                    this.bass.gain.value = targetBass;
                 }
             }
             
