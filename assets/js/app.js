@@ -896,12 +896,13 @@
                 const points = [];
                 this.liquidBinCount = 48; // Higher resolution for smooth curves
                 const totalPoints = (this.liquidBinCount * 2) - 2;
-                const baseRadius = 139; // Tighter hug under the album art
+                const baseRadius = 130; // Shrink inside the art circle
                 const maxBump = 140; // Max bass protrusion
                 const sens = window.vizSens || 1.0;
                 
-                // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 3 o'clock and 9 o'clock
-                const peakIndex = Math.floor(this.liquidBinCount / 2); 
+                // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 10:10 o'clock and 2:10 o'clock
+                // Index 16 out of 48 is exactly 1/3 of the 180 degrees (60 degrees = 2 o'clock)
+                const peakIndex = 16; 
                 const halfData = [];
                 for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
                 for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
@@ -977,25 +978,29 @@
                 const ghosting = this.smooth; // 'smooth' boolean handles the UI toggle for "Smooth Following"
                 
                 if (ghosting && !isMobile) {
-                    ctx.globalCompositeOperation = 'screen';
-                    
-                    if (tMode === 'rainbow') { // 21 frames max, drawing 6 colors smoothly trailing
+                    if (tMode === 'rainbow') { 
+                        // Rainbow wants distinct hard colors, not blended into white 
+                        ctx.globalCompositeOperation = 'source-over'; 
                         renderQueue.push({ data: this.history.getDelayedFrame(21), color: '#10b981' }); // Green
                         renderQueue.push({ data: this.history.getDelayedFrame(18), color: '#3b82f6' }); // Blue
                         renderQueue.push({ data: this.history.getDelayedFrame(15), color: '#a855f7' }); // Purple
                         renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#f472b6' }); // Pink
                         renderQueue.push({ data: this.history.getDelayedFrame(9),  color: '#ef4444' }); // Red
                         renderQueue.push({ data: this.history.getDelayedFrame(6),  color: '#eab308' }); // Yellow
-                    } else if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
-                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
-                    } else if (tMode === 'dominant' && window.dominantColor) {
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor2 || '#ffffff' });
-                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor });
                     } else {
-                        const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
-                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: acc });
+                        // All others use screen blending
+                        ctx.globalCompositeOperation = 'screen';
+                        if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
+                        } else if (tMode === 'dominant' && window.dominantColor) {
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor2 || '#ffffff' });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor });
+                        } else {
+                            const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: acc });
+                        }
                     }
                 } else {
                     ctx.globalCompositeOperation = 'source-over';
