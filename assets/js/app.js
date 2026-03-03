@@ -693,9 +693,9 @@
                 this.rippleEffect=true;
                 
                 // Temporal Ghosting Variables
-                this.history = new HistoryBuffer(15, 1024);
+                this.history = new HistoryBuffer(30, 1024);
                 this.isGhostingEnabled = true;
-                this.exponent = 4; // Exponent for sharp horns
+                this.exponent = 3; // Softer exponent for smooth thick horns
                 this.liquidBinCount = 48; // Number of bins to analyze for Liquid mode
                 this.resize(); 
                 window.addEventListener('resize',()=>this.resize()); 
@@ -896,19 +896,33 @@
                 const points = [];
                 this.liquidBinCount = 48; // Higher resolution for smooth curves
                 const totalPoints = (this.liquidBinCount * 2) - 2;
-                const baseRadius = 145; // Match album art
+                const baseRadius = 139; // Tighter hug under the album art
                 const maxBump = 140; // Max bass protrusion
                 const sens = window.vizSens || 1.0;
                 
-                // Pre-calculate the reshaped Half-Array to put the "Horns" at ~2 o'clock and 10 o'clock
-                const peakIndex = Math.floor(this.liquidBinCount * 0.18); 
+                // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 3 o'clock and 9 o'clock
+                const peakIndex = Math.floor(this.liquidBinCount / 2); 
                 const halfData = [];
                 for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
                 for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
                 
+                // Gaussian-style Smoothing filter over the audio array for buttery smooth curves
+                const smoothedData = [];
+                for (let i = 0; i < this.liquidBinCount; i++) {
+                   let sum = 0, weightSum = 0;
+                   for (let j = -2; j <= 2; j++) {
+                       let idx = i + j;
+                       if (idx < 0 || idx >= this.liquidBinCount) continue;
+                       let weight = 1 / (1 + Math.abs(j));
+                       sum += halfData[idx] * weight;
+                       weightSum += weight;
+                   }
+                   smoothedData.push(sum / weightSum);
+                }
+
                 // Build Right Half
                 for (let i = 0; i < this.liquidBinCount; i++) {
-                    const rawVal = halfData[i] / 255.0; 
+                    const rawVal = smoothedData[i] / 255.0; 
                     const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
                     
                     const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
@@ -918,7 +932,7 @@
                 
                 // Build Left Half (Mirrored)
                 for (let i = this.liquidBinCount - 2; i > 0; i--) {
-                    const rawVal = halfData[i] / 255.0; 
+                    const rawVal = smoothedData[i] / 255.0; 
                     const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
                     const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
                     const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
@@ -965,12 +979,13 @@
                 if (ghosting && !isMobile) {
                     ctx.globalCompositeOperation = 'screen';
                     
-                    if (tMode === 'rainbow') { // 15 frames max, drawing 5 colors smoothly trailing
+                    if (tMode === 'rainbow') { // 21 frames max, drawing 6 colors smoothly trailing
+                        renderQueue.push({ data: this.history.getDelayedFrame(21), color: '#10b981' }); // Green
+                        renderQueue.push({ data: this.history.getDelayedFrame(18), color: '#3b82f6' }); // Blue
                         renderQueue.push({ data: this.history.getDelayedFrame(15), color: '#a855f7' }); // Purple
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#3b82f6' }); // Blue
-                        renderQueue.push({ data: this.history.getDelayedFrame(9), color: '#10b981' }); // Green
-                        renderQueue.push({ data: this.history.getDelayedFrame(6), color: '#ef4444' }); // Red
-                        renderQueue.push({ data: this.history.getDelayedFrame(3), color: '#eab308' }); // Yellow
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#f472b6' }); // Pink
+                        renderQueue.push({ data: this.history.getDelayedFrame(9),  color: '#ef4444' }); // Red
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: '#eab308' }); // Yellow
                     } else if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
                         renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
                         renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
@@ -986,9 +1001,6 @@
                     ctx.globalCompositeOperation = 'source-over';
                 }
                 
-                // Current frame is always white and on top
-                renderQueue.push({ data: this.history.getDelayedFrame(0), color: '#FFFFFF' });
-                
                 for (const layer of renderQueue) {
                     const points = this.getSymmetricPoints(cx, cy, layer.data);
                     const path = this.buildSmoothPath(points);
@@ -997,7 +1009,18 @@
                     ctx.fill(path);
                 }
                 
+                // Draw Core Layer (Always on top)
                 ctx.globalCompositeOperation = 'source-over';
+                const mainPts = this.getSymmetricPoints(cx, cy, this.history.getDelayedFrame(0));
+                const mainPath = this.buildSmoothPath(mainPts);
+                
+                if (tMode === 'solid-fill') {
+                    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                }
+                
+                ctx.fill(mainPath);
             }
         };
 
@@ -2697,11 +2720,12 @@
                 const gradContainer = window.$('gradientColorContainer');
                 const txtLabel = window.$('themeModeTxt');
                 
-                if (solidContainer) solidContainer.style.display = (mode === 'solid') ? 'flex' : 'none';
+                if (solidContainer) solidContainer.style.display = (mode === 'solid' || mode === 'solid-fill') ? 'flex' : 'none';
                 if (gradContainer) gradContainer.style.display = (mode === 'gradient') ? 'flex' : 'none';
 
                 if (txtLabel) {
                     if (mode === 'solid') txtLabel.innerText = "Solid Accent Color";
+                    else if (mode === 'solid-fill') txtLabel.innerText = "Solid Full Color";
                     else if (mode === 'dominant') txtLabel.innerText = "Album Art (Dominant)";
                     else if (mode === 'gradient') txtLabel.innerText = "Custom 2-Color Gradient";
                     else if (mode === 'rainbow') txtLabel.innerText = "Rainbow Ghosting";
