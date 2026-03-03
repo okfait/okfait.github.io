@@ -162,9 +162,31 @@
 
             <div class="space-y-6">
                 <label class="setting-label">Visuals</label>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Theme</span>
-                    <input type="color" id="colorPicker" value="#60a5fa" oninput="window.ui.setTheme(this.value)" class="w-10 h-10 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                <!-- THEME UI SYSTEM -->
+                <div class="flex flex-col bg-white/5 p-3 rounded-xl gap-2">
+                    <div class="flex justify-between items-center w-full">
+                        <span class="text-sm font-bold ml-2">Theme Source</span>
+                        <select id="themeModeSelector" onchange="window.ui.setThemeMode(this.value)" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition">
+                            <option value="solid">Solid Accent Color</option>
+                            <option value="dominant">Album Art (Dominant)</option>
+                            <option value="gradient">Custom 2-Color Gradient</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Solid Color Picker (Visible when solid) -->
+                    <div id="solidColorContainer" class="flex justify-between items-center w-full mt-1">
+                        <span class="text-xs font-bold text-white/50 ml-2">Pick Color</span>
+                        <input type="color" id="colorPicker" value="#60a5fa" oninput="window.ui.setTheme(this.value)" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                    </div>
+
+                    <!-- Custom Gradient Pickers (Visible when gradient) -->
+                    <div id="gradientColorContainer" class="flex justify-between items-center w-full mt-1 hidden">
+                        <span class="text-xs font-bold text-white/50 ml-2">Gradient Fade</span>
+                        <div class="flex gap-2">
+                            <input type="color" id="gradColor1" value="#ff0044" oninput="window.ui.updateGradientTheme()" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                            <input type="color" id="gradColor2" value="#0055ff" oninput="window.ui.updateGradientTheme()" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                        </div>
+                    </div>
                 </div>
                 <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl mb-4">
                     <span class="text-sm font-bold ml-2">Font Style</span>
@@ -197,12 +219,12 @@
                 </div>
                 <label class="flex justify-between items-center px-2 pt-2 cursor-pointer">
                     <span class="text-xs font-bold">Liquid Lines</span>
-                    <input type="checkbox" checked onchange="window.viz.smooth=this.checked" class="sr-only peer">
+                    <input type="checkbox" checked onchange="window.viz.smooth=this.checked" class="hidden peer">
                     <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-white/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
                 </label>
                 <label class="flex justify-between items-center px-2 pt-2 cursor-pointer">
                     <span class="text-xs font-bold">Beat Flash</span>
-                    <input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()" class="sr-only peer">
+                    <input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()" class="hidden peer">
                     <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-white/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
                 </label>
                 <div class="flex flex-col px-2 mt-4">
@@ -216,7 +238,7 @@
                     <span>Processors</span>
                     <div class="flex items-center gap-3">
                         <span class="text-[10px] font-bold uppercase tracking-widest text-[#fbbf24]">Global Lock</span>
-                        <input type="checkbox" id="globalAudioToggle" class="sr-only peer" onchange="window.audioSys.toggleGlobal(this.checked)">
+                        <input type="checkbox" id="globalAudioToggle" class="hidden peer" onchange="window.audioSys.toggleGlobal(this.checked)">
                         <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-[#fbbf24]/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-[#fbbf24]"></div>
                     </div>
                 </label>
@@ -240,11 +262,11 @@
                     </button>
                     <div id="eqPresetsGroup" style="display:none;" class="space-y-2">
                         <div class="grid grid-cols-2 gap-2">
-                            <button onclick="window.audioSys.applyPreset('electronic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Electronic</button>
-                            <button onclick="window.audioSys.applyPreset('acoustic')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Acoustic</button>
-                            <button onclick="window.audioSys.applyPreset('bass_boost')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Bass Boost</button>
-                            <button onclick="window.audioSys.applyPreset('vocal')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider">Vocal</button>
-                            <button onclick="window.audioSys.applyPreset('flat')" class="bg-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded uppercase tracking-wider col-span-2">Reset (Flat)</button>
+                            <button onclick="window.audioSys.applyPreset('electronic')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Electronic</button>
+                            <button onclick="window.audioSys.applyPreset('acoustic')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Acoustic</button>
+                            <button onclick="window.audioSys.applyPreset('bass_boost')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Bass Boost</button>
+                            <button onclick="window.audioSys.applyPreset('vocal')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Vocal</button>
+                            <button onclick="window.audioSys.applyPreset('flat')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider col-span-2 shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Reset (Flat)</button>
                         </div>
                     </div>
                 </div>
@@ -253,7 +275,7 @@
                         <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition"><i class="fa-solid fa-burst"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">XTREME BASS</span>
                     </div>
-                    <input type="checkbox" id="xtremeToggle" class="sr-only peer" onchange="window.audioSys.toggleXtreme()">
+                    <input type="checkbox" id="xtremeToggle" class="hidden peer" onchange="window.audioSys.toggleXtreme()">
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
                 </label>
                 <label class="flex justify-between items-center bg-gradient-to-r from-blue-900/40 to-black/40 border border-blue-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-blue-500/60 transition-all group">
@@ -261,7 +283,7 @@
                         <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition"><i class="fa-solid fa-droplet"></i></div>
                         <span class="text-xs font-black text-white/90 tracking-widest uppercase">BASS RIPPLE</span>
                     </div>
-                    <input type="checkbox" id="rippleToggle" class="sr-only peer" onchange="window.viz.rippleEffect=this.checked" checked>
+                    <input type="checkbox" id="rippleToggle" class="hidden peer" onchange="window.viz.rippleEffect=this.checked" checked>
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
                 </label>
                 <!-- DYNAMIC BASS CURVE -->
@@ -274,7 +296,7 @@
                             </div>
                             <div class="flex items-center gap-3" onclick="event.stopPropagation()">
                                 <label class="relative inline-flex items-center cursor-pointer mb-0">
-                                    <input type="checkbox" id="curveToggle" class="sr-only peer" onchange="window.audioSys.toggleBassCurve(this.checked)" checked>
+                                    <input type="checkbox" id="curveToggle" class="hidden peer" onchange="window.audioSys.toggleBassCurve(this.checked)" checked>
                                     <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-purple-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-900/50 border border-white/10 peer-checked:border-purple-500/50"></div>
                                 </label>
                                 <button id="perfCurveBtnInternal" onclick="const p=$('perfCurveGroup'); const icon=$('perfCurveIcon'); const isActive=p.style.display==='none'; p.style.display=isActive?'block':'none'; icon.className=isActive?'fa-solid fa-chevron-up':'fa-solid fa-chevron-down';" class="text-purple-400 w-6 h-6 flex justify-center items-center hover:bg-white/10 rounded-full transition"><i id="perfCurveIcon" class="fa-solid fa-chevron-down"></i></button>

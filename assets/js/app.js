@@ -510,23 +510,27 @@
                 let html = '';
                 this.bassCurve.forEach((node, index) => {
                     html += `
-                        <div class="flex items-center justify-between bg-black/40 border border-white/5 rounded-[20px] p-2 pr-3 z-10 relative shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
-                            <div class="flex items-center bg-black/60 rounded-full px-3 py-1.5 border border-white/5 gap-2 focus-within:border-white/20 transition">
-                                <i class="fa-solid fa-volume-high text-[11px] text-white/40"></i>
-                                <input type="number" class="w-8 bg-transparent text-[12px] text-center font-bold text-white outline-none" value="${node.vol}" onchange="window.audioSys.updateCurveNode(${node.id}, 'vol', this.value)" min="0" max="100">
-                                <span class="text-white/40 font-bold text-[10px]">%</span>
+                        <div class="flex items-center justify-between bg-white/5 border border-white/5 rounded-[24px] py-1.5 px-2 z-10 relative shadow-lg my-1 mx-2">
+                            
+                            <!-- Vol Pill (Sticks out left) -->
+                            <div class="flex items-center bg-black/90 rounded-full px-3 py-2 -ml-5 shadow-[0_0_15px_rgba(255,255,255,0.15)] border border-white/20 z-20 hover:scale-105 transition-transform">
+                                <i class="fa-solid fa-volume-high text-[11px] text-white/50"></i>
+                                <input type="number" class="w-8 bg-transparent text-[13px] text-center font-black text-white outline-none ml-1 placeholder-white/30" value="${node.vol}" onchange="window.audioSys.updateCurveNode(${node.id}, 'vol', this.value)" min="0" max="100">
+                                <span class="text-white/50 font-bold text-[10px]">%</span>
                             </div>
 
-                            <span class="text-white/20 font-bold text-[12px] mx-1">=</span>
+                            <span class="text-white/20 font-black text-[14px] mx-1 opacity-50">=</span>
 
-                            <div class="flex items-center bg-black/60 rounded-full px-3 py-1.5 border border-purple-500/20 gap-2 focus-within:border-purple-500/50 transition shadow-[inset_0_0_10px_rgba(168,85,247,0.1)]">
-                                <i class="fa-solid fa-burst text-[11px] text-purple-400"></i>
-                                <input type="number" class="w-8 bg-transparent text-[12px] text-center font-bold text-purple-200 outline-none flex-grow" value="${node.bass}" onchange="window.audioSys.updateCurveNode(${node.id}, 'bass', this.value)" min="-10" max="40">
-                                <span class="text-purple-300 font-bold text-[10px]">dB</span>
+                            <!-- Bass Pill (Sticks out right) -->
+                            <div class="flex items-center bg-gradient-to-r from-purple-900/90 to-purple-800/90 rounded-full px-3 py-2 -mr-3 shadow-[0_0_20px_rgba(168,85,247,0.5)] border border-purple-400/50 z-20 hover:scale-105 transition-transform">
+                                <i class="fa-solid fa-burst text-[11px] text-purple-300"></i>
+                                <input type="number" class="w-7 bg-transparent text-[13px] text-center font-black text-white outline-none ml-1 placeholder-purple-300/30" value="${node.bass}" onchange="window.audioSys.updateCurveNode(${node.id}, 'bass', this.value)" min="-10" max="40">
+                                <span class="text-purple-300 font-black text-[10px]">dB</span>
                             </div>
 
-                            <button onclick="window.audioSys.removeCurveNode(${node.id})" class="text-red-400/40 hover:text-red-400 hover:scale-110 hover:bg-red-500/10 rounded-full w-6 h-6 flex items-center justify-center transition ml-2">
-                                <i class="fa-solid fa-xmark text-[11px]"></i>
+                            <!-- Delete Badge -->
+                            <button onclick="window.audioSys.removeCurveNode(${node.id})" class="absolute -right-1 -top-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center hover:scale-125 hover:bg-red-400 transition-transform shadow-[0_0_10px_rgba(239,68,68,0.8)] z-30">
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
                             </button>
                         </div>
                     `;
@@ -680,7 +684,13 @@
             }
             resize(){ this.cv.width=window.innerWidth; this.cv.height=window.innerHeight; }
             start(){ this.draw(); }
-            toggleMode(){ this.mode=this.mode==='ring'?'bar':'ring'; window.$('vizModeBtn').innerText=this.mode.toUpperCase(); window.$('albumArt').className=`album-art glass-panel ${this.mode==='ring'?'circle':''}`; }
+            toggleMode(){ 
+                if (this.mode === 'ring') this.mode = 'bar';
+                else if (this.mode === 'bar') this.mode = 'liquid';
+                else this.mode = 'ring';
+                window.$('vizModeBtn').innerText=this.mode.toUpperCase(); 
+                window.$('albumArt').className=`album-art glass-panel ${(this.mode==='ring' || this.mode==='liquid')?'circle':''}`; 
+            }
             clearFlash(){ window.$('beat-flash').style.opacity=0; }
             triggerXEffect(intensity = 1.0){ 
                 this.xMode = true; 
@@ -752,7 +762,11 @@
                 }
 
                 const te=buf.reduce((a,b)=>a+b,0); 
-                if(te > 100) { if(this.mode==='ring')this.drawRing(ctx,w,h,buf); else this.drawBars(ctx,w,h,buf); }
+                if(te > 100) { 
+                    if(this.mode==='ring') this.drawRing(ctx,w,h,buf); 
+                    else if(this.mode==='liquid') this.drawLiquid(ctx,w,h,buf);
+                    else this.drawBars(ctx,w,h,buf); 
+                }
                 ctx.restore();
             }
             drawRing(ctx,w,h,d){
@@ -827,6 +841,102 @@
                     } 
                     ctx.fill(path);
                 }
+            }
+            drawLiquid(ctx, w, h, d) {
+                const cx = w / 2;
+                const cy = h / 2 - 40;
+                const baseRadius = 145; // Match album art
+                const maxBump = 120; // Maximum bass pulse
+                const sens = window.vizSens || 1.0;
+                
+                // Construct Polar Coordinates
+                const binCount = 48; // Use 48 low frequency buckets
+                const points = [];
+                const totalPoints = (binCount * 2) - 2;
+                
+                // Right Half
+                for (let i = 0; i < binCount; i++) {
+                    const val = (d[i] * sens) / 255.0; 
+                    const radius = baseRadius + (val * maxBump);
+                    const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
+                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
+                }
+                
+                // Left Half (Mirrored)
+                for (let i = binCount - 2; i > 0; i--) {
+                    const val = (d[i] * sens) / 255.0;
+                    const radius = baseRadius + (val * maxBump);
+                    const ptIdx = totalPoints - i;
+                    const theta = -Math.PI / 2 + (ptIdx / totalPoints) * Math.PI * 2;
+                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
+                }
+
+                // Smooth Path Creation using Bezier Curves
+                const liquidPath = new Path2D();
+                const len = points.length;
+                liquidPath.moveTo(points[0].x, points[0].y);
+                const tension = 1.0;
+
+                for (let i = 0; i < len; i++) {
+                    const p0 = points[(i - 1 + len) % len];
+                    const p1 = points[i];
+                    const p2 = points[(i + 1) % len];
+                    const p3 = points[(i + 2) % len];
+
+                    // Catmull-Rom into Cubic Bezier Math
+                    const cp1x = p1.x + (p2.x - p0.x) * (tension / 6);
+                    const cp1y = p1.y + (p2.y - p0.y) * (tension / 6);
+                    const cp2x = p2.x - (p3.x - p1.x) * (tension / 6);
+                    const cp2y = p2.y - (p3.y - p1.y) * (tension / 6);
+
+                    liquidPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+                }
+                liquidPath.closePath();
+
+                // Chromatic Aberration Layers
+                ctx.globalCompositeOperation = 'screen';
+                
+                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
+                let layers = [];
+                const tMode = window.ui ? window.ui.themeMode : 'solid';
+                
+                if (isMobile) {
+                    layers = [{ scale: 1.00, clr: '#ffffff' }];
+                } else if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
+                    layers = [
+                        { scale: 1.05, clr: window.ui.themeGrad1 }, 
+                        { scale: 1.025, clr: window.ui.themeGrad2 },
+                        { scale: 1.01, clr: '#ffffff' },
+                        { scale: 1.00, clr: '#ffffff' } // Core
+                    ];
+                } else if (tMode === 'dominant' && window.dominantColor) {
+                    layers = [
+                        { scale: 1.05, clr: window.dominantColor }, 
+                        { scale: 1.025, clr: window.dominantColor2 || '#ffffff' },
+                        { scale: 1.01, clr: '#ffffff' },
+                        { scale: 1.00, clr: '#ffffff' }
+                    ];
+                } else {
+                    const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
+                    layers = [
+                        { scale: 1.05, clr: acc }, 
+                        { scale: 1.025, clr: acc },
+                        { scale: 1.01, clr: '#ffffff' },
+                        { scale: 1.00, clr: '#ffffff' }
+                    ];
+                }
+
+                for (const layer of layers) {
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.scale(layer.scale, layer.scale);
+                    ctx.translate(-cx, -cy);
+                    ctx.fillStyle = layer.clr;
+                    ctx.fill(liquidPath);
+                    ctx.restore();
+                }
+                
+                ctx.globalCompositeOperation = 'source-over';
             }
         };
 
@@ -2433,9 +2543,43 @@
             }
 
             getFlatList(){const l=[]; const scan=i=>{i.forEach(x=>{if(x.type==='song')l.push(x.id); else if(x.type==='folder')scan(x.items);});}; scan(window.libraryMgr.structure); return l;}
-            setTrack(s){ window.$('trackTitle').innerText=s.name; window.$('trackArtist').innerText=""; if(s.art){window.$('albumArt').style.backgroundImage=`url(${s.art})`; window.$('artPlaceholder').style.display='none';}else{window.$('albumArt').style.backgroundImage='none'; window.$('artPlaceholder').style.display='flex';} 
-                // REMOVED RE-RENDER CALL HERE TO PREVENT FLASHING
-                // this.renderLibrary(); 
+            setTrack(s){ 
+                window.$('trackTitle').innerText=s.name; 
+                window.$('trackArtist').innerText=""; 
+                if(s.art){
+                    window.$('albumArt').style.backgroundImage=`url(${s.art})`; 
+                    window.$('artPlaceholder').style.display='none';
+                    const img = new Image();
+                    img.crossOrigin = "Anonymous";
+                    img.onload = () => {
+                        const c = document.createElement('canvas');
+                        c.width = 10; c.height = 10;
+                        const ctx = c.getContext('2d');
+                        ctx.drawImage(img, 0, 0, 10, 10);
+                        const d = ctx.getImageData(0,0,10,10).data;
+                        let r=0,g=0,b=0;
+                        for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+                        r = (r/100)|0; g = (g/100)|0; b = (b/100)|0;
+                        
+                        // Boost Saturation
+                        const max=Math.max(r,g,b), min=Math.min(r,g,b);
+                        if(max > min) {
+                            r = Math.min(255, r + (r-min)*0.5)|0;
+                            g = Math.min(255, g + (g-min)*0.5)|0;
+                            b = Math.min(255, b + (b-min)*0.5)|0;
+                        }
+                        
+                        window.dominantColor = `rgb(${r},${g},${b})`;
+                        
+                        // Create a complementary/secondary color by shifting hue
+                        window.dominantColor2 = `rgb(${g},${b},${r})`; 
+                    };
+                    img.src = s.art;
+                }else{
+                    window.$('albumArt').style.backgroundImage='none'; 
+                    window.$('artPlaceholder').style.display='flex';
+                    window.dominantColor = null; window.dominantColor2 = null;
+                } 
             }
             updatePlayBtn(p){ window.$('btnPlay').innerHTML=p?'<i class="fa-solid fa-pause"></i>':'<i class="fa-solid fa-play ml-1"></i>'; }
             updateProgress(){ 
@@ -2484,6 +2628,25 @@
                 });
             }
             setTheme(c){ document.documentElement.style.setProperty('--accent',c); localStorage.setItem('sv_theme',c); const h=parseInt(c.replace('#',''),16); const r=(h>>16)&255,g=(h>>8)&255,b=h&255; document.documentElement.style.setProperty('--accent-dim',`rgba(${r},${g},${b},0.15)`); document.documentElement.style.setProperty('--accent-glow',`rgba(${r},${g},${b},0.3)`); let min=Math.min(r,g,b),max=Math.max(r,g,b),d=max-min,hue=0; if(d>0){if(max==r)hue=((g-b)/d)%6;else if(max==g)hue=(b-r)/d+2;else hue=(r-g)/d+4;} hue=Math.round(hue*60);if(hue<0)hue+=360; document.documentElement.style.setProperty('--bg-hue',hue); }
+            
+            setThemeMode(mode) {
+                this.themeMode = mode;
+                localStorage.setItem('sv_theme_mode', mode);
+                const solidContainer = window.$('solidColorContainer');
+                const gradContainer = window.$('gradientColorContainer');
+                
+                if (solidContainer) solidContainer.style.display = (mode === 'solid') ? 'flex' : 'none';
+                if (gradContainer) gradContainer.style.display = (mode === 'gradient') ? 'flex' : 'none';
+            }
+            
+            updateGradientTheme() {
+                const c1 = window.$('gradColor1').value;
+                const c2 = window.$('gradColor2').value;
+                localStorage.setItem('sv_grad_1', c1);
+                localStorage.setItem('sv_grad_2', c2);
+                this.themeGrad1 = c1;
+                this.themeGrad2 = c2;
+            }
             
             setFontFamily(fontFamilyString) {
                 document.body.style.fontFamily = fontFamilyString;
@@ -3066,7 +3229,21 @@
                 const b=localStorage.getItem('sv_bass'); if(b){document.querySelectorAll('.setting-slider')[1].value=b; window.audioSys.setBass(b);}
                 const r=localStorage.getItem('sv_reverb'); if(r){document.querySelectorAll('.setting-slider')[2].value=r; window.audioSys.setReverb(r);}
                 const p=localStorage.getItem('sv_pitch'); if(p){document.querySelectorAll('.setting-slider')[3].value=p; window.audioSys.setBaseSpeed(p);}
-                const c=localStorage.getItem('sv_theme'); if(c)window.ui.setTheme(c);
+                const c=localStorage.getItem('sv_theme'); if(c) { window.ui.setTheme(c); if(window.$('colorPicker')) window.$('colorPicker').value = c; }
+                const tm = localStorage.getItem('sv_theme_mode'); 
+                if(tm) { 
+                    window.ui.setThemeMode(tm); 
+                    if(window.$('themeModeSelector')) window.$('themeModeSelector').value = tm; 
+                } else {
+                    window.ui.setThemeMode('solid');
+                }
+                const g1 = localStorage.getItem('sv_grad_1'); const g2 = localStorage.getItem('sv_grad_2');
+                if(g1 && g2 && window.$('gradColor1') && window.$('gradColor2')) {
+                    window.$('gradColor1').value = g1;
+                    window.$('gradColor2').value = g2;
+                }
+                if(window.ui.updateGradientTheme) window.ui.updateGradientTheme();
+                
                 const font=localStorage.getItem('sv_font_family'); 
                 if(font){ 
                     window.ui.setFontFamily(font); 
