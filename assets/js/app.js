@@ -895,46 +895,118 @@
                 const points = [];
                 this.liquidBinCount = 48; // Higher resolution for smooth curves
                 const totalPoints = (this.liquidBinCount * 2) - 2;
-                const baseRadius = 130; // Shrink inside the art circle
-                const maxBump = 140; // Max bass protrusion
+                const baseRadius = 100; // Shrink exactly around the art circle
                 const sens = window.vizSens || 1.0;
                 
-                // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 10:10 o'clock and 2:10 o'clock
-                // Index 16 out of 48 is exactly 1/3 of the 180 degrees (60 degrees = 2 o'clock)
-                const peakIndex = 16; 
-                const halfData = [];
-                for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
-                for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
-                
-                // Gaussian-style Smoothing filter over the audio array for buttery smooth curves
+                // --- 1. Global Intensity Analysis ---
+                let bassAvg = 0, midAvg = 0, highAvg = 0;
+                for(let k=0; k<6; k++) bassAvg += frameData[k] || 0;
+                let bassNorm = Math.min(1, Math.max(0, (bassAvg / 6) / 220.0)); 
+
+                for(let k=8; k<18; k++) midAvg += frameData[k] || 0;
+                let midNorm = Math.min(1, Math.max(0, (midAvg / 10) / 180.0)); 
+
+                for(let k=20; k<40; k++) highAvg += frameData[k] || 0;
+                let highNorm = Math.min(1, Math.max(0, (highAvg / 20) / 120.0));
+
+                // --- 2. Sliding Wave Centers (The Physics Animation) ---
+                // Green: loud=10 (top corner), quiet=24 (equator) -> creates the upward sliding build-up
+                const greenCenter = 24 - (bassNorm * 14); 
+                // Yellow: loud=24 (equator), quiet=38 (bottom corner) -> moves up to mid
+                const yellowCenter = 38 - (midNorm * 14);
+                // Purple: fixed at 44 (bottom center)
+                const purpleCenter = 44;
+
+                // --- 3. Route audio into spatial array ---
+                const halfData = new Array(this.liquidBinCount).fill(0);
+                const inject = (startIndex, length, centerIdx, scale) => {
+                    for(let i=0; i<length; i++) {
+                        let targetIdx = Math.round(centerIdx + (i - length/2) * 1.5);
+                        if (targetIdx >= 0 && targetIdx < 48) {
+                            halfData[targetIdx] += (frameData[startIndex + i] || 0) * scale;
+                        }
+                    }
+                };
+
+                inject(0, 10, greenCenter, 1.3); // Bass
+                inject(10, 14, yellowCenter, 1.0); // Mids
+                inject(24, 16, purpleCenter, 0.8); // Highs
+
+                // --- 4. Gaussian Smoothing Filter ---
                 const smoothedData = [];
                 for (let i = 0; i < this.liquidBinCount; i++) {
                    let sum = 0, weightSum = 0;
                    for (let j = -2; j <= 2; j++) {
                        let idx = i + j;
-                       if (idx < 0 || idx >= this.liquidBinCount) continue;
-                       let weight = 1 / (1 + Math.abs(j));
-                       sum += halfData[idx] * weight;
-                       weightSum += weight;
+                       if (idx >= 0 && idx < this.liquidBinCount) {
+                           let weight = j === 0 ? 1 : (Math.abs(j) === 1 ? 0.6 : 0.2); 
+                           sum += halfData[idx] * weight;
+                           weightSum += weight;
+                       }
                    }
                    smoothedData.push(sum / weightSum);
                 }
 
+                // --- 5. Hull Generation ---
+                const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+
                 // Build Right Half
                 for (let i = 0; i < this.liquidBinCount; i++) {
-                    const rawVal = smoothedData[i] / 255.0; 
-                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
+                    const rawVal = Math.min(255, smoothedData[i]) / 255.0; 
                     
-                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
+                    // Top center dampener (0 to 12) - makes the blue circle area stay small
+                    let topDampen = 1.0;
+                    if (i < 6) topDampen = (i / 6.0) * 0.3;
+                    else if (i < 12) topDampen = 0.3 + ((i-6)/6.0)*0.7;
+
+                    // Dynamic Zone Properties
+                    let localExp, localBump, localScale;
+                    if (i < 16) { 
+                        // Top to Green (Skinny & Long)
+                        localExp = 5.8;
+                        localBump = 180;
+                        localScale = 1.4;
+                    } else if (i < 32) { 
+                        // Transition to Yellow (Medium)
+                        let t = (i - 16) / 16.0;
+                        localExp = lerp(5.8, 3.5, t);
+                        localBump = lerp(180, 110, t);
+                        localScale = lerp(1.4, 0.9, t);
+                    } else { 
+                        // Transition to Purple (Short)
+                        let t = (i - 32) / 16.0;
+                        localExp = lerp(3.5, 3.0, t);
+                        localBump = lerp(110, 70, t);
+                        localScale = lerp(0.9, 0.6, t);
+                    }
+
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, localExp) * sens);
+                    const radius = baseRadius + ((exponentialVal * localBump * localScale) + (Math.pow(rawVal, 2.5) * sens * 12)) * topDampen;
                     const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
                 
                 // Build Left Half (Mirrored)
                 for (let i = this.liquidBinCount - 2; i > 0; i--) {
-                    const rawVal = smoothedData[i] / 255.0; 
-                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
-                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
+                    const rawVal = Math.min(255, smoothedData[i]) / 255.0; 
+                    
+                    let topDampen = 1.0;
+                    if (i < 6) topDampen = (i / 6.0) * 0.3;
+                    else if (i < 12) topDampen = 0.3 + ((i-6)/6.0)*0.7;
+
+                    let localExp, localBump, localScale;
+                    if (i < 16) { 
+                        localExp = 5.8; localBump = 180; localScale = 1.4;
+                    } else if (i < 32) { 
+                        let t = (i - 16) / 16.0;
+                        localExp = lerp(5.8, 3.5, t); localBump = lerp(180, 110, t); localScale = lerp(1.4, 0.9, t);
+                    } else { 
+                        let t = (i - 32) / 16.0;
+                        localExp = lerp(3.5, 3.0, t); localBump = lerp(110, 70, t); localScale = lerp(0.9, 0.6, t);
+                    }
+
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, localExp) * sens);
+                    const radius = baseRadius + ((exponentialVal * localBump * localScale) + (Math.pow(rawVal, 2.5) * sens * 12)) * topDampen;
                     const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
@@ -1770,41 +1842,82 @@
             teachAlgorithm() {
                 if(!this.waveform || !this.beatSignals.length) return window.ui.showToast("Add some beats first to teach the algorithm!");
                 
+                window.ui.showToast("Machine Learning: Analyzing DPPD Envelopes...");
+                
+                // --- 1. Learn Optimal MinGap ---
                 let gaps = [];
                 for(let i=1; i<this.beatSignals.length; i++) {
                     gaps.push(this.beatSignals[i] - this.beatSignals[i-1]);
                 }
                 gaps.sort((a,b)=>a-b);
-                // Worker uses minGapMs in seconds converted to ms natively. 
-                // So if optimal gap is 0.18s, minGap exported is 0.18
-                let optimalGap = gaps.length > 0 ? gaps[Math.floor(gaps.length * 0.15)] * 0.9 : 0.18;
+                // Find 5th percentile gap to avoid cutting off fast double-beats
+                let optimalGap = gaps.length > 0 ? gaps[Math.floor(gaps.length * 0.05)] * 0.95 : 0.18;
                 if(optimalGap < 0.05) optimalGap = 0.05;
 
-                let peakAmps = [];
+                // --- 2. Replicate DPPD RMS Engine locally to solve for exact Z-Score ---
                 const data = this.waveform;
                 const duration = window.audioSys.audio.duration || 100;
+                const sampleRate = data.length / duration;
+                const windowSize = Math.floor(sampleRate * 0.015); // 15ms window
                 
-                this.beatSignals.forEach(t => {
-                    const idx = Math.floor((t / duration) * data.length);
-                    if(idx >= 0 && Math.abs(idx) !== Infinity && idx < data.length) {
-                        let localMax = 0;
-                        for(let i = Math.max(0, idx - 500); i < Math.min(data.length, idx + 500); i++) {
-                            if(Math.abs(data[i]) > localMax) localMax = Math.abs(data[i]);
-                        }
-                        if(localMax > 0) peakAmps.push(localMax);
+                const envelope = [];
+                const timestamps = [];
+                
+                for (let i = 0; i < data.length; i += windowSize) {
+                    let sumSquares = 0;
+                    let validSamples = 0;
+                    for (let j = 0; j < windowSize && (i + j) < data.length; j++) {
+                        const amplitude = data[i + j];
+                        sumSquares += (amplitude * amplitude);
+                        validSamples++;
                     }
-                });
-                peakAmps.sort((a,b)=>a-b);
+                    envelope.push(Math.sqrt(sumSquares / validSamples));
+                    timestamps.push(i / sampleRate);
+                }
                 
-                // Converting raw peak amplitude into a conceptual Z-Score multiplier
-                // A normal song peak is around 0.5 amplitude. Z-Score threshold of 3.5 is standard.
-                // We map 0.5 amplitude -> 0.5 threshold (which autoGenerate multiplies by 7 to get 3.5)
-                let optimalThresh = peakAmps.length > 0 ? peakAmps[Math.floor(peakAmps.length * 0.1)] * 0.8 : 0.5;
-                if(optimalThresh > 0.9) optimalThresh = 0.9;
-                if(optimalThresh < 0.1) optimalThresh = 0.1;
+                const lag = 40; 
+                const filteredEnv = new Float32Array(envelope);
+                const userBeatZScores = [];
+
+                for (let i = lag; i < envelope.length; i++) {
+                    let sum = 0;
+                    for(let j=i-lag; j<i; j++) sum += filteredEnv[j];
+                    const localMean = sum / lag;
+                    
+                    let sumVariance = 0;
+                    for(let j=i-lag; j<i; j++) sumVariance += Math.pow(filteredEnv[j] - localMean, 2);
+                    const localStdDev = Math.sqrt(sumVariance / lag) || 0.0001; // prevent div/0
+                    
+                    const currentVal = envelope[i];
+                    const currentTime = timestamps[i];
+                    
+                    // Is this timestamp near any of the user's manual beats?
+                    const isUserBeat = this.beatSignals.some(bt => Math.abs(bt - currentTime) < 0.05); // within 50ms
+                    
+                    if (isUserBeat) {
+                        const zScore = (currentVal - localMean) / localStdDev;
+                        if (zScore > 0) userBeatZScores.push(zScore);
+                    }
+                    
+                    // Simple influence step for next loop (0.2 influence)
+                    filteredEnv[i] = currentVal; 
+                }
+
+                // --- 3. Determine the perfect Z-Score Threshold ---
+                userBeatZScores.sort((a,b)=>a-b);
+                // We want to capture the 10th percentile of user beats (ignore outliers/false clicks)
+                // BUT we have to "un-multiply" it by 7 because autoGenerate() multiplies it by 7.0
+                let rawZScore = userBeatZScores.length > 0 ? userBeatZScores[Math.floor(userBeatZScores.length * 0.1)] : 3.5;
+                
+                // Allow algorithm to be more aggressive if the user placed lots of beats
+                let optimalThresh = (rawZScore * 0.9) / 7.0; 
+                
+                // Clamp mathematically to prevent absolutely insane values
+                if(optimalThresh > 1.2) optimalThresh = 1.2; 
+                if(optimalThresh < 0.05) optimalThresh = 0.05;
 
                 const algoData = {
-                    version: "2.0-DPPD",
+                    version: "3.0-DPPD-Solver",
                     learnedAt: Date.now(),
                     minGap: optimalGap,
                     threshold: optimalThresh,
@@ -1812,7 +1925,7 @@
                 };
                 
                 localStorage.setItem('okmusic_bass_algorithm', JSON.stringify(algoData));
-                window.ui.showToast("Algorithm Taught & Saved!");
+                window.ui.showToast(`DPPD Taught! New Threshold: ${(optimalThresh*7).toFixed(2)}`);
             }
 
             exportAlgorithmData() {
@@ -3149,12 +3262,8 @@
                     setTimeout(() => window.ui.updateActiveIndicator(), 0);
                 }
                 
-                // Party Mode Broadcast Loop (Firebase RTDB Chunk Fallback Only - Storage CORS is Blocked)
-                if(window.partyMode && window.partyMode.active && window.db) {
-                    // Instant Broadcast (clients who already have it don't wait for upload latency)
-                    window.partyMode.broadcast({ type: 'PLAY', id: s.id, name: s.name, storageUrl: null, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
-                    
-                    // Directly fall back to chunks without waiting for blocked Storage POST errors
+                // Party Mode P2P Sync Trigger
+                if(window.partyMode && window.partyMode.active) {
                     window.partyMode.broadcastInChunks(s);
                 }
             }
@@ -3335,13 +3444,14 @@
                 this.sessionId = null;
                 this.listeners = [];
                 this.manualOffset = parseInt(localStorage.getItem('sv_party_sync')) || 0;
+                this.peers = {};
+                this.dataChannels = {};
+                this.hostId = null;
             }
             toggleSetup() {
                 const el = window.$('partySetupModal');
-                if(el.style.display === 'none') {
-                    el.style.display = 'block';
-                    this.updateUI();
-                } else el.style.display = 'none';
+                if(el.style.display === 'none') { el.style.display = 'block'; this.updateUI(); } 
+                else el.style.display = 'none';
             }
             updateUI() {
                 if(this.active) {
@@ -3370,6 +3480,8 @@
             connect() {
                 if(this.active) this.leave();
                 this.active = true;
+                if(!window.player.myId) window.player.myId = crypto.randomUUID();
+                
                 window.$('partyBtn').classList.add('active');
                 window.$('syncStatus').innerText = `Party: ${this.sessionId}`;
                 window.$('syncStatus').style.display = 'inline-block';
@@ -3380,6 +3492,7 @@
                     const unsubscribe = window.onDbValue(sessionRef, (snapshot) => {
                         const data = snapshot.val();
                         if(data && data.sender !== window.player.myId) {
+                            if (data.target && data.target !== window.player.myId) return;
                             this.handleMessage(data);
                         }
                     });
@@ -3393,7 +3506,10 @@
                         }, 3000);
                     }
                     
-                    setTimeout(() => { this.broadcast({type: 'JOIN'}); window.ui.showToast("Joined session!"); }, 1000);
+                    setTimeout(() => { 
+                        this.broadcast({type: 'JOIN'}); 
+                        window.ui.showToast("Joined session!"); 
+                    }, 1000);
                 } catch(e) { window.ui.showToast("Connection Error"); console.error("Party Mode error", e); }
                 
                 this.updateUI();
@@ -3404,6 +3520,9 @@
                 this.active = false;
                 this.listeners.forEach(unsub => unsub());
                 this.listeners = [];
+                Object.values(this.peers).forEach(pc => pc.close());
+                this.peers = {};
+                this.dataChannels = {};
                 window.$('partyBtn').classList.remove('active');
                 window.$('partyBtn').style = '';
                 window.$('syncStatus').style.display = 'none';
@@ -3412,161 +3531,219 @@
             }
             broadcast(data) {
                 if(!this.active || !window.db) return;
-                if(!window.player.myId) window.player.myId = crypto.randomUUID();
                 const serverTime = Date.now() + (window.serverTimeOffset || 0);
                 window.setDb(window.dbRef(window.db, 'sessions/' + this.sessionId), {
                     ...data, timestamp: serverTime, sender: window.player.myId
                 });
             }
+            updateCardProgress(id, pct) {
+                const card = document.querySelector(`.lib-card[data-id="${id}"]`);
+                if (card) {
+                    let prog = card.querySelector('.sync-prog');
+                    if (!prog) {
+                        card.style.position = 'relative';
+                        card.style.overflow = 'hidden';
+                        prog = document.createElement('div');
+                        prog.className = 'sync-prog';
+                        prog.style = 'position:absolute; left:0; top:0; width:0%; height:100%; background:var(--accent); opacity:0.15; pointer-events:none; transition:width 0.1s linear, opacity 0.3s; z-index:0; border-radius:inherit;';
+                        card.insertBefore(prog, card.firstChild);
+                    }
+                    prog.style.width = pct + '%';
+                    prog.style.opacity = '0.2';
+                    if (pct >= 100) {
+                        setTimeout(() => { if (prog) prog.style.opacity = '0'; }, 800);
+                    }
+                }
+            }
+
+            initWebRTC(targetId) {
+                if (this.peers[targetId]) return;
+                const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                this.peers[targetId] = pc;
+                
+                const dc = pc.createDataChannel("sync", { negotiated: true, id: 0 });
+                dc.binaryType = "arraybuffer";
+                this.dataChannels[targetId] = dc;
+                
+                let incomingChunks = [];
+                let incomingMeta = null;
+                
+                dc.onmessage = async (e) => {
+                    if (typeof e.data === 'string') {
+                        const msg = JSON.parse(e.data);
+                        if (msg.type === 'META') {
+                            incomingMeta = msg;
+                            incomingChunks = [];
+                            window.$('syncStatus').innerText = "Downloading P2P...";
+                        } else if (msg.type === 'DONE') {
+                            const blob = new Blob(incomingChunks);
+                            blob.name = incomingMeta.name + ".mp3";
+                            this.updateCardProgress(incomingMeta.id, 100);
+                            
+                            await window.player.db.add(blob, {beatSignals: incomingMeta.beatSignals, speedPoints: incomingMeta.speedPoints});
+                            await window.player.loadLib();
+                            
+                            incomingChunks = [];
+                            
+                            if (incomingMeta.playImmediately) {
+                                window.player.play(incomingMeta.id, null, false);
+                                this.broadcast({type: 'READY', id: incomingMeta.id, target: this.hostId});
+                            }
+                            
+                            incomingMeta = null;
+                            const status = window.$('syncStatus');
+                            status.innerText = `Party: ${this.sessionId}`;
+                        } else if (msg.type === 'SYNC_ALL_DONE') {
+                            window.ui.showToast("Library Sync Complete!");
+                            window.$('syncStatus').innerText = `Party: ${this.sessionId}`;
+                        } else if (msg.type === 'NO_SYNC_NEEDED') {
+                            window.ui.showToast("All tracks already synced!");
+                        }
+                    } else {
+                        incomingChunks.push(e.data);
+                        if (incomingMeta) {
+                            const pct = Math.round((incomingChunks.length / incomingMeta.totalChunks) * 100);
+                            window.$('syncStatus').innerText = `Receiving: ${pct}%`;
+                            this.updateCardProgress(incomingMeta.id, pct);
+                        }
+                    }
+                };
+
+                pc.onicecandidate = e => {
+                    if (e.candidate) this.broadcast({ type: 'ICE', target: targetId, candidate: JSON.stringify(e.candidate) });
+                };
+
+                if (this.isHost) {
+                    pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
+                        this.broadcast({ type: 'OFFER', target: targetId, sdp: JSON.stringify(pc.localDescription) });
+                    });
+                }
+            }
+
+            async streamFileToDC(dc, s, playImmediately = false) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        const buffer = e.target.result;
+                        const chunkSize = 64 * 1024; // 64KB chunks for reliable WebRTC routing
+                        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+                        
+                        dc.send(JSON.stringify({
+                            type: 'META', id: s.id, name: s.name, totalChunks,
+                            beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [],
+                            playImmediately
+                        }));
+                        
+                        for(let i=0; i<totalChunks; i++) {
+                            const start = i * chunkSize;
+                            const end = Math.min(start + chunkSize, buffer.byteLength);
+                            const chunk = buffer.slice(start, end);
+                            
+                            // WebRTC backpressure handling
+                            while(dc.bufferedAmount > 1024 * 1024) { 
+                                await new Promise(r => setTimeout(r, 10)); // throttle to 1MB buffer limit
+                            }
+                            dc.send(chunk);
+                            
+                            const pct = Math.round(((i+1)/totalChunks)*100);
+                            window.$('syncStatus').innerText = `Sending: ${pct}%`;
+                            this.updateCardProgress(s.id, pct);
+                        }
+                        
+                        dc.send(JSON.stringify({ type: 'DONE', id: s.id }));
+                        window.$('syncStatus').innerText = `Party: ${this.sessionId}`;
+                        resolve();
+                    };
+                    reader.readAsArrayBuffer(s.blob);
+                });
+            }
 
             syncLibrary() {
                 if (!this.active) return;
-                if (!this.isHost) {
-                    this.broadcast({type: 'REQ_SYNC_ALL'});
+                if (this.isHost) {
+                    const manifest = window.player.songs.map(s => s.id);
+                    this.broadcast({ type: 'MANIFEST', ids: manifest });
+                    window.ui.showToast("Broadcasted Library to Clients...");
+                } else {
+                    this.broadcast({type: 'REQ_MANIFEST'});
                     window.ui.showToast("Requested full sync from Host...");
-                    return;
                 }
-                
-                const btn = window.$('syncLibraryBtn');
-                const lbl = window.$('syncTrackLabel');
-                
-                const pushAll = async () => {
-                    const payload = [];
-                    const songs = window.player.songs;
-                    const total = songs.length;
-                    btn.disabled = true;
-                    lbl.style.display = 'block';
-                    
-                    for(let i=0; i<total; i++) {
-                        const s = songs[i];
-                        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> [${i+1}/${total}]`;
-                        lbl.innerText = `${i+1}/${total} ${s.name} 0%`;
-                        
-                        try {
-                            const base64 = await new Promise(resolve => {
-                                const reader = new FileReader();
-                                reader.onload = e => resolve(e.target.result);
-                                reader.readAsDataURL(s.blob);
-                            });
-                            
-                            const chunkSize = 1000 * 1024; // 1MB chunks
-                            const totalChunks = Math.ceil(base64.length / chunkSize);
-                            
-                            // Stream chunks to RTDB for this specific library track
-                            await window.setDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}`), { chunks: totalChunks });
-                            
-                            for (let j = 0; j < totalChunks; j++) {
-                                const start = j * chunkSize;
-                                const chunk = base64.substring(start, start + chunkSize);
-                                await window.setDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}/${j}`), chunk);
-                                
-                                const pct = Math.round(((j+1)/totalChunks)*100);
-                                lbl.innerText = `${i+1}/${total} ${s.name} ${pct}%`;
-                            }
-                            
-                            payload.push({id: s.id, name: s.name, isChunked: true, chunks: totalChunks, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
-                        } catch(e) { console.error("Failed to host song chunk", e); }
-                    }
-                    this.broadcast({type: 'SYNC_ALL', songs: payload});
-                    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist';
-                    btn.disabled = false;
-                    lbl.style.display = 'none';
-                    window.ui.showToast("Playlist Sync Broadcasted!");
-                };
-                pushAll();
             }
 
-            async processSyncAll(songs) {
-                window.$('syncStatus').style.display = 'inline-block';
-                window.$('partySetupModal').style.display = 'none';
-                
-                let count = 0;
-                for(const s of songs) {
-                    count++;
-                    window.$('syncStatus').innerText = `Syncing ${count}/${songs.length}`;
-                    try {
-                        const existing = window.player.songs.find(x => x.id === s.id || x.name === s.name);
-                        if (!existing) {
-                            if (s.isChunked) {
-                                // Download chunked file from RTDB
-                                let fullString = "";
-                                for (let j = 0; j < s.chunks; j++) {
-                                    window.$('syncStatus').innerText = `${count}/${songs.length} - Block ${j+1}/${s.chunks}`;
-                                    
-                                    // Retry loop for grabbing chunks safely
-                                    let snap = null;
-                                    for(let retries=0; retries<10; retries++) {
-                                        snap = await window.getDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}/${j}`));
-                                        if (snap.exists()) break;
-                                        await new Promise(r => setTimeout(r, 250));
-                                    }
-                                    
-                                    if(snap && snap.exists()) {
-                                        fullString += snap.val();
-                                    } else {
-                                        throw new Error("Missing chunk for " + s.name);
-                                    }
-                                }
-                                
-                                const res = await fetch(fullString);
-                                const blob = await res.blob();
-                                blob.name = s.name + ".mp3";
-                                await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
-                            }
-                        }
-                    } catch(e) { console.error(e); }
-                }
-                await window.player.loadLib();
-                window.$('syncStatus').innerText = "Playlist Synced!";
-                setTimeout(() => window.$('syncStatus').style.display='none', 3000);
-            }
-            
             async broadcastInChunks(song) {
-                if (!window.db || !this.sessionId) return;
+                if (!window.db || !this.sessionId || !this.isHost) return;
+                this.broadcast({ type: 'PLAY', id: song.id, name: song.name, beatSignals: song.beatSignals || [], speedPoints: song.speedPoints || [] });
                 
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const base64 = e.target.result;
-                    const chunkSize = 1000 * 1024; // 1MB chunks
-                    const totalChunks = Math.ceil(base64.length / chunkSize);
-                    
-                    // 1. Purge old party data node
-                    await window.setDb(window.dbRef(window.db, `partyData/${this.sessionId}`), null);
-                    
-                    // 2. Broadcast the 'PLAY' intent with chunk count
-                    this.broadcast({
-                        type: 'PLAY', id: song.id, name: song.name, 
-                        chunks: totalChunks, 
-                        beatSignals: song.beatSignals || [], 
-                        speedPoints: song.speedPoints || []
-                    });
-                    
-                    // 3. Upload chunks
-                    for (let i = 0; i < totalChunks; i++) {
-                        if (window.player.currId !== song.id) break; // User switched songs!
-                        const start = i * chunkSize;
-                        const chunk = base64.substring(start, start + chunkSize);
-                        await window.setDb(window.dbRef(window.db, `partyData/${this.sessionId}/${i}`), chunk);
-                        
-                        // Update UI on host to show streaming progress
-                        const status = window.$('syncStatus');
-                        const pct = Math.round(((i+1)/totalChunks)*100);
-                        if (status) status.innerText = `Streaming: ${pct}%`;
-                        window.ui.showSyncPopup("Streaming to Party...", pct + "%");
+                for (const [targetId, dc] of Object.entries(this.dataChannels)) {
+                    if (dc.readyState === "open") {
+                        this.streamFileToDC(dc, song, true);
                     }
-                    // Host waits for READY event from Client to hide popup
-                    const finalStatus = window.$('syncStatus');
-                    if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
-                };
-                reader.readAsDataURL(song.blob);
+                }
             }
+
             handleMessage(data) {
-                if(data.type === 'JOIN') window.ui.showToast("User Connected");
-                if(data.type === 'LEAVE') window.ui.showToast("User Disconnected");
+                if(data.type === 'JOIN' && this.isHost) {
+                    window.ui.showToast("User Connected via WebRTC!");
+                    this.initWebRTC(data.sender);
+                }
+                if(data.type === 'LEAVE') {
+                    window.ui.showToast("User Disconnected");
+                    if (this.peers[data.sender]) {
+                        this.peers[data.sender].close();
+                        delete this.peers[data.sender];
+                        delete this.dataChannels[data.sender];
+                    }
+                }
+                
+                if(data.type === 'OFFER' && !this.isHost) {
+                    this.hostId = data.sender;
+                    this.initWebRTC(data.sender);
+                    const pc = this.peers[data.sender];
+                    pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data.sdp)))
+                      .then(() => pc.createAnswer())
+                      .then(answer => pc.setLocalDescription(answer))
+                      .then(() => this.broadcast({ type: 'ANSWER', target: data.sender, sdp: JSON.stringify(pc.localDescription) }));
+                }
+                if(data.type === 'ANSWER' && this.isHost) {
+                    const pc = this.peers[data.sender];
+                    if (pc) pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data.sdp)));
+                }
+                if(data.type === 'ICE') {
+                    const pc = this.peers[data.sender];
+                    if (pc) pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data.candidate)));
+                }
+
+                if (data.type === 'REQ_MANIFEST' && this.isHost) {
+                    const manifest = window.player.songs.map(s => s.id);
+                    this.broadcast({ type: 'MANIFEST', target: data.sender, ids: manifest });
+                }
+                if (data.type === 'MANIFEST' && !this.isHost) {
+                    const missing = data.ids.filter(id => !window.player.songs.some(s => s.id === id));
+                    this.broadcast({ type: 'WANT_LIST', target: data.sender, missing });
+                }
+                if (data.type === 'WANT_LIST' && this.isHost) {
+                    const dc = this.dataChannels[data.sender];
+                    if (dc && dc.readyState === "open") {
+                        if (data.missing.length === 0) {
+                            dc.send(JSON.stringify({ type: 'NO_SYNC_NEEDED' }));
+                            return;
+                        }
+                        window.ui.showToast("Syncing " + data.missing.length + " missing tracks to Client!");
+                        const pushSeq = async () => {
+                            for (const id of data.missing) {
+                                const s = window.player.songs.find(x => x.id === id);
+                                if (s) await this.streamFileToDC(dc, s, false);
+                            }
+                            dc.send(JSON.stringify({ type: 'SYNC_ALL_DONE' }));
+                        };
+                        pushSeq();
+                    } else {
+                        window.ui.showToast("P2P Tunnel not ready yet! Try again in 5 sec.");
+                    }
+                }
+
                 if(data.type === 'PLAY') {
-                    console.log("Party PLAY command received:", data.id, data.name);
-                    this.lastCommandId = data.id; // Track the absolute most recent command
-                    
+                    this.lastCommandId = data.id;
                     let song = window.player.songs.find(s => s.id === data.id || s.name === data.name || (s.name && s.name.replace('.mp3','') === data.name.replace('.mp3','')));
                     if (song) {
                         if (window.player.currId !== song.id) {
@@ -3574,106 +3751,20 @@
                             if(data.beatSignals) song.beatSignals = data.beatSignals;
                             if(data.speedPoints) song.speedPoints = data.speedPoints;
                             window.player.play(song.id, null, false);
-                            
-                            // Client formally announces readiness
-                            this.broadcast({type: 'READY', id: data.id});
+                            this.broadcast({type: 'READY', id: data.id, target: data.sender});
                         }
-                    } else if (data.storageUrl || data.chunks) {
-                        window.ui.showToast("Downloading Shared Track...");
-                        window.ui.showSyncPopup("Downloading Track...", "0%");
-                        const status = window.$('syncStatus');
-                        status.style.display = 'inline-block';
-                        this.isDownloading = true; // Block STATUS seeking
-                        this.pauseRequestedDuringBuffer = false;
-                        
-                        const textMatch = Array.from(document.querySelectorAll('.lib-card')).find(el => el.textContent.includes(data.name));
-                        const cardNode = document.querySelector(`.lib-card[onclick*="${data.id}"]`) || textMatch;
-                        if (cardNode) { cardNode.style.opacity = '0.5'; cardNode.style.animation = 'pulse-red 1.5s infinite'; }
-                        
-                        status.innerText = "Downloading Track...";
-                        const currentSessionCommand = data.id;
-                        
-                        // Legacy chunks fallback or new storage URL
-                        const fetchUrl = data.storageUrl; 
-                        
-                        const processBlob = (blob) => {
-                            // VERIFY THIS IS STILL THE CURRENT SONG BEFORE PLAYING
-                            if (this.lastCommandId !== currentSessionCommand) {
-                                console.log("Discarding late download for stale command:", currentSessionCommand);
-                                return;
-                            }
-                            
-                            // Announce ready before processing blob (or right after adding to DB)
-                            
-                            blob.name = data.name + ".mp3";
-                            window.player.db.add(blob, {beatSignals: data.beatSignals, speedPoints: data.speedPoints}).then(id=>{
-                                window.player.loadLib().then(()=>{
-                                    this.isDownloading = false;
-                                    if (cardNode) { cardNode.style.opacity = '1'; cardNode.style.animation = 'none'; }
-                                    
-                                    if (this.pauseRequestedDuringBuffer) {
-                                        window.player.loadTrack(id); 
-                                        this.pauseRequestedDuringBuffer = false;
-                                    } else {
-                                        window.player.play(id, null, false);
-                                    }
-                                    
-                                    this.broadcast({type: 'READY', id: currentSessionCommand});
-                                    status.innerText = `Party: ${this.sessionId}`;
-                                    window.ui.hideSyncPopup();
-                                });
-                            });
-                        };
-
-                        if (fetchUrl) {
-                            fetch(fetchUrl).then(r=>r.blob()).then(processBlob).catch(e=>{ 
-                                console.error("Download failed", e); 
-                                this.isDownloading = false; 
-                                window.ui.hideSyncPopup();
-                                window.ui.showToast("CORS/Network Error: Download Failed");
-                            });
-                        } else if (data.chunks) {
-                            let fullString = "";
-                            let downloaded = 0;
-                            const downloadNext = async (idx) => {
-                                if (this.lastCommandId !== currentSessionCommand) { this.isDownloading = false; return; }
-                                const pct = Math.round((downloaded / data.chunks) * 100);
-                                status.innerText = `Buffering: ${pct}%`;
-                                window.ui.updateSyncPopup(pct + "%");
-                                this.broadcast({type: 'PROGRESS', pct: pct, id: currentSessionCommand});
-                                
-                                if(idx >= data.chunks) {
-                                    status.innerText = "Processing...";
-                                    window.ui.updateSyncPopup("Processing...");
-                                    fetch(fullString).then(r=>r.blob()).then(processBlob).catch(e=>{ console.error("Download failed", e); this.isDownloading = false; window.ui.hideSyncPopup(); });
-                                    return;
-                                }
-                                const snap = await window.getDb(window.dbRef(window.db, `partyData/${this.sessionId}/${idx}`));
-                                if(snap.exists()) {
-                                    fullString += snap.val();
-                                    downloaded++;
-                                    downloadNext(idx + 1);
-                                } else { setTimeout(() => downloadNext(idx), 50); }
-                            };
-                            downloadNext(0);
-                        }
+                    } else if (!this.isHost) {
+                        window.ui.showToast("Buffering track via P2P...");
                     }
-                }
-                else if (data.type === 'PROGRESS' && this.isHost && data.id === this.lastCommandId) {
-                    window.ui.updateSyncPopup(data.pct + "%");
                 }
                 else if (data.type === 'READY' && this.isHost && data.id === this.lastCommandId) {
                     window.ui.hideSyncPopup();
                     window.audioSys.audio.play();
                     window.ui.updatePlayBtn(true);
-                    const finalStatus = $('syncStatus');
+                    const finalStatus = window.$('syncStatus');
                     if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
                 }
                 else if(data.type === 'STATUS') {
-                    if (this.isDownloading) {
-                        if (!data.playing) this.pauseRequestedDuringBuffer = true;
-                        return;
-                    }
                     if(data.playing && window.audioSys.audio.paused) window.player.togglePlay();
                     else if(!data.playing && !window.audioSys.audio.paused) window.player.togglePlay();
                     
@@ -3683,13 +3774,11 @@
                         const expectedTime = data.time + latency + (this.manualOffset / 1000);
                         const drift = expectedTime - window.audioSys.audio.currentTime;
 
-                        // NTP Slewing: Avoid hard seeks if drift is minor. Catch up gracefully.
                         if (Math.abs(drift) > 0.3) {
-                            window.audioSys.audio.currentTime = expectedTime; // Hard seek for massive desyncs
+                            window.audioSys.audio.currentTime = expectedTime;
                             window.audioSys.audio.playbackRate = window.audioSys.baseSpeed || 1.0;
                         } 
                         else if (Math.abs(drift) > 0.02) {
-                            // Slew Rate (Speed up or slow down by 5% to catch up perfectly)
                             const slewRate = drift > 0 ? 1.05 : 0.95;
                             window.audioSys.audio.playbackRate = (window.audioSys.baseSpeed || 1.0) * slewRate;
                         } else {
@@ -3702,16 +3791,8 @@
                     if (data.bass !== undefined) { sl[1].value = data.bass; window.audioSys.setBass(data.bass); }
                     if (data.reverb !== undefined) { sl[2].value = data.reverb; window.audioSys.setReverb(data.reverb); }
                     if (data.speed !== undefined) { sl[3].value = data.speed; window.audioSys.setBaseSpeed(data.speed); }
-                    if (data.xtreme !== undefined) { $('xtremeToggle').checked = data.xtreme; window.audioSys.toggleXtreme(); }
+                    if (data.xtreme !== undefined) { window.$('xtremeToggle').checked = data.xtreme; window.audioSys.toggleXtreme(); }
                     window.ui.showToast("Host adjusted audio FX");
-                }
-                else if (data.type === 'SYNC_ALL' && !this.isHost) {
-                    window.ui.showToast("Downloading exact Host Playlist...");
-                    this.processSyncAll(data.songs);
-                }
-                else if (data.type === 'REQ_SYNC_ALL' && this.isHost) {
-                    window.ui.showToast("A Client requested Full Sync...");
-                    this.syncLibrary();
                 }
             }
         };
