@@ -666,6 +666,23 @@
             }
         };
 
+        class HistoryBuffer {
+            constructor(frames, binCount) {
+                this.maxFrames = frames;
+                this.head = 0;
+                this.buffer = Array.from({ length: frames }, () => new Uint8Array(binCount));
+            }
+            update(analyser) {
+                this.head = (this.head + 1) % this.maxFrames;
+                analyser.getByteFrequencyData(this.buffer[this.head]);
+            }
+            getDelayedFrame(framesAgo) {
+                let index = (this.head - framesAgo) % this.maxFrames;
+                if (index < 0) index += this.maxFrames;
+                return this.buffer[index];
+            }
+        }
+
         class Visualizer {
             constructor() { 
                 this.cv=window.$('vizCanvas'); 
@@ -674,6 +691,12 @@
                 this.smooth=true; 
                 this.flash=true; 
                 this.rippleEffect=true;
+                
+                // Temporal Ghosting Variables
+                this.history = new HistoryBuffer(15, 1024);
+                this.isGhostingEnabled = true;
+                this.exponent = 4; // Exponent for sharp horns
+                this.liquidBinCount = 48; // Number of bins to analyze for Liquid mode
                 this.resize(); 
                 window.addEventListener('resize',()=>this.resize()); 
                 this.xMode = false;
@@ -690,6 +713,27 @@
                 else this.mode = 'ring';
                 window.$('vizModeBtn').innerText=this.mode.toUpperCase(); 
                 window.$('albumArt').className=`album-art glass-panel ${(this.mode==='ring' || this.mode==='liquid')?'circle':''}`; 
+                
+                // Update Liquid Lines UI Toggle
+                const linesToggleLabel = window.$('liquidLinesToggle')?.previousElementSibling; // Span is before input
+                const linesToggleSpan = document.querySelector('span:contains("Liquid Lines")') || document.querySelector('span:contains("Smooth Following")'); // Better fetching
+                
+                // Let's do it safely
+                const spans = document.querySelectorAll('span');
+                let targetSpan = null;
+                for(let s of spans) {
+                    if(s.innerText.includes('Liquid Lines') || s.innerText.includes('Smooth Following')) {
+                        targetSpan = s; break;
+                    }
+                }
+                
+                if (targetSpan) {
+                    if (this.mode === 'liquid') {
+                        targetSpan.innerText = 'Smooth Following';
+                    } else {
+                        targetSpan.innerText = 'Liquid Lines';
+                    }
+                }
             }
             clearFlash(){ window.$('beat-flash').style.opacity=0; }
             triggerXEffect(intensity = 1.0){ 
@@ -713,6 +757,10 @@
                     }
                 }
                 if(!window.audioSys.analyser)return;
+                
+                // Update History Buffer BEFORE reading the active frame
+                this.history.update(window.audioSys.analyser);
+                
                 const buf=new Uint8Array(window.audioSys.analyser.frequencyBinCount); window.audioSys.analyser.getByteFrequencyData(buf);
                 const ctx=this.ctx, w=this.cv.width, h=this.cv.height; 
                 if(this.xStrength > 0) this.xStrength -= 0.05; if(this.xStrength < 0) this.xStrength = 0;
@@ -770,7 +818,10 @@
                 ctx.restore();
             }
             drawRing(ctx,w,h,d){
-                const cx=w/2, cy=h/2-40, r=140, bars=100;
+                const art = document.getElementById('albumArt');
+                let cx = w/2, cy = h/2 - 40;
+                if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
+                const r=140, bars=100;
                 // IMPROVED: Use a wider range of the buffer to avoid static/dead lines
                 const lim=Math.floor(d.length * 0.6), step=Math.max(1, Math.floor(lim/bars));
                 const sens = window.vizSens || 1.0;
@@ -780,7 +831,11 @@
                 ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
                 for(let i=0;i<bars;i++){ 
-                    const idx=Math.floor(i*step), v=d[idx]*sens, val=v*1.5, ang=(i/bars)*Math.PI*2; 
+                    const idx=Math.floor(i*step);
+                    const normalized = Math.min(1, (d[idx]*sens)/255.0);
+                    // Use a slight curve for smoother rings without getting too 'fat'
+                    const val= Math.pow(normalized, 2) * 200; 
+                    const ang=(i/bars)*Math.PI*2; 
                     let x = cx+Math.cos(ang)*(r+val); let y = cy+Math.sin(ang)*(r+val);
                     if(this.xStrength > 0.01) {
                         const rad = (i/bars) * Math.PI * 2; 
@@ -789,8 +844,8 @@
                         const lobe = Math.sin(rad * lobeCount + phase); 
                         const distortion = lobe > 0 ? lobe * 30 : lobe * 120; 
                         const dist = this.xStrength * distortion;
-                        x = cx + Math.cos(ang) * (r + val + dist); 
-                        y = cy + Math.sin(ang) * (r + val + dist);
+                        x = cx + Math.cos(ang) * (r + Math.pow(normalized, 1.5)*100 + dist); 
+                        y = cy + Math.sin(ang) * (r + Math.pow(normalized, 1.5)*100 + dist);
                     }
                     pts.push({x: x|0, y: y|0}); 
                 } 
@@ -824,10 +879,16 @@
                 if(this.smooth){ 
                     path.moveTo(0,h); 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx]*sens, y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
+                        const idx=Math.floor(i*step);
+                        const normalized=Math.min(1, (d[idx]*sens)/255.0);
+                        const exponVal = Math.pow(normalized, 3); // Trap Nation exponent for bars too!
+                        const y=h-(exponVal)*(h*0.8), x=i*sp+sp/2; 
+                        
                         if(i===0) path.lineTo(x|0,y|0); 
                         else { 
-                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]*sens/255)*(h*0.8); 
+                            const pi=Math.floor((i-1)*step);
+                            const pn=Math.min(1, (d[pi]*sens)/255.0);
+                            const px=(i-1)*sp+sp/2, py=h-(Math.pow(pn, 3))*(h*0.8); 
                             path.quadraticCurveTo(px|0, py|0, ((px+x)/2)|0, ((py+y)/2)|0); 
                         } 
                     } 
@@ -835,46 +896,55 @@
                     ctx.fill(path); 
                 } else { 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step), v=d[idx]*sens, bh=(v/255)*(h*0.8); 
-                        path.rect((i*sp)|0, (h-bh)|0, (sp-2)|0, bh|0); 
-
+                        const idx=Math.floor(i*step);
+                        const normalized=Math.min(1, (d[idx]*sens)/255.0);
+                        const exponVal = Math.pow(normalized, 3);
+                        const bh=exponVal*(h*0.8); 
+                        path.rect((i*sp)|0, (h-bh)|0, (Math.max(1, sp-2))|0, bh|0); 
                     } 
                     ctx.fill(path);
                 }
             }
-            drawLiquid(ctx, w, h, d) {
-                const cx = w / 2;
-                const cy = h / 2 - 40;
+            getSymmetricPoints(cx, cy, frameData) {
+                const points = [];
+                // Use slightly fewer bins to keep it tighter and less jagged
+                this.liquidBinCount = 36;
+                const totalPoints = (this.liquidBinCount * 2) - 2;
                 const baseRadius = 145; // Match album art
-                const maxBump = 120; // Maximum bass pulse
+                const maxBump = 140; // Max bass protrusion
                 const sens = window.vizSens || 1.0;
                 
-                // Construct Polar Coordinates
-                const binCount = 48; // Use 48 low frequency buckets
-                const points = [];
-                const totalPoints = (binCount * 2) - 2;
-                
-                // Right Half
-                for (let i = 0; i < binCount; i++) {
-                    const val = (d[i] * sens) / 255.0; 
-                    const radius = baseRadius + (val * maxBump);
+                // Build Right Half
+                for (let i = 0; i < this.liquidBinCount; i++) {
+                    const normalized = Math.min(1, (frameData[i]*sens) / 255.0);
+                    const exponentialVal = Math.pow(normalized, this.exponent); 
+                    // Add slight baseline minimum movement, mostly exponential horns
+                    const radius = baseRadius + (exponentialVal * maxBump) + (normalized * 5);
                     const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
+                    
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
                 
-                // Left Half (Mirrored)
-                for (let i = binCount - 2; i > 0; i--) {
-                    const val = (d[i] * sens) / 255.0;
-                    const radius = baseRadius + (val * maxBump);
-                    const ptIdx = totalPoints - i;
-                    const theta = -Math.PI / 2 + (ptIdx / totalPoints) * Math.PI * 2;
+                // Build Left Half (Mirrored)
+                for (let i = this.liquidBinCount - 2; i > 0; i--) {
+                    const normalized = Math.min(1, (frameData[i]*sens) / 255.0);
+                    const exponentialVal = Math.pow(normalized, this.exponent);
+                    const radius = baseRadius + (exponentialVal * maxBump) + (normalized * 5);
+                    const pointIndex = totalPoints - i;
+                    // Fix: Map it symmetrically over to the left side
+                    const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
+                    
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
+                return points;
+            }
 
-                // Smooth Path Creation using Bezier Curves
-                const liquidPath = new Path2D();
+            buildSmoothPath(points) {
+                const path = new Path2D();
                 const len = points.length;
-                liquidPath.moveTo(points[0].x, points[0].y);
+                if (len < 3) return path;
+
+                path.moveTo(points[0].x, points[0].y);
                 const tension = 1.0;
 
                 for (let i = 0; i < len; i++) {
@@ -883,57 +953,54 @@
                     const p2 = points[(i + 1) % len];
                     const p3 = points[(i + 2) % len];
 
-                    // Catmull-Rom into Cubic Bezier Math
                     const cp1x = p1.x + (p2.x - p0.x) * (tension / 6);
                     const cp1y = p1.y + (p2.y - p0.y) * (tension / 6);
                     const cp2x = p2.x - (p3.x - p1.x) * (tension / 6);
                     const cp2y = p2.y - (p3.y - p1.y) * (tension / 6);
 
-                    liquidPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+                    path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
                 }
-                liquidPath.closePath();
+                path.closePath();
+                return path;
+            }
 
-                // Chromatic Aberration Layers
-                ctx.globalCompositeOperation = 'screen';
+            drawLiquid(ctx, w, h, ignored_d) {
+                const art = document.getElementById('albumArt');
+                let cx = w/2, cy = h/2 - 40;
+                if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
                 
+                const renderQueue = [];
                 const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
-                let layers = [];
                 const tMode = window.ui ? window.ui.themeMode : 'solid';
+                const ghosting = this.smooth; // 'smooth' boolean handles the UI toggle for "Smooth Following"
                 
-                if (isMobile) {
-                    layers = [{ scale: 1.00, clr: '#ffffff' }];
-                } else if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
-                    layers = [
-                        { scale: 1.05, clr: window.ui.themeGrad1 }, 
-                        { scale: 1.025, clr: window.ui.themeGrad2 },
-                        { scale: 1.01, clr: '#ffffff' },
-                        { scale: 1.00, clr: '#ffffff' } // Core
-                    ];
-                } else if (tMode === 'dominant' && window.dominantColor) {
-                    layers = [
-                        { scale: 1.05, clr: window.dominantColor }, 
-                        { scale: 1.025, clr: window.dominantColor2 || '#ffffff' },
-                        { scale: 1.01, clr: '#ffffff' },
-                        { scale: 1.00, clr: '#ffffff' }
-                    ];
+                if (ghosting && !isMobile) {
+                    ctx.globalCompositeOperation = 'screen';
+                    
+                    if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
+                    } else if (tMode === 'dominant' && window.dominantColor) {
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor });
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor2 || '#ffffff' });
+                    } else {
+                        const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: acc });
+                    }
                 } else {
-                    const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
-                    layers = [
-                        { scale: 1.05, clr: acc }, 
-                        { scale: 1.025, clr: acc },
-                        { scale: 1.01, clr: '#ffffff' },
-                        { scale: 1.00, clr: '#ffffff' }
-                    ];
+                    ctx.globalCompositeOperation = 'source-over';
                 }
-
-                for (const layer of layers) {
-                    ctx.save();
-                    ctx.translate(cx, cy);
-                    ctx.scale(layer.scale, layer.scale);
-                    ctx.translate(-cx, -cy);
-                    ctx.fillStyle = layer.clr;
-                    ctx.fill(liquidPath);
-                    ctx.restore();
+                
+                // Current frame is always white and on top
+                renderQueue.push({ data: this.history.getDelayedFrame(0), color: '#FFFFFF' });
+                
+                for (const layer of renderQueue) {
+                    const points = this.getSymmetricPoints(cx, cy, layer.data);
+                    const path = this.buildSmoothPath(points);
+                    
+                    ctx.fillStyle = layer.color;
+                    ctx.fill(path);
                 }
                 
                 ctx.globalCompositeOperation = 'source-over';
