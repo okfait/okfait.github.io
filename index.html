@@ -80,7 +80,7 @@
         <div class="vol-container">
             <div class="vol-bridge"></div>
             <div class="vol-popup">
-                <input type="text" id="volPercentDisplay" value="100%" class="absolute top-2 left-0 w-full text-center font-bold text-[10px] text-white/50 bg-transparent outline-none cursor-text hover:text-white transition focus:text-[var(--accent)]" onchange="window.audioSys.setVolFromTextInput(this.value)" onfocus="this.select()">
+                <input type="text" id="volPercentDisplay" value="100%" class="absolute -top-6 left-0 w-full text-center font-bold text-[11px] text-white/50 bg-transparent outline-none cursor-text hover:text-white transition focus:text-[var(--accent)]" onchange="window.audioSys.setVolFromTextInput(this.value)" onfocus="this.select()">
                 <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="window.audioSys.setVolume(this.value); $('volPercentDisplay').value = Math.round(this.value * 100) + '%'">
             </div>
             <button class="btn"><i class="fa-solid fa-volume-high"></i></button>
