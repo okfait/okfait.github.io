@@ -991,15 +991,15 @@
                         // All others use screen blending
                         ctx.globalCompositeOperation = 'screen';
                         if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
-                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
-                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: window.ui.themeGrad1 });
+                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: window.ui.themeGrad2 });
                         } else if (tMode === 'dominant' && window.dominantColor) {
-                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor2 || '#ffffff' });
-                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: window.dominantColor2 || '#ffffff' });
+                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: window.dominantColor });
                         } else {
                             const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
-                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
-                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: acc });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: acc });
+                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: acc });
                         }
                     }
                 } else {
