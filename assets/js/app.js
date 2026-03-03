@@ -716,7 +716,6 @@
                 
                 // Update Liquid Lines UI Toggle
                 const linesToggleLabel = window.$('liquidLinesToggle')?.previousElementSibling; // Span is before input
-                const linesToggleSpan = document.querySelector('span:contains("Liquid Lines")') || document.querySelector('span:contains("Smooth Following")'); // Better fetching
                 
                 // Let's do it safely
                 const spans = document.querySelectorAll('span');
@@ -3150,37 +3149,13 @@
                     setTimeout(() => window.ui.updateActiveIndicator(), 0);
                 }
                 
-                // Party Mode Broadcast Loop (Firebase Storage with Chunk Fallback)
+                // Party Mode Broadcast Loop (Firebase RTDB Chunk Fallback Only - Storage CORS is Blocked)
                 if(window.partyMode && window.partyMode.active && window.db) {
                     // Instant Broadcast (clients who already have it don't wait for upload latency)
                     window.partyMode.broadcast({ type: 'PLAY', id: s.id, name: s.name, storageUrl: null, beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || [] });
                     
-                    const tryUpload = async () => {
-                        if(window.storage) {
-                            try {
-                                const sRef = window.storageRef(window.storage, `partyData/${window.partyMode.sessionId}/${s.id}.mp3`);
-                                await window.uploadBytes(sRef, s.blob);
-                                const downloadUrl = await window.getDownloadURL(sRef);
-                                if (window.player.currId === s.id) {
-                                    window.partyMode.broadcast({
-                                        type: 'PLAY', id: s.id, name: s.name, storageUrl: downloadUrl,
-                                        beatSignals: s.beatSignals || [], speedPoints: s.speedPoints || []
-                                    });
-                                }
-                                return true;
-                            } catch (e) {
-                                console.warn("Firebase Storage failed/blocked. Falling back to Chunks.", e);
-                                return false;
-                            }
-                        }
-                        return false;
-                    };
-
-                    tryUpload().then(success => {
-                        if (!success && window.player.currId === s.id) {
-                            window.partyMode.broadcastInChunks(s);
-                        }
-                    });
+                    // Directly fall back to chunks without waiting for blocked Storage POST errors
+                    window.partyMode.broadcastInChunks(s);
                 }
             }
             
@@ -3468,33 +3443,28 @@
                         lbl.innerText = `${i+1}/${total} ${s.name} 0%`;
                         
                         try {
-                            const sRef = window.storageRef(window.storage, `partyData/${this.sessionId}/${s.id}.mp3`);
+                            const base64 = await new Promise(resolve => {
+                                const reader = new FileReader();
+                                reader.onload = e => resolve(e.target.result);
+                                reader.readAsDataURL(s.blob);
+                            });
                             
-                            let success = false;
-                            for(let attempt=0; attempt<3; attempt++) {
-                                try {
-                                    await new Promise((resolve, reject) => {
-                                        const uploadTask = window.uploadBytesResumable(sRef, s.blob);
-                                        uploadTask.on('state_changed', 
-                                            (snapshot) => {
-                                                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                                                lbl.innerText = `${i+1}/${total} ${s.name} ${Math.floor(progress)}%`;
-                                            },
-                                            (error) => reject(error),
-                                            () => resolve()
-                                        );
-                                    });
-                                    
-                                    const downloadUrl = await window.getDownloadURL(sRef);
-                                    payload.push({id: s.id, name: s.name, storageUrl: downloadUrl, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
-                                    success = true;
-                                    break;
-                                } catch(err) {
-                                    console.warn(`Party sync retry ${attempt+1} for ${s.name}`);
-                                    if(attempt === 2) throw err;
-                                    await new Promise(r => setTimeout(r, 2000));
-                                }
+                            const chunkSize = 1000 * 1024; // 1MB chunks
+                            const totalChunks = Math.ceil(base64.length / chunkSize);
+                            
+                            // Stream chunks to RTDB for this specific library track
+                            await window.setDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}`), { chunks: totalChunks });
+                            
+                            for (let j = 0; j < totalChunks; j++) {
+                                const start = j * chunkSize;
+                                const chunk = base64.substring(start, start + chunkSize);
+                                await window.setDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}/${j}`), chunk);
+                                
+                                const pct = Math.round(((j+1)/totalChunks)*100);
+                                lbl.innerText = `${i+1}/${total} ${s.name} ${pct}%`;
                             }
+                            
+                            payload.push({id: s.id, name: s.name, isChunked: true, chunks: totalChunks, beatSignals: s.beatSignals, speedPoints: s.speedPoints});
                         } catch(e) { console.error("Failed to host song chunk", e); }
                     }
                     this.broadcast({type: 'SYNC_ALL', songs: payload});
@@ -3517,14 +3487,32 @@
                     try {
                         const existing = window.player.songs.find(x => x.id === s.id || x.name === s.name);
                         if (!existing) {
-                            // Proxy through Vercel to completely bypass Firebase CORS blocks on Safari/Chrome
-                            const proxyUrl = `https://okfait-github-io.vercel.app/api/proxy?url=${encodeURIComponent(s.storageUrl)}`;
-                            const res = await fetch(proxyUrl);
-                            if (!res.ok) throw new Error("CORS Proxy Blocked");
-                            
-                            const blob = await res.blob();
-                            blob.name = s.name + ".mp3";
-                            await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                            if (s.isChunked) {
+                                // Download chunked file from RTDB
+                                let fullString = "";
+                                for (let j = 0; j < s.chunks; j++) {
+                                    window.$('syncStatus').innerText = `${count}/${songs.length} - Block ${j+1}/${s.chunks}`;
+                                    
+                                    // Retry loop for grabbing chunks safely
+                                    let snap = null;
+                                    for(let retries=0; retries<10; retries++) {
+                                        snap = await window.getDb(window.dbRef(window.db, `partyLib/${this.sessionId}/${s.id}/${j}`));
+                                        if (snap.exists()) break;
+                                        await new Promise(r => setTimeout(r, 250));
+                                    }
+                                    
+                                    if(snap && snap.exists()) {
+                                        fullString += snap.val();
+                                    } else {
+                                        throw new Error("Missing chunk for " + s.name);
+                                    }
+                                }
+                                
+                                const res = await fetch(fullString);
+                                const blob = await res.blob();
+                                blob.name = s.name + ".mp3";
+                                await window.player.db.add(blob, {beatSignals: s.beatSignals, speedPoints: s.speedPoints});
+                            }
                         }
                     } catch(e) { console.error(e); }
                 }
