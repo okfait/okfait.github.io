@@ -164,13 +164,19 @@
                 <label class="setting-label">Visuals</label>
                 <!-- THEME UI SYSTEM -->
                 <div class="flex flex-col bg-white/5 p-3 rounded-xl gap-2">
-                    <div class="flex justify-between items-center w-full">
+                    <div class="flex justify-between items-center w-full relative">
                         <span class="text-sm font-bold ml-2">Theme Source</span>
-                        <select id="themeModeSelector" onchange="window.ui.setThemeMode(this.value)" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition">
-                            <option value="solid">Solid Accent Color</option>
-                            <option value="dominant">Album Art (Dominant)</option>
-                            <option value="gradient">Custom 2-Color Gradient</option>
-                        </select>
+                        <div class="relative" id="themeDropdownWrapper">
+                            <button onclick="document.getElementById('themeMenu').classList.toggle('scale-y-0'); document.getElementById('themeMenu').classList.toggle('opacity-0')" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition flex items-center gap-2">
+                                <span id="themeModeTxt">Solid Accent Color</span> <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                            <div id="themeMenu" class="absolute right-0 top-[120%] w-48 bg-[#0a0a0a] border border-white/10 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] origin-top scale-y-0 opacity-0 transition-all duration-200 flex flex-col">
+                                <button onclick="window.ui.setThemeMode('solid'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Solid Accent Color</button>
+                                <button onclick="window.ui.setThemeMode('dominant'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Album Art (Dominant)</button>
+                                <button onclick="window.ui.setThemeMode('gradient'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Custom 2-Color Gradient</button>
+                                <button onclick="window.ui.setThemeMode('rainbow'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-500 to-blue-500 hover:bg-white/10 transition">Rainbow Follow</button>
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Solid Color Picker (Visible when solid) -->

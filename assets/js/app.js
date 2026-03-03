@@ -831,11 +831,7 @@
                 ctx.lineWidth=3 + (this.xStrength * 5); ctx.lineCap='round'; ctx.shadowBlur= isMobile ? 0 : 15 + (this.xStrength * 30);
                 const pts=[]; 
                 for(let i=0;i<bars;i++){ 
-                    const idx=Math.floor(i*step);
-                    const normalized = Math.min(1, (d[idx]*sens)/255.0);
-                    // Use a slight curve for smoother rings without getting too 'fat'
-                    const val= Math.pow(normalized, 2) * 200; 
-                    const ang=(i/bars)*Math.PI*2; 
+                    const idx=Math.floor(i*step), v=d[idx]*sens, val=v*1.5, ang=(i/bars)*Math.PI*2; 
                     let x = cx+Math.cos(ang)*(r+val); let y = cy+Math.sin(ang)*(r+val);
                     if(this.xStrength > 0.01) {
                         const rad = (i/bars) * Math.PI * 2; 
@@ -844,8 +840,8 @@
                         const lobe = Math.sin(rad * lobeCount + phase); 
                         const distortion = lobe > 0 ? lobe * 30 : lobe * 120; 
                         const dist = this.xStrength * distortion;
-                        x = cx + Math.cos(ang) * (r + Math.pow(normalized, 1.5)*100 + dist); 
-                        y = cy + Math.sin(ang) * (r + Math.pow(normalized, 1.5)*100 + dist);
+                        x = cx + Math.cos(ang) * (r + val + dist); 
+                        y = cy + Math.sin(ang) * (r + val + dist);
                     }
                     pts.push({x: x|0, y: y|0}); 
                 } 
@@ -879,16 +875,10 @@
                 if(this.smooth){ 
                     path.moveTo(0,h); 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step);
-                        const normalized=Math.min(1, (d[idx]*sens)/255.0);
-                        const exponVal = Math.pow(normalized, 3); // Trap Nation exponent for bars too!
-                        const y=h-(exponVal)*(h*0.8), x=i*sp+sp/2; 
-                        
+                        const idx=Math.floor(i*step), v=d[idx]*sens, y=h-(v/255)*(h*0.8), x=i*sp+sp/2; 
                         if(i===0) path.lineTo(x|0,y|0); 
                         else { 
-                            const pi=Math.floor((i-1)*step);
-                            const pn=Math.min(1, (d[pi]*sens)/255.0);
-                            const px=(i-1)*sp+sp/2, py=h-(Math.pow(pn, 3))*(h*0.8); 
+                            const pi=Math.floor((i-1)*step), px=(i-1)*sp+sp/2, py=h-(d[pi]*sens/255)*(h*0.8); 
                             path.quadraticCurveTo(px|0, py|0, ((px+x)/2)|0, ((py+y)/2)|0); 
                         } 
                     } 
@@ -896,10 +886,7 @@
                     ctx.fill(path); 
                 } else { 
                     for(let i=0;i<cnt;i++){ 
-                        const idx=Math.floor(i*step);
-                        const normalized=Math.min(1, (d[idx]*sens)/255.0);
-                        const exponVal = Math.pow(normalized, 3);
-                        const bh=exponVal*(h*0.8); 
+                        const idx=Math.floor(i*step), v=d[idx]*sens, bh=(v/255)*(h*0.8); 
                         path.rect((i*sp)|0, (h-bh)|0, (Math.max(1, sp-2))|0, bh|0); 
                     } 
                     ctx.fill(path);
@@ -907,33 +894,34 @@
             }
             getSymmetricPoints(cx, cy, frameData) {
                 const points = [];
-                // Use slightly fewer bins to keep it tighter and less jagged
-                this.liquidBinCount = 36;
+                this.liquidBinCount = 48; // Higher resolution for smooth curves
                 const totalPoints = (this.liquidBinCount * 2) - 2;
                 const baseRadius = 145; // Match album art
                 const maxBump = 140; // Max bass protrusion
                 const sens = window.vizSens || 1.0;
                 
+                // Pre-calculate the reshaped Half-Array to put the "Horns" at ~2 o'clock and 10 o'clock
+                const peakIndex = Math.floor(this.liquidBinCount * 0.18); 
+                const halfData = [];
+                for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
+                for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
+                
                 // Build Right Half
                 for (let i = 0; i < this.liquidBinCount; i++) {
-                    const normalized = Math.min(1, (frameData[i]*sens) / 255.0);
-                    const exponentialVal = Math.pow(normalized, this.exponent); 
-                    // Add slight baseline minimum movement, mostly exponential horns
-                    const radius = baseRadius + (exponentialVal * maxBump) + (normalized * 5);
-                    const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
+                    const rawVal = halfData[i] / 255.0; 
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
                     
+                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
+                    const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
                 
                 // Build Left Half (Mirrored)
                 for (let i = this.liquidBinCount - 2; i > 0; i--) {
-                    const normalized = Math.min(1, (frameData[i]*sens) / 255.0);
-                    const exponentialVal = Math.pow(normalized, this.exponent);
-                    const radius = baseRadius + (exponentialVal * maxBump) + (normalized * 5);
-                    const pointIndex = totalPoints - i;
-                    // Fix: Map it symmetrically over to the left side
+                    const rawVal = halfData[i] / 255.0; 
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
+                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
                     const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
-                    
                     points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
                 }
                 return points;
@@ -977,12 +965,18 @@
                 if (ghosting && !isMobile) {
                     ctx.globalCompositeOperation = 'screen';
                     
-                    if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
+                    if (tMode === 'rainbow') { // 15 frames max, drawing 5 colors smoothly trailing
+                        renderQueue.push({ data: this.history.getDelayedFrame(15), color: '#a855f7' }); // Purple
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#3b82f6' }); // Blue
+                        renderQueue.push({ data: this.history.getDelayedFrame(9), color: '#10b981' }); // Green
+                        renderQueue.push({ data: this.history.getDelayedFrame(6), color: '#ef4444' }); // Red
+                        renderQueue.push({ data: this.history.getDelayedFrame(3), color: '#eab308' }); // Yellow
+                    } else if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
                         renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
                         renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
                     } else if (tMode === 'dominant' && window.dominantColor) {
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor });
-                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor2 || '#ffffff' });
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor2 || '#ffffff' });
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor });
                     } else {
                         const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
                         renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
@@ -2701,9 +2695,17 @@
                 localStorage.setItem('sv_theme_mode', mode);
                 const solidContainer = window.$('solidColorContainer');
                 const gradContainer = window.$('gradientColorContainer');
+                const txtLabel = window.$('themeModeTxt');
                 
                 if (solidContainer) solidContainer.style.display = (mode === 'solid') ? 'flex' : 'none';
                 if (gradContainer) gradContainer.style.display = (mode === 'gradient') ? 'flex' : 'none';
+
+                if (txtLabel) {
+                    if (mode === 'solid') txtLabel.innerText = "Solid Accent Color";
+                    else if (mode === 'dominant') txtLabel.innerText = "Album Art (Dominant)";
+                    else if (mode === 'gradient') txtLabel.innerText = "Custom 2-Color Gradient";
+                    else if (mode === 'rainbow') txtLabel.innerText = "Rainbow Ghosting";
+                }
             }
             
             updateGradientTheme() {
