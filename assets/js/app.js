@@ -1816,6 +1816,73 @@ buildSmoothPath(points) {
                     if(window.ui && window.ui.showToast) window.ui.showToast('Algorithm Controller not loaded yet.');
                 }
             }
+            
+            async autoGenerate() {
+                if(!window.player.currentTrack || !this.waveform) {
+                    if(window.ui && window.ui.showToast) window.ui.showToast("Load a track first!");
+                    return;
+                }
+                const btn = document.querySelector('button[onclick="window.curveEditor.autoGenerate()"]');
+                if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
+                
+                // Advanced Local DPWE-style Peak Picker (Zero Latency)
+                const data = this.waveform;
+                const sampleRate = window.audioSys.ctx.sampleRate || 44100;
+                const duration = window.audioSys.audio.duration;
+                
+                // 1. RMS Energy Envelope Extraction (10ms hops, 20ms windows)
+                const hopSize = Math.floor(sampleRate * 0.01); 
+                const windowSize = Math.floor(sampleRate * 0.02); 
+                const numHops = Math.floor(data.length / hopSize);
+                
+                let energyEnvelope = new Float32Array(numHops);
+                for (let i = 0; i < numHops; i++) {
+                    let start = i * hopSize;
+                    let sum = 0;
+                    for (let j = 0; j < windowSize; j++) {
+                        if (start + j < data.length) sum += data[start + j] * data[start + j];
+                    }
+                    energyEnvelope[i] = Math.sqrt(sum / windowSize);
+                }
+                
+                // 2. Onset Strength (First Derivative + Half-Wave Rectification)
+                let onsetStrength = new Float32Array(numHops);
+                for (let i = 1; i < numHops; i++) {
+                    let diff = energyEnvelope[i] - energyEnvelope[i-1];
+                    onsetStrength[i] = Math.max(0, diff);
+                }
+                
+                // 3. Adaptive Moving Median Thresholding
+                let windowScale = 15; // 150ms window
+                let peaks = [];
+                let sensitivity = this.triggers.length > 0 ? this.triggers[0].level : 0.5;
+                let multiplier = 1.0 + (1.0 - sensitivity) * 3.0; 
+                
+                for (let i = windowScale; i < numHops - windowScale; i++) {
+                    let localSlice = onsetStrength.slice(i - windowScale, i + windowScale);
+                    localSlice.sort();
+                    let median = localSlice[Math.floor(localSlice.length / 2)];
+                    let threshold = median * multiplier + 0.005; 
+                    
+                    if (onsetStrength[i] > threshold && 
+                        onsetStrength[i] > onsetStrength[i-1] && 
+                        onsetStrength[i] > onsetStrength[i+1]) {
+                        
+                        let timeInSeconds = i * (hopSize / sampleRate);
+                        
+                        if (peaks.length === 0 || timeInSeconds - peaks[peaks.length - 1] > this.scanMinGap) {
+                             peaks.push(timeInSeconds);
+                        }
+                    }
+                }
+                
+                this.beatSignals = peaks;
+                this.saveSignals();
+                
+                if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto';
+                if(window.ui && window.ui.showToast) window.ui.showToast(`AI Analyzer found ${peaks.length} precise beat transients!`);
+            }
+
 
             draw() {
                 const w = this.cv.width, h = this.cv.height, ctx = this.ctx;
@@ -1935,7 +2002,7 @@ buildSmoothPath(points) {
                 }
             }
 
-            getSpeedAt(p){ this.pts.sort((a,b)=>a.x-b.x); let p1=this.pts[0],p2=this.pts[this.pts.length-1]; for(let i=0;i<this.pts.length-1;i++)if(p>=this.pts[i].x&&p<=this.pts[i+1].x){p1=this.pts[i];p2=this.pts[i+1];break;} const r=p2.x-p1.x; if(r===0)return p1.y*2.0; const t=(p-p1.x)/r; return (p1.y+(p2.y-p1.y)*t)*2.0; }
+            getSpeedAt(p){ this.pts.sort((a,b)=>a.x-b.x); let p1=this.pts[0],p2=this.pts[this.pts.length-1]; for(let i=0;i<this.pts.length-1;i++)if(p>=this.pts[i].x&&p<=this.pts[i+1].x){p1=this.pts[i];p2=this.pts[i+1];break;} const r=p2.x-p1.x; if(r===0)return Math.max(0.25, p1.y*2.0); const t=(p-p1.x)/r; return Math.max(0.25, (p1.y+(p2.y-p1.y)*t)*2.0); }
             saveSignals() { 
                 if(window.player.currentTrack) { 
                     window.player.currentTrack.beatSignals = this.beatSignals;
