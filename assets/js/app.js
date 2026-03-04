@@ -891,129 +891,7 @@
                     ctx.fill(path);
                 }
             }
-            getSymmetricPoints(cx, cy, frameData) {
-                const points = [];
-                this.liquidBinCount = 48; // Higher resolution for smooth curves
-                const totalPoints = (this.liquidBinCount * 2) - 2;
-                const baseRadius = 100; // Shrink exactly around the art circle
-                const sens = window.vizSens || 1.0;
-                
-                // --- 1. Global Intensity Analysis ---
-                let bassAvg = 0, midAvg = 0, highAvg = 0;
-                for(let k=0; k<6; k++) bassAvg += frameData[k] || 0;
-                let bassNorm = Math.min(1, Math.max(0, (bassAvg / 6) / 220.0)); 
-
-                for(let k=8; k<18; k++) midAvg += frameData[k] || 0;
-                let midNorm = Math.min(1, Math.max(0, (midAvg / 10) / 180.0)); 
-
-                for(let k=20; k<40; k++) highAvg += frameData[k] || 0;
-                let highNorm = Math.min(1, Math.max(0, (highAvg / 20) / 120.0));
-
-                // --- 2. Sliding Wave Centers (The Physics Animation) ---
-                // Green: loud=10 (top corner), quiet=24 (equator) -> creates the upward sliding build-up
-                const greenCenter = 24 - (bassNorm * 14); 
-                // Yellow: loud=24 (equator), quiet=38 (bottom corner) -> moves up to mid
-                const yellowCenter = 38 - (midNorm * 14);
-                // Purple: fixed at 44 (bottom center)
-                const purpleCenter = 44;
-
-                // --- 3. Route audio into spatial array ---
-                const halfData = new Array(this.liquidBinCount).fill(0);
-                const inject = (startIndex, length, centerIdx, scale) => {
-                    for(let i=0; i<length; i++) {
-                        let targetIdx = Math.round(centerIdx + (i - length/2) * 1.5);
-                        if (targetIdx >= 0 && targetIdx < 48) {
-                            halfData[targetIdx] += (frameData[startIndex + i] || 0) * scale;
-                        }
-                    }
-                };
-
-                inject(0, 10, greenCenter, 1.3); // Bass
-                inject(10, 14, yellowCenter, 1.0); // Mids
-                inject(24, 16, purpleCenter, 0.8); // Highs
-
-                // --- 4. Gaussian Smoothing Filter ---
-                const smoothedData = [];
-                for (let i = 0; i < this.liquidBinCount; i++) {
-                   let sum = 0, weightSum = 0;
-                   for (let j = -2; j <= 2; j++) {
-                       let idx = i + j;
-                       if (idx >= 0 && idx < this.liquidBinCount) {
-                           let weight = j === 0 ? 1 : (Math.abs(j) === 1 ? 0.6 : 0.2); 
-                           sum += halfData[idx] * weight;
-                           weightSum += weight;
-                       }
-                   }
-                   smoothedData.push(sum / weightSum);
-                }
-
-                // --- 5. Hull Generation ---
-                const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
-
-                // Build Right Half
-                for (let i = 0; i < this.liquidBinCount; i++) {
-                    const rawVal = Math.min(255, smoothedData[i]) / 255.0; 
-                    
-                    // Top center dampener (0 to 12) - makes the blue circle area stay small
-                    let topDampen = 1.0;
-                    if (i < 6) topDampen = (i / 6.0) * 0.3;
-                    else if (i < 12) topDampen = 0.3 + ((i-6)/6.0)*0.7;
-
-                    // Dynamic Zone Properties
-                    let localExp, localBump, localScale;
-                    if (i < 16) { 
-                        // Top to Green (Skinny & Long)
-                        localExp = 5.8;
-                        localBump = 180;
-                        localScale = 1.4;
-                    } else if (i < 32) { 
-                        // Transition to Yellow (Medium)
-                        let t = (i - 16) / 16.0;
-                        localExp = lerp(5.8, 3.5, t);
-                        localBump = lerp(180, 110, t);
-                        localScale = lerp(1.4, 0.9, t);
-                    } else { 
-                        // Transition to Purple (Short)
-                        let t = (i - 32) / 16.0;
-                        localExp = lerp(3.5, 3.0, t);
-                        localBump = lerp(110, 70, t);
-                        localScale = lerp(0.9, 0.6, t);
-                    }
-
-                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, localExp) * sens);
-                    const radius = baseRadius + ((exponentialVal * localBump * localScale) + (Math.pow(rawVal, 2.5) * sens * 12)) * topDampen;
-                    const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
-                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
-                }
-                
-                // Build Left Half (Mirrored)
-                for (let i = this.liquidBinCount - 2; i > 0; i--) {
-                    const rawVal = Math.min(255, smoothedData[i]) / 255.0; 
-                    
-                    let topDampen = 1.0;
-                    if (i < 6) topDampen = (i / 6.0) * 0.3;
-                    else if (i < 12) topDampen = 0.3 + ((i-6)/6.0)*0.7;
-
-                    let localExp, localBump, localScale;
-                    if (i < 16) { 
-                        localExp = 5.8; localBump = 180; localScale = 1.4;
-                    } else if (i < 32) { 
-                        let t = (i - 16) / 16.0;
-                        localExp = lerp(5.8, 3.5, t); localBump = lerp(180, 110, t); localScale = lerp(1.4, 0.9, t);
-                    } else { 
-                        let t = (i - 32) / 16.0;
-                        localExp = lerp(3.5, 3.0, t); localBump = lerp(110, 70, t); localScale = lerp(0.9, 0.6, t);
-                    }
-
-                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, localExp) * sens);
-                    const radius = baseRadius + ((exponentialVal * localBump * localScale) + (Math.pow(rawVal, 2.5) * sens * 12)) * topDampen;
-                    const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
-                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
-                }
-                return points;
-            }
-
-            buildSmoothPath(points) {
+buildSmoothPath(points) {
                 const path = new Path2D();
                 const len = points.length;
                 if (len < 3) return path;
@@ -1038,65 +916,72 @@
                 return path;
             }
 
-            drawLiquid(ctx, w, h, ignored_d) {
+            drawLiquid(ctx, w, h, d) {
                 const art = document.getElementById('albumArt');
                 let cx = w/2, cy = h/2 - 40;
                 if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
                 
-                const renderQueue = [];
-                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
-                const tMode = window.ui ? window.ui.themeMode : 'solid';
-                const ghosting = this.smooth; // 'smooth' boolean handles the UI toggle for "Smooth Following"
+                // Audio Energy Buckets
+                let bassAvg = 0, midAvg = 0, highAvg = 0;
+                for(let k=0; k<6; k++) bassAvg += d[k] || 0;
+                for(let k=10; k<20; k++) midAvg += d[k] || 0;
+                for(let k=24; k<40; k++) highAvg += d[k] || 0;
                 
-                if (ghosting && !isMobile) {
-                    if (tMode === 'rainbow') { 
-                        // Rainbow wants distinct hard colors, not blended into white 
-                        ctx.globalCompositeOperation = 'source-over'; 
-                        renderQueue.push({ data: this.history.getDelayedFrame(21), color: '#10b981' }); // Green
-                        renderQueue.push({ data: this.history.getDelayedFrame(18), color: '#3b82f6' }); // Blue
-                        renderQueue.push({ data: this.history.getDelayedFrame(15), color: '#a855f7' }); // Purple
-                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#f472b6' }); // Pink
-                        renderQueue.push({ data: this.history.getDelayedFrame(9),  color: '#ef4444' }); // Red
-                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: '#eab308' }); // Yellow
-                    } else {
-                        // All others use screen blending
-                        ctx.globalCompositeOperation = 'screen';
-                        if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
-                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: window.ui.themeGrad1 });
-                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: window.ui.themeGrad2 });
-                        } else if (tMode === 'dominant' && window.dominantColor) {
-                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: window.dominantColor2 || '#ffffff' });
-                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: window.dominantColor });
-                        } else {
-                            const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
-                            renderQueue.push({ data: this.history.getDelayedFrame(6), color: acc });
-                            renderQueue.push({ data: this.history.getDelayedFrame(3),  color: acc });
-                        }
+                // Normalized Intensities
+                let bassIntensity = Math.min(1.5, (bassAvg / 6) / 200.0);
+                let midIntensity = Math.min(1.5, (midAvg / 10) / 150.0);
+                let highIntensity = Math.min(1.5, (highAvg / 16) / 100.0);
+
+                const sens = window.vizSens || 1.0;
+                bassIntensity *= sens; midIntensity *= sens; highIntensity *= sens;
+
+                const time = performance.now() / 1000.0;
+                const baseRad = 100;
+                
+                const drawBlob = (color, intensity, sParams, nodes, stretch) => {
+                    const points = [];
+                    for(let i=0; i<nodes; i++) {
+                        const angle = (i / nodes) * Math.PI * 2;
+                        
+                        // Perlin-style cyclic noise using sum of sines
+                        const flow1 = Math.sin(angle * sParams.f1 + time * sParams.s1);
+                        const flow2 = Math.cos(angle * sParams.f2 - time * sParams.s2);
+                        const flow3 = Math.sin(angle * sParams.f3 + time * sParams.s3);
+                        const noise = (flow1 + flow2 + flow3) / 3.0;
+                        
+                        // The fluid expands organically
+                        const dynamicExpansion = intensity * stretch * (0.6 + 0.4 * noise);
+                        const r = baseRad + dynamicExpansion;
+                        
+                        points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
                     }
-                } else {
-                    ctx.globalCompositeOperation = 'source-over';
-                }
-                
-                for (const layer of renderQueue) {
-                    const points = this.getSymmetricPoints(cx, cy, layer.data);
                     const path = this.buildSmoothPath(points);
-                    
-                    ctx.fillStyle = layer.color;
+                    ctx.fillStyle = color;
                     ctx.fill(path);
+                };
+
+                // Blend mode for overlapping liquids
+                ctx.globalCompositeOperation = 'screen';
+
+                if(this.smooth) {
+                    // PURPLE HILL (Highs) - Fast, spiky, jittery
+                    drawBlob('rgba(168, 85, 247, 0.6)', highIntensity, {f1: 4, s1: 2.0, f2: 5, s2: 3.1, f3: 7, s3: 1.5}, 64, 80);
+                    
+                    // YELLOW HILL (Mids) - Medium smooth waves
+                    drawBlob('rgba(234, 179, 8, 0.7)', midIntensity, {f1: 3, s1: 1.2, f2: 4, s2: 1.5, f3: 5, s3: 1.1}, 64, 120);
+                    
+                    // GREEN HILL (Bass) - Slow, wide, massive fluid blobs
+                    drawBlob('rgba(34, 197, 94, 0.8)', Math.pow(bassIntensity, 1.2), {f1: 2, s1: 0.6, f2: 3, s2: 0.8, f3: 4, s3: 0.5}, 64, 200);
                 }
-                
-                // Draw Core Layer (Always on top)
+
+                // ACCENT CORE (Solid backplate wrapping the album art)
                 ctx.globalCompositeOperation = 'source-over';
-                const mainPts = this.getSymmetricPoints(cx, cy, this.history.getDelayedFrame(0));
-                const mainPath = this.buildSmoothPath(mainPts);
-                
-                if (tMode === 'solid-fill') {
-                    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-                } else {
-                    ctx.fillStyle = '#ffffff';
-                }
-                
-                ctx.fill(mainPath);
+                const tMode = window.ui ? window.ui.themeMode : 'solid';
+                const acc = (tMode === 'solid-fill') 
+                             ? (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ef4444')
+                             : '#ffffff';
+                             
+                drawBlob(acc, Math.pow(bassIntensity, 0.8), {f1: 2, s1: 1.0, f2: 2, s2: -1.0, f3: 3, s3: 0.0}, 64, 25);
             }
         };
 
