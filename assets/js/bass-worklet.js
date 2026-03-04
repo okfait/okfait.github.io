@@ -109,8 +109,8 @@ class AdaptiveBassDetectorProcessor extends AudioWorkletProcessor {
             this.audioBuffer[this.bufferPointer] = channelData[i];
             this.bufferPointer++;
 
-            // When the hop size threshold is breached, trigger frame analysis
-            if (this.bufferPointer >= this.hopSize) {
+            // When the buffer is completely filled (fftSize), trigger frame analysis
+            if (this.bufferPointer >= this.fftSize) {
                 this.analyzeFrame();
                 // Shift buffer contents downward by hopSize to maintain overlap
                 this.audioBuffer.copyWithin(0, this.hopSize, this.fftSize);

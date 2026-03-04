@@ -422,24 +422,24 @@
 class okMUSICLearningController {
     constructor(audioNode) {
         this.workletNode = audioNode;
-        this.learningRate = 0.05; // Eta for SGD
-        this.alphaLearningRate = 0.1; // Gamma step for the sensitivity multiplier
+        this.learningRate = 0.05; 
+        this.alphaLearningRate = 0.1; 
         
-        // State variables mirroring the Worklet architecture
         this.weights = new Float32Array([1.0, 1.0, 1.0]); 
         this.alphaMultiplier = 2.5;
 
-        // Temporal history buffer to align human reaction time with specific audio frames
+        // Cache for all frames generated during playback (approx 86 frames per second).
         this.featureHistory = [];
-        this.maxHistoryLength = 50; // Caches roughly 500ms of frames (50 * 11.6ms)
+        this.maxHistoryLength = 20000; // Stores roughly ~4 minutes of playback frames
         
-        // Load persisted state if exists
         this.loadState();
 
-        // Listen for data emitted from the AudioWorklet
         this.workletNode.port.onmessage = (event) => {
             if (event.data.type === 'FEATURE_VECTOR') {
-                this.cacheFeatureVector(event.data);
+                if(window.audioSys && window.audioSys.audio && !window.audioSys.audio.paused) {
+                    event.data.trackTime = window.audioSys.audio.currentTime;
+                    this.cacheFeatureVector(event.data);
+                }
             }
             if (event.data.type === 'ONSET_DETECTED') {
                 this.triggerVisuals(event.data.flux); 
@@ -450,15 +450,9 @@ class okMUSICLearningController {
     }
 
     triggerVisuals(flux) {
-        // Visual indicator logic will go here if needed
-        const dot = document.getElementById('beat-indicator');
-        if (dot) {
-            dot.style.opacity = '1';
-            dot.style.transform = 'scale(1.5)';
-            setTimeout(() => {
-                dot.style.opacity = '0.3';
-                dot.style.transform = 'scale(1)';
-            }, 100);
+        // Find existing curve canvas and cause a slight "pulse" for feedback if timeline is open
+        if(window.curveEditor && window.curveEditor.isOpen) {
+            window.curveEditor.pulse = 1.0;
         }
     }
 
@@ -469,32 +463,67 @@ class okMUSICLearningController {
         }
     }
 
-    // Invoked when user clicks "Teach True Beat" (Handling a False Negative)
-    teachTrueBeat() {
-        if(this.featureHistory.length === 0) return;
-        let targetFrame = this.featureHistory.reduce((prev, current) => {
-            return (prev.prediction > current.prediction)? prev : current;
-        });
-        this.applyGradientDescent(targetFrame.features, targetFrame.prediction, 1.0);
-        this.alphaMultiplier = Math.max(1.0, this.alphaMultiplier - this.alphaLearningRate);
-        this.syncWithWorklet();
-        this.saveState();
-        console.log("Taught TRUE BEAT", this.weights, this.alphaMultiplier);
-    }
+    // Triggered from Curve Editor when user clicks "TEACH ALGORITHM"
+    learnFromTimeline(userBeatSignals) {
+        console.log("Analyzing " + userBeatSignals.length + " user beats against " + this.featureHistory.length + " cached frames...");
+        
+        let falseNegatives = 0;
+        let falsePositives = 0;
 
-    // Invoked when user clicks "Teach Error" (Handling a False Positive)
-    teachFalsePositive() {
-        if(this.featureHistory.length === 0) return;
-        let targetFrame = this.featureHistory[this.featureHistory.length - 1];
-        this.applyGradientDescent(targetFrame.features, targetFrame.prediction, 0.0);
-        this.alphaMultiplier = Math.min(5.0, this.alphaMultiplier + (this.alphaLearningRate * 2));
+        // 1. Find False Negatives (User placed a beat, but algorithm scored it below threshold)
+        for(let ub of userBeatSignals) {
+            let userTime = ub.time || ub; // support objects or arrays of numbers
+            
+            // Find the closest frame within a 150ms window
+            let closestFrame = this.featureHistory.reduce((prev, curr) => {
+                return (Math.abs(curr.trackTime - userTime) < Math.abs(prev.trackTime - userTime)) ? curr : prev;
+            }, this.featureHistory[0]);
+
+            if (closestFrame && Math.abs(closestFrame.trackTime - userTime) < 0.2) {
+                // We assume if user placed it, it's a TRUE BEAT (1.0).
+                this.applyGradientDescent(closestFrame.features, closestFrame.prediction, 1.0);
+                // Lower threshold to catch it next time
+                this.alphaMultiplier = Math.max(1.0, this.alphaMultiplier - (this.alphaLearningRate * 0.5));
+                falseNegatives++;
+            }
+        }
+
+        // 2. Find False Positives (Algorithm predicted a beat, but it's not near ANY user point)
+        // We simulate the worklet's peak picking to find what it *would* have triggered
+        // But for simplicity, we just look for high-prediction frames that aren't near user beats.
+        for(let frame of this.featureHistory) {
+            // Did this frame strongly predict a beat? (rough static assumption based on weights)
+            let predictedScore = (frame.features[0] * this.weights[0]) + (frame.features[1] * this.weights[1]) + (frame.features[2] * this.weights[2]);
+            
+            if (predictedScore > 0.05) { // Arbitrary flux threshold indicating significant energy
+                // Is this near any user point?
+                let isNearUserPoint = userBeatSignals.some(ub => {
+                    let userTime = ub.time || ub;
+                    return Math.abs(frame.trackTime - userTime) < 0.25;
+                });
+
+                if (!isNearUserPoint) {
+                    // Algorithm fired/saw high energy, but user didn't mark a beat here. False Positive.
+                    this.applyGradientDescent(frame.features, predictedScore, 0.0);
+                    // Raise threshold
+                    this.alphaMultiplier = Math.min(5.0, this.alphaMultiplier + (this.alphaLearningRate * 0.1));
+                    falsePositives++;
+                }
+            }
+        }
+        
         this.syncWithWorklet();
         this.saveState();
-        console.log("Taught FALSE POSITIVE", this.weights, this.alphaMultiplier);
+        
+        // Show notification Toast
+        if(window.ui && window.ui.showToast) {
+            window.ui.showToast(`Neural Network Updated: Fixed ${falseNegatives} misses & ${falsePositives} false positives.`);
+        }
+        console.log("Timeline Teaching Complete. Weights:", this.weights, "Threshold Alpha:", this.alphaMultiplier);
     }
 
     applyGradientDescent(features, prediction, yTrue) {
-        let maxFeature = Math.max(features[0], features[1], features[2], 0.0001);
+        let maxFeature = Math.max(...features, 0.0001);
         let x = features.map(f => f / maxFeature);
         let error = yTrue - prediction;
         for (let i = 0; i < this.weights.length; i++) {
@@ -504,11 +533,13 @@ class okMUSICLearningController {
     }
 
     syncWithWorklet() {
-        this.workletNode.port.postMessage({
-            type: 'UPDATE_WEIGHTS',
-            weights: [this.weights[0], this.weights[1], this.weights[2]],
-            alpha: this.alphaMultiplier
-        });
+        if(this.workletNode) {
+            this.workletNode.port.postMessage({
+                type: 'UPDATE_WEIGHTS',
+                weights: [this.weights[0], this.weights[1], this.weights[2]],
+                alpha: this.alphaMultiplier
+            });
+        }
     }
     
     saveState() {
@@ -531,13 +562,12 @@ class okMUSICLearningController {
                     const data = JSON.parse(saved);
                     this.weights = new Float32Array(data.weights);
                     this.alphaMultiplier = data.alphaMultiplier;
-                    console.log("Loaded saved learning state for track");
+                    this.syncWithWorklet();
                 } catch(e) {}
             }
         }
     }
 }
-
         class AudioSystem {
             constructor() { this.ctx=null; this.audio=new Audio(); this.audio.crossOrigin="anonymous"; this.audio.addEventListener('timeupdate',()=>window.player.onTick()); this.audio.addEventListener('ended',()=>window.player.onEnd()); this.baseSpeed=1.0; this.bassVal=0; this.reverbVal=0; this.globalAudio=false; this.xtremeOn=false; this.bassCurve=[]; this.initBassCurve(); this.volAnim = new VolumeAnim('volPercentDisplay'); setTimeout(()=>this.volAnim.animateTo(1), 500); }
             async init() { 
@@ -1747,6 +1777,25 @@ buildSmoothPath(points) {
                 window.$('scanInitialActions').classList.add('flex');
                 window.$('scanRefineActions').classList.add('hidden');
                 window.$('scanRefineActions').classList.remove('flex');
+            }
+            
+            teachAlgorithm() {
+                if(window.learningController && this.beatSignals) {
+                    window.learningController.learnFromTimeline(this.beatSignals);
+                    // Flash the button for UX
+                    const btn = document.querySelector('button[onclick="window.curveEditor.teachAlgorithm()"]');
+                    if(btn) {
+                        const originalText = btn.innerHTML;
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> Taught';
+                        btn.classList.add('bg-green-400');
+                        setTimeout(() => {
+                            btn.innerHTML = originalText;
+                            btn.classList.remove('bg-green-400');
+                        }, 1000);
+                    }
+                } else {
+                    if(window.ui && window.ui.showToast) window.ui.showToast('Algorithm Controller not loaded yet.');
+                }
             }
 
             draw() {

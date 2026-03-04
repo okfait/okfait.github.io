@@ -51,17 +51,6 @@
             </div>
         </div>
 
-        <!-- Neural Bass Training Controls -->
-        <div class="flex justify-center items-center gap-3 mt-4 mb-2 z-10 relative">
-            <button onclick="window.learningController && window.learningController.teachFalsePositive()" class="bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/40 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition flex items-center gap-2 backdrop-blur-md shadow-lg hover:scale-105" title="Algorithm triggered incorrectly">
-                <i class="fa-solid fa-minus"></i> Teach Error
-            </button>
-            <div id="beat-indicator" class="w-3 h-3 rounded-full bg-green-400 opacity-30 shadow-[0_0_10px_rgba(74,222,128,0.5)] transition-all duration-75"></div>
-            <button onclick="window.learningController && window.learningController.teachTrueBeat()" class="bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/40 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition flex items-center gap-2 backdrop-blur-md shadow-lg hover:scale-105" title="Algorithm missed a beat">
-                Teach Beat <i class="fa-solid fa-plus"></i>
-            </button>
-        </div>
-
         <div class="track-info">
             <div class="flex justify-center gap-2 mb-3" id="metaTags"></div>
             <div class="track-title truncate" id="trackTitle">Select Track</div>
