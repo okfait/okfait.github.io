@@ -1826,95 +1826,87 @@ buildSmoothPath(points) {
                 if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading AI Engine...';
                 
                 try {
-                    // 1. Dynamically download and load the Essentia.js WebAssembly Engine if not already present
-                    if (!window.EssentiaWASM) {
-                        await new Promise((resolve, reject) => {
-                            const script1 = document.createElement('script');
-                            script1.src = "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.web.js";
-                            script1.onload = () => {
-                                const script2 = document.createElement('script');
-                                script2.src = "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.js";
-                                script2.onload = resolve;
-                                script2.onerror = reject;
-                                document.head.appendChild(script2);
-                            };
-                            script1.onerror = reject;
-                            document.head.appendChild(script1);
-                        });
-                        window.essentiaConfig = await window.EssentiaWASM();
-                        window.essentia = new window.Essentia(window.essentiaConfig);
-                    }
-                    
-                    if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing Audio...';
-                    
-                    // Yield execution to allow the UI to physically update the button text before blocking
+                    // Yield execution to allow UI to update
                     await new Promise(r => setTimeout(r, 30));
                     
-                    // 2. Convert raw Float32 data into the C++ WebAssembly Vector wrapper
-                    const audioVector = window.essentia.arrayToVector(this.waveform);
-                    
-                    // 3. Extract True Onsets (Transients/Drops), NOT just the 4/4 BPM pulse
-                    // BeatTrackerMultiFeature finds the metronome pulse. We want the actual energy hits.
-                    // Instead of raw beats, we use Essentia's OnsetDetection functions. We can simulate it
-                    // fast locally using the RMS + Onset algorithm but scaling it purely by the Trigger Threshold.
-                    
-                    const data = this.waveform;
                     const sampleRate = window.audioSys.ctx.sampleRate || 44100;
                     
-                    // 1. RMS Energy Envelope Extraction (10ms hops, 20ms windows)
+                    // Decode from blob to ensure untouched quality for offline processing
+                    const arrayBuffer = await window.player.currentTrack.blob.arrayBuffer();
+                    const audioBuffer = await window.audioSys.ctx.decodeAudioData(arrayBuffer);
+                    
+                    // Setup OfflineAudioContext for fast-as-possible non-realtime rendering
+                    const offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, audioBuffer.length, sampleRate);
+                    const source = offlineCtx.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    // Isolate the Bass frequencies (Low-pass at 150Hz)
+                    const filter = offlineCtx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 150;
+                    filter.Q.value = 1.0;
+                    
+                    source.connect(filter);
+                    filter.connect(offlineCtx.destination);
+                    source.start(0);
+                    
+                    const renderedBuffer = await offlineCtx.startRendering();
+                    const bassData = renderedBuffer.getChannelData(0);
+                    
+                    if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing Drops...';
+                    await new Promise(r => setTimeout(r, 30));
+                    
+                    // Extract Envelope (RMS over 20ms windows)
                     const hopSize = Math.floor(sampleRate * 0.01); 
                     const windowSize = Math.floor(sampleRate * 0.02); 
-                    const numHops = Math.floor(data.length / hopSize);
+                    const numHops = Math.floor(bassData.length / hopSize);
                     
-                    let energyEnvelope = new Float32Array(numHops);
-                    // Pass 1: Find absolute max amplitude to normalize
-                    let maxAmp = 0;
-                    for(let i=0; i<data.length; i++) if(Math.abs(data[i]) > maxAmp) maxAmp = Math.abs(data[i]);
-                    
+                    let energy = new Float32Array(numHops);
+                    let maxEnergy = 0;
                     for (let i = 0; i < numHops; i++) {
                         let start = i * hopSize;
                         let sum = 0;
                         for (let j = 0; j < windowSize; j++) {
-                            if (start + j < data.length) sum += data[start + j] * data[start + j];
+                            if (start + j < bassData.length) sum += bassData[start + j] * bassData[start + j];
                         }
-                        // Normalize RMS by max amplitude so 1.0 = absolute peak of song
-                        energyEnvelope[i] = Math.sqrt(sum / windowSize) / (maxAmp + 0.0001);
+                        let rms = Math.sqrt(sum / windowSize);
+                        energy[i] = rms;
+                        if(rms > maxEnergy) maxEnergy = rms;
                     }
                     
-                    // 2. Onset Strength (First Derivative + Half-Wave Rectification)
-                    let onsetStrength = new Float32Array(numHops);
+                    // Calculate Onset Strength (Derivative)
+                    let onset = new Float32Array(numHops);
+                    let maxOnset = 0;
                     for (let i = 1; i < numHops; i++) {
-                        let diff = energyEnvelope[i] - energyEnvelope[i-1];
-                        onsetStrength[i] = Math.max(0, diff);
+                        let diff = energy[i] - energy[i-1];
+                        onset[i] = Math.max(0, diff);
+                        if(onset[i] > maxOnset) maxOnset = onset[i];
                     }
                     
-                    // 3. Peak Picking with STRICT Amplitude Thresholding
-                    let windowScale = 15; // 150ms window
-                    let peaks = [];
-                    // The user's manually set 'Trigger' green lines dictate how loud a beat must be to count
-                    let userThreshold = this.triggers.length > 0 ? this.triggers[0].level : 0.7;
+                    // Normalize to 0.0 - 1.0 range based on the loudest kick in the entire song
+                    for(let i = 0; i < numHops; i++) {
+                        onset[i] = maxOnset > 0 ? onset[i] / maxOnset : 0;
+                    }
                     
-                    for (let i = windowScale; i < numHops - windowScale; i++) {
-                        let localSlice = onsetStrength.slice(i - windowScale, i + windowScale);
-                        localSlice.sort();
-                        let median = localSlice[Math.floor(localSlice.length / 2)];
-                        
-                        // It must be significantly above the median noise floor
-                        let isLocalPeak = (onsetStrength[i] > median * 2.0 && 
-                                           onsetStrength[i] > onsetStrength[i-1] && 
-                                           onsetStrength[i] > onsetStrength[i+1]);
-                                           
-                        // AND it must be loud enough overall (user's trigger threshold)
-                        // Energy Envelope is 0.0 -> 1.0. User Threshold is 0.0 -> 1.0.
-                        let isLoudEnough = energyEnvelope[i] >= (userThreshold * 0.5); // *0.5 because RMS is lower than True Peak
-                        
-                        if (isLocalPeak && isLoudEnough) {
+                    // The user's manually set 'Trigger' green lines (from timeline bottom tab)
+                    let userThreshold = this.triggers.length > 0 ? this.triggers[0].level : 0.5;
+                    // Scale it so that dragging it to 50% only accepts onsets that are 20% of the max kick.
+                    // This dynamically respects the user's manual noise-floor setting.
+                    let threshold = userThreshold * 0.4;
+                    
+                    let peaks = [];
+                    let minGap = this.scanMinGap > 0 ? this.scanMinGap : 0.1; 
+                    
+                    for (let i = 2; i < numHops - 2; i++) {
+                        if (onset[i] > threshold &&
+                            onset[i] > onset[i-1] &&
+                            onset[i] > onset[i-2] &&
+                            onset[i] > onset[i+1] &&
+                            onset[i] > onset[i+2]) 
+                        {
                             let timeInSeconds = i * (hopSize / sampleRate);
-                            
-                            // Respect the minimum gap
-                            let minGap = this.scanMinGap > 0 ? this.scanMinGap : 0.1; 
                             if (peaks.length === 0 || timeInSeconds - peaks[peaks.length - 1] > minGap) {
-                                 peaks.push(timeInSeconds);
+                                peaks.push(timeInSeconds);
                             }
                         }
                     }
@@ -1923,15 +1915,12 @@ buildSmoothPath(points) {
                     this.saveSignals();
                     
                     if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto';
-                    if(window.ui && window.ui.showToast) window.ui.showToast(`AI Analyzer found ${peaks.length} precise drops/bass hits!`);
-                    
-                    // 4. Clean up WebAssembly memory bounds
-                    audioVector.delete();
+                    if(window.ui && window.ui.showToast) window.ui.showToast(`Found ${peaks.length} Deep Bass Drops!`);
                     
                 } catch(e) {
-                    console.error("Essentia AI load failed:", e);
+                    console.error("Auto Gen failed:", e);
                     if(btn) btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
-                    if(window.ui && window.ui.showToast) window.ui.showToast("Failed to run Essentia AI Engine.");
+                    if(window.ui && window.ui.showToast) window.ui.showToast("Failed to run Auto Generator.");
                     setTimeout(() => { if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto'; }, 2000);
                 }
             }
