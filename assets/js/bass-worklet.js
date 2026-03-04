@@ -193,13 +193,15 @@ class AdaptiveBassDetectorProcessor extends AudioWorkletProcessor {
         this.framesSinceLastOnset++;
         this.currentEnvelope *= this.decayRate; // Apply exponential decay to envelope
         
-        // Continuously post analytical data to main thread for the sliding learning history buffer
-        this.port.postMessage({
-            type: 'FEATURE_VECTOR',
-            timestamp: currentTimeMillis,
-            features: [fluxSub, fluxMid, fluxUpper],
-            prediction: totalFlux
-        });
+        // Only post analytical data if the flux is meaningful OR every N frames to avoid IPC flooding
+        if (totalFlux > this.mean * 0.5 || this.framesSinceLastOnset % 5 === 0) {
+            this.port.postMessage({
+                type: 'FEATURE_VECTOR',
+                timestamp: currentTimeMillis,
+                features: [fluxSub, fluxMid, fluxUpper],
+                prediction: totalFlux
+            });
+        }
     }
 }
 

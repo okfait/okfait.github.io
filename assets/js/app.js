@@ -420,106 +420,141 @@
 
         
 class okMUSICLearningController {
-    constructor(audioNode) {
-        this.workletNode = audioNode;
+    constructor() {
         this.learningRate = 0.05; 
         this.alphaLearningRate = 0.1; 
         
         this.weights = new Float32Array([1.0, 1.0, 1.0]); 
         this.alphaMultiplier = 2.5;
 
-        // Cache for all frames generated during playback (approx 86 frames per second).
         this.featureHistory = [];
-        this.maxHistoryLength = 20000; // Stores roughly ~4 minutes of playback frames
+        this.maxHistoryLength = 4000; 
+
+        // AnalyserNode Stats
+        this.historySize = 86;
+        this.fluxHistory = new Float32Array(this.historySize);
+        this.historyIndex = 0;
+        this.mean = 0;
+        this.M2 = 0;
+        
+        this.prevMag = new Float32Array(1024); // Based on 2048 FFT
+        
+        this.currentEnvelope = 0;
+        this.decayRate = 0.95;
+        this.framesSinceLastOnset = 9999;
+        this.refractoryFrames = 12; // Roughly 150ms at 86 fps
         
         this.loadState();
+    }
 
-        this.workletNode.port.onmessage = (event) => {
-            if (event.data.type === 'FEATURE_VECTOR') {
-                if(window.audioSys && window.audioSys.audio && !window.audioSys.audio.paused) {
-                    event.data.trackTime = window.audioSys.audio.currentTime;
-                    this.cacheFeatureVector(event.data);
-                }
-            }
-            if (event.data.type === 'ONSET_DETECTED') {
-                this.triggerVisuals(event.data.flux); 
-            }
-        };
+    // Called ~60 times a second by the Visualizer requestAnimationFrame loop
+    // Replaces the AudioWorklet entirely, running entirely on main thread pulling from C++ node
+    processFrame(analyser) {
+        if(!analyser || window.audioSys.audio.paused) return;
         
-        this.syncWithWorklet();
-    }
+        const dataLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(dataLength);
+        analyser.getByteFrequencyData(dataArray);
 
-    triggerVisuals(flux) {
-        // Find existing curve canvas and cause a slight "pulse" for feedback if timeline is open
-        if(window.curveEditor && window.curveEditor.isOpen) {
-            window.curveEditor.pulse = 1.0;
+        let fluxSub = 0, fluxMid = 0, fluxUpper = 0;
+        
+        // Target bins covering ~20Hz to ~250Hz (Roughly bins 1 to 12 at 44.1kHz with 2048 FFT)
+        for (let k = 1; k <= 12; k++) { 
+            let currentMag = dataArray[k];
+            let diff = currentMag - this.prevMag[k];
+            let rectifiedDiff = diff > 0 ? diff : 0; 
+            
+            if (k >= 1 && k < 3) fluxSub += rectifiedDiff;
+            else if (k >= 3 && k < 6) fluxMid += rectifiedDiff;
+            else if (k >= 6 && k <= 12) fluxUpper += rectifiedDiff;
+            
+            this.prevMag[k] = currentMag;
+        }
+
+        let totalFlux = (fluxSub * this.weights[0]) + 
+                        (fluxMid * this.weights[1]) + 
+                        (fluxUpper * this.weights[2]);
+
+        // Welford's Online Variance
+        let oldVal = this.fluxHistory[this.historyIndex];
+        this.fluxHistory[this.historyIndex] = totalFlux;
+        this.historyIndex = (this.historyIndex + 1) % this.historySize;
+        
+        let delta1 = totalFlux - this.mean;
+        this.mean += delta1 / this.historySize;
+        let delta2 = totalFlux - this.mean;
+        this.M2 += (delta1 * delta2) - ((oldVal - this.mean) * (oldVal - this.mean));
+        let variance = Math.max(0, this.M2 / this.historySize);
+        let stdDev = Math.sqrt(variance);
+
+        let threshold = this.mean + (this.alphaMultiplier * stdDev);
+        let effectiveThreshold = Math.max(threshold, this.currentEnvelope);
+
+        if (totalFlux > effectiveThreshold && this.framesSinceLastOnset >= this.refractoryFrames) {
+            this.framesSinceLastOnset = 0;
+            this.currentEnvelope = totalFlux; 
+            
+            // Visual feedback
+            if(window.curveEditor && window.curveEditor.isOpen) {
+                window.curveEditor.pulse = 1.0;
+            }
+        }
+
+        this.framesSinceLastOnset++;
+        this.currentEnvelope *= this.decayRate;
+
+        // Cache features for timeline offline learning
+        if (totalFlux > this.mean * 0.5 || this.framesSinceLastOnset % 5 === 0) {
+            this.featureHistory.push({
+                trackTime: window.audioSys.audio.currentTime,
+                features: [fluxSub, fluxMid, fluxUpper],
+                prediction: totalFlux
+            });
+            if (this.featureHistory.length > this.maxHistoryLength) {
+                this.featureHistory.shift();
+            }
         }
     }
 
-    cacheFeatureVector(data) {
-        this.featureHistory.push(data);
-        if (this.featureHistory.length > this.maxHistoryLength) {
-            this.featureHistory.shift();
-        }
-    }
-
-    // Triggered from Curve Editor when user clicks "TEACH ALGORITHM"
     learnFromTimeline(userBeatSignals) {
         console.log("Analyzing " + userBeatSignals.length + " user beats against " + this.featureHistory.length + " cached frames...");
         
         let falseNegatives = 0;
         let falsePositives = 0;
 
-        // 1. Find False Negatives (User placed a beat, but algorithm scored it below threshold)
         for(let ub of userBeatSignals) {
-            let userTime = ub.time || ub; // support objects or arrays of numbers
-            
-            // Find the closest frame within a 150ms window
+            let userTime = ub.time || ub; 
             let closestFrame = this.featureHistory.reduce((prev, curr) => {
                 return (Math.abs(curr.trackTime - userTime) < Math.abs(prev.trackTime - userTime)) ? curr : prev;
             }, this.featureHistory[0]);
 
             if (closestFrame && Math.abs(closestFrame.trackTime - userTime) < 0.2) {
-                // We assume if user placed it, it's a TRUE BEAT (1.0).
                 this.applyGradientDescent(closestFrame.features, closestFrame.prediction, 1.0);
-                // Lower threshold to catch it next time
                 this.alphaMultiplier = Math.max(1.0, this.alphaMultiplier - (this.alphaLearningRate * 0.5));
                 falseNegatives++;
             }
         }
 
-        // 2. Find False Positives (Algorithm predicted a beat, but it's not near ANY user point)
-        // We simulate the worklet's peak picking to find what it *would* have triggered
-        // But for simplicity, we just look for high-prediction frames that aren't near user beats.
         for(let frame of this.featureHistory) {
-            // Did this frame strongly predict a beat? (rough static assumption based on weights)
             let predictedScore = (frame.features[0] * this.weights[0]) + (frame.features[1] * this.weights[1]) + (frame.features[2] * this.weights[2]);
-            
-            if (predictedScore > 0.05) { // Arbitrary flux threshold indicating significant energy
-                // Is this near any user point?
+            if (predictedScore > 0.05) { 
                 let isNearUserPoint = userBeatSignals.some(ub => {
                     let userTime = ub.time || ub;
                     return Math.abs(frame.trackTime - userTime) < 0.25;
                 });
 
                 if (!isNearUserPoint) {
-                    // Algorithm fired/saw high energy, but user didn't mark a beat here. False Positive.
                     this.applyGradientDescent(frame.features, predictedScore, 0.0);
-                    // Raise threshold
                     this.alphaMultiplier = Math.min(5.0, this.alphaMultiplier + (this.alphaLearningRate * 0.1));
                     falsePositives++;
                 }
             }
         }
         
-        this.syncWithWorklet();
         this.saveState();
-        
-        // Show notification Toast
         if(window.ui && window.ui.showToast) {
             window.ui.showToast(`Neural Network Updated: Fixed ${falseNegatives} misses & ${falsePositives} false positives.`);
         }
-        console.log("Timeline Teaching Complete. Weights:", this.weights, "Threshold Alpha:", this.alphaMultiplier);
     }
 
     applyGradientDescent(features, prediction, yTrue) {
@@ -532,23 +567,10 @@ class okMUSICLearningController {
         }
     }
 
-    syncWithWorklet() {
-        if(this.workletNode) {
-            this.workletNode.port.postMessage({
-                type: 'UPDATE_WEIGHTS',
-                weights: [this.weights[0], this.weights[1], this.weights[2]],
-                alpha: this.alphaMultiplier
-            });
-        }
-    }
-    
     saveState() {
         if(window.player && window.player.currentTrack) {
             const trackId = window.player.currentTrack.id;
-            const state = {
-                weights: [this.weights[0], this.weights[1], this.weights[2]],
-                alphaMultiplier: this.alphaMultiplier
-            };
+            const state = { weights: [this.weights[0], this.weights[1], this.weights[2]], alphaMultiplier: this.alphaMultiplier };
             localStorage.setItem('bass_learning_' + trackId, JSON.stringify(state));
         }
     }
@@ -562,7 +584,6 @@ class okMUSICLearningController {
                     const data = JSON.parse(saved);
                     this.weights = new Float32Array(data.weights);
                     this.alphaMultiplier = data.alphaMultiplier;
-                    this.syncWithWorklet();
                 } catch(e) {}
             }
         }
@@ -593,16 +614,9 @@ class okMUSICLearningController {
                 this.bass.connect(this.gain); 
                 this.gain.connect(this.ctx.destination); 
                 
-                try {
-                    await this.ctx.audioWorklet.addModule('assets/js/bass-worklet.js');
-                    this.bassDetectorNode = new AudioWorkletNode(this.ctx, 'adaptive-bass-detector');
-                    this.src.connect(this.bassDetectorNode);
-                    this.learningController = new okMUSICLearningController(this.bassDetectorNode);
+                this.learningController = new okMUSICLearningController();
                     window.learningController = this.learningController;
-                    console.log("Advanced Bass Detection AudioWorklet injected.");
-                } catch(e) {
-                    console.error("AudioWorklet failed to load:", e);
-                }
+                    console.log("Advanced Native AnalyserNode Bass Detection initialized.");
                 
                 window.viz.start(); 
             }
@@ -941,6 +955,11 @@ class okMUSICLearningController {
                     }
                 }
                 if(!window.audioSys.analyser)return;
+                
+                // Native API Machine Learning hook (replaces heavy AudioWorklet pipeline)
+                if (window.learningController) {
+                    window.learningController.processFrame(window.audioSys.analyser);
+                }
                 
                 // Update History Buffer BEFORE reading the active frame
                 this.history.update(window.audioSys.analyser);
