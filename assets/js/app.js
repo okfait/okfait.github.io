@@ -1823,64 +1823,71 @@ buildSmoothPath(points) {
                     return;
                 }
                 const btn = document.querySelector('button[onclick="window.curveEditor.autoGenerate()"]');
-                if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
+                if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading AI Engine...';
                 
-                // Advanced Local DPWE-style Peak Picker (Zero Latency)
-                const data = this.waveform;
-                const sampleRate = window.audioSys.ctx.sampleRate || 44100;
-                const duration = window.audioSys.audio.duration;
-                
-                // 1. RMS Energy Envelope Extraction (10ms hops, 20ms windows)
-                const hopSize = Math.floor(sampleRate * 0.01); 
-                const windowSize = Math.floor(sampleRate * 0.02); 
-                const numHops = Math.floor(data.length / hopSize);
-                
-                let energyEnvelope = new Float32Array(numHops);
-                for (let i = 0; i < numHops; i++) {
-                    let start = i * hopSize;
-                    let sum = 0;
-                    for (let j = 0; j < windowSize; j++) {
-                        if (start + j < data.length) sum += data[start + j] * data[start + j];
+                try {
+                    // 1. Dynamically download and load the Essentia.js WebAssembly Engine if not already present
+                    if (!window.EssentiaWASM) {
+                        await new Promise((resolve, reject) => {
+                            const script1 = document.createElement('script');
+                            script1.src = "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.web.js";
+                            script1.onload = () => {
+                                const script2 = document.createElement('script');
+                                script2.src = "https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.js";
+                                script2.onload = resolve;
+                                script2.onerror = reject;
+                                document.head.appendChild(script2);
+                            };
+                            script1.onerror = reject;
+                            document.head.appendChild(script1);
+                        });
+                        window.essentiaConfig = await window.EssentiaWASM();
+                        window.essentia = new window.Essentia(window.essentiaConfig);
                     }
-                    energyEnvelope[i] = Math.sqrt(sum / windowSize);
-                }
-                
-                // 2. Onset Strength (First Derivative + Half-Wave Rectification)
-                let onsetStrength = new Float32Array(numHops);
-                for (let i = 1; i < numHops; i++) {
-                    let diff = energyEnvelope[i] - energyEnvelope[i-1];
-                    onsetStrength[i] = Math.max(0, diff);
-                }
-                
-                // 3. Adaptive Moving Median Thresholding
-                let windowScale = 15; // 150ms window
-                let peaks = [];
-                let sensitivity = this.triggers.length > 0 ? this.triggers[0].level : 0.5;
-                let multiplier = 1.0 + (1.0 - sensitivity) * 3.0; 
-                
-                for (let i = windowScale; i < numHops - windowScale; i++) {
-                    let localSlice = onsetStrength.slice(i - windowScale, i + windowScale);
-                    localSlice.sort();
-                    let median = localSlice[Math.floor(localSlice.length / 2)];
-                    let threshold = median * multiplier + 0.005; 
                     
-                    if (onsetStrength[i] > threshold && 
-                        onsetStrength[i] > onsetStrength[i-1] && 
-                        onsetStrength[i] > onsetStrength[i+1]) {
-                        
-                        let timeInSeconds = i * (hopSize / sampleRate);
-                        
-                        if (peaks.length === 0 || timeInSeconds - peaks[peaks.length - 1] > this.scanMinGap) {
-                             peaks.push(timeInSeconds);
+                    if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing Audio...';
+                    
+                    // Yield execution to allow the UI to physically update the button text before blocking
+                    await new Promise(r => setTimeout(r, 30));
+                    
+                    // 2. Convert raw Float32 data into the C++ WebAssembly Vector wrapper
+                    const audioVector = window.essentia.arrayToVector(this.waveform);
+                    
+                    // 3. Run the Industry-Standard BeatTrackerMultiFeature AI
+                    // This is vastly superior to simple thresholding; it uses complex phase/energy deviation tracking
+                    const beatResults = window.essentia.BeatTrackerMultiFeature(audioVector);
+                    const beatArray = window.essentia.vectorToArray(beatResults.ticks);
+                    
+                    let peaks = Array.from(beatArray);
+                    
+                    // Filter based on the Timeline editor's 'Min Gap' setting
+                    if(this.scanMinGap > 0) {
+                        let filtered = [];
+                        for(let b of peaks) {
+                            if(filtered.length === 0 || b - filtered[filtered.length - 1] > this.scanMinGap) {
+                                filtered.push(b);
+                            }
                         }
+                        peaks = filtered;
                     }
+                    
+                    this.beatSignals = peaks;
+                    this.saveSignals();
+                    
+                    if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto';
+                    if(window.ui && window.ui.showToast) window.ui.showToast(`Essentia.js AI found ${peaks.length} precise beats!`);
+                    
+                    // 4. Clean up WebAssembly memory bounds to prevent GC leaks
+                    audioVector.delete();
+                    beatResults.ticks.delete();
+                    beatResults.confidence.delete(); 
+                    
+                } catch(e) {
+                    console.error("Essentia AI load failed:", e);
+                    if(btn) btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
+                    if(window.ui && window.ui.showToast) window.ui.showToast("Failed to run Essentia AI Engine.");
+                    setTimeout(() => { if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto'; }, 2000);
                 }
-                
-                this.beatSignals = peaks;
-                this.saveSignals();
-                
-                if(btn) btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto';
-                if(window.ui && window.ui.showToast) window.ui.showToast(`AI Analyzer found ${peaks.length} precise beat transients!`);
             }
 
 
