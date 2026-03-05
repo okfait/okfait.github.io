@@ -1125,58 +1125,43 @@ buildSmoothPath(points) {
                 let cx = w/2, cy = h/2 - 40;
                 if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
                 
-                // Initialize the Physics System arrays for the liquid nodes if they don't exist
-                if(!this.liquidPhysics) {
-                    this.liquidPhysics = { green: [], yellow: [], purple: [] };
-                    for(let i=0; i<64; i++) {
-                        this.liquidPhysics.green.push({r: 0, v: 0});
-                        this.liquidPhysics.yellow.push({r: 0, v: 0});
-                        this.liquidPhysics.purple.push({r: 0, v: 0});
-                    }
-                }
-                
                 // Audio Energy Buckets - Isolate frequency routing
                 let bassAvg = 0, midAvg = 0, highAvg = 0;
                 for(let k=0; k<6; k++) bassAvg += d[k] || 0;
                 for(let k=10; k<20; k++) midAvg += d[k] || 0;
                 for(let k=24; k<40; k++) highAvg += d[k] || 0;
                 
-                // Normalized Target Intensities
+                // Normalized Target Intensities (Restrained so they don't blow up the screen)
                 const sens = window.vizSens || 1.0;
-                let bassTarget = Math.min(1.5, (bassAvg / 6) / 200.0) * sens;
-                let midTarget = Math.min(1.5, (midAvg / 10) / 150.0) * sens;
-                let highTarget = Math.min(1.5, (highAvg / 16) / 100.0) * sens;
+                let bassTarget = Math.min(1.0, (bassAvg / 6) / 200.0) * sens;
+                let midTarget = Math.min(1.0, (midAvg / 10) / 150.0) * sens;
+                let highTarget = Math.min(1.0, (highAvg / 16) / 100.0) * sens;
 
                 const time = performance.now() / 1000.0;
+                
+                // The core ring size bounding the album art
                 const baseRad = 100;
                 
-                // The Physics Renderer Function
-                const drawBlobPhysics = (color, targetIntensity, layerPhysics, sParams, stretch, tension, dampening) => {
+                // The organic renderer without crazy physics dampening
+                const drawBlobLayer = (color, targetIntensity, sParams, sizeMultiplier, layerOffset) => {
                     const points = [];
-                    for(let i=0; i<64; i++) {
-                        const angle = (i / 64) * Math.PI * 2;
+                    const nodes = 64;
+                    for(let i=0; i<nodes; i++) {
+                        const angle = (i / nodes) * Math.PI * 2;
                         
-                        // Perlin-style cyclic noise using sum of sines
+                        // Smooth Perlin-style cyclic noise using sum of sines
                         const flow1 = Math.sin(angle * sParams.f1 + time * sParams.s1);
                         const flow2 = Math.cos(angle * sParams.f2 - time * sParams.s2);
                         const flow3 = Math.sin(angle * sParams.f3 + time * sParams.s3);
-                        const noise = (flow1 + flow2 + flow3) / 3.0; // Range -1.0 to 1.0
+                        // Range -1.0 to 1.0, scaled down so it's a gentle wave, not a huge spike
+                        const noise = (flow1 + flow2 + flow3) / 3.0; 
                         
-                        // The Target Radius based on Audio + Noise
-                        const dynamicExpansion = targetIntensity * stretch * (0.6 + 0.4 * noise);
-                        const targetR = baseRad + dynamicExpansion;
+                        // Calculate radius: Base + Constant Layer Offset + Audio Reaction * Noise
+                        // targetIntensity drives how much the noise affects the expansion
+                        const expansion = targetIntensity * sizeMultiplier * (0.8 + 0.2 * noise);
+                        const r = baseRad + layerOffset + expansion + (noise * 10); // subtle base wobble
                         
-                        // Spring Dynamics (Hooke's Law)
-                        // F = -kX (Spring Force) + Dampening
-                        const phys = layerPhysics[i];
-                        const force = (targetR - phys.r) * tension;
-                        phys.v = (phys.v + force) * dampening;
-                        phys.r += phys.v;
-                        
-                        // Enforce minimum base radius so it doesn't collapse inside out
-                        if(phys.r < baseRad * 0.5) phys.r = baseRad * 0.5;
-                        
-                        points.push({ x: cx + phys.r * Math.cos(angle), y: cy + phys.r * Math.sin(angle) });
+                        points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
                     }
                     
                     const path = this.buildSmoothPath(points);
@@ -1184,36 +1169,38 @@ buildSmoothPath(points) {
                     ctx.fill(path);
                 };
 
-                // Blend mode for overlapping liquids (Screen creates a beautiful intricate color mesh)
-                ctx.globalCompositeOperation = 'screen';
+                // Use Source-Over blending with specific transparencies exactly like the screenshot
+                ctx.globalCompositeOperation = 'source-over';
 
                 if(this.smooth) {
-                    // PURPLE LAYER (Highs) - Fast, spiky, jittery (High Tension, Low Dampening)
-                    drawBlobPhysics('rgba(168, 85, 247, 0.6)', highTarget, this.liquidPhysics.purple, 
-                                   {f1: 4, s1: 2.0, f2: 5, s2: 3.1, f3: 7, s3: 1.5}, 80, 0.3, 0.7);
+                    // LAYER 1 (Bottom): Massive Green Bass Aura
+                    drawBlobLayer('rgba(34, 197, 94, 0.90)', Math.pow(bassTarget, 1.2), 
+                                 {f1: 2, s1: 0.8, f2: 3, s2: 0.6, f3: 5, s3: 0.4}, 160, 20);
                     
-                    // YELLOW LAYER (Mids) - Medium smooth waves (Medium Tension, Medium Dampening)
-                    drawBlobPhysics('rgba(234, 179, 8, 0.7)', midTarget, this.liquidPhysics.yellow, 
-                                   {f1: 3, s1: 1.2, f2: 4, s2: 1.5, f3: 5, s3: 1.1}, 120, 0.15, 0.85);
+                    // LAYER 2: Warm Yellow/Orange Mid-Bass
+                    drawBlobLayer('rgba(234, 179, 8, 0.75)', Math.pow(bassTarget, 0.9), 
+                                 {f1: 3, s1: 1.1, f2: 4, s2: 0.9, f3: 2, s3: 0.5}, 120, 10);
+                                 
+                    // LAYER 3: Light Blue/Cyan Mids (adds that cool contrast seen in the pic)
+                    drawBlobLayer('rgba(56, 189, 248, 0.60)', midTarget, 
+                                 {f1: 4, s1: 1.4, f2: 5, s2: 1.2, f3: 3, s3: 0.8}, 90, 5);
                     
-                    // GREEN LAYER (Bass) - Slow, wide, massive fluid blobs (Low Tension, High Dampening)
-                    drawBlobPhysics('rgba(34, 197, 94, 0.8)', Math.pow(bassTarget, 1.2), this.liquidPhysics.green, 
-                                   {f1: 2, s1: 0.6, f2: 3, s2: 0.8, f3: 4, s3: 0.5}, 200, 0.05, 0.92);
+                    // LAYER 4 (Top): Purple/Pink Highs (snapping tight to the art)
+                    drawBlobLayer('rgba(168, 85, 247, 0.50)', highTarget, 
+                                 {f1: 6, s1: 2.0, f2: 7, s2: 1.8, f3: 4, s3: 1.5}, 60, 0);
                 }
 
-                // ACCENT CORE (Solid backplate wrapping the album art)
-                ctx.globalCompositeOperation = 'source-over';
+                // ACCENT CORE (Solid backplate wrapping the album art exactly)
                 const tMode = window.ui ? window.ui.themeMode : 'solid';
                 const acc = (tMode === 'solid-fill') 
                              ? (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ef4444')
                              : '#ffffff';
                              
-                // Draw a simple core wrapper without arrays, using just the green physics as a base proxy
                 const corePoints = [];
                 for(let i=0; i<64; i++) {
                     const angle = (i / 64) * Math.PI * 2;
-                    // The core should mirror the base structure but tightly hug the album art
-                    const proxyR = baseRad + (this.liquidPhysics.green[i].r - baseRad) * 0.15;
+                    // Tight wrap, expanding only slightly on heavy kicks
+                    const proxyR = baseRad + (bassTarget * 10);
                     corePoints.push({ x: cx + proxyR * Math.cos(angle), y: cy + proxyR * Math.sin(angle) });
                 }
                 const corePath = this.buildSmoothPath(corePoints);
