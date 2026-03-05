@@ -1123,89 +1123,109 @@ buildSmoothPath(points) {
             drawLiquid(ctx, w, h, d) {
                 const art = document.getElementById('albumArt');
                 let cx = w/2, cy = h/2 - 40;
-                if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
+                let baseRad = 100;
+                if(art) { 
+                    const rect = art.getBoundingClientRect(); 
+                    cx = rect.left + rect.width/2; 
+                    cy = rect.top + rect.height/2; 
+                    baseRad = rect.width/2; 
+                }
                 
-                // Audio Energy Buckets - Isolate frequency routing
-                let bassAvg = 0, midAvg = 0, highAvg = 0;
-                for(let k=0; k<6; k++) bassAvg += d[k] || 0;
-                for(let k=10; k<20; k++) midAvg += d[k] || 0;
-                for(let k=24; k<40; k++) highAvg += d[k] || 0;
-                
-                // Normalized Target Intensities (Restrained so they don't blow up the screen)
                 const sens = window.vizSens || 1.0;
-                let bassTarget = Math.min(1.0, (bassAvg / 6) / 200.0) * sens;
-                let midTarget = Math.min(1.0, (midAvg / 10) / 150.0) * sens;
-                let highTarget = Math.min(1.0, (highAvg / 16) / 100.0) * sens;
-
-                const time = performance.now() / 1000.0;
+                const lim = Math.floor(d.length * 0.6);
                 
-                // The core ring size bounding the album art
-                const baseRad = 100;
-                
-                // The organic renderer without crazy physics dampening
-                const drawBlobLayer = (color, targetIntensity, sParams, sizeMultiplier, layerOffset) => {
+                // Helper to generate the exact Trap Nation polar path
+                const getPointsForLayer = (audioMultiplier) => {
                     const points = [];
-                    const nodes = 64;
-                    for(let i=0; i<nodes; i++) {
-                        const angle = (i / nodes) * Math.PI * 2;
-                        
-                        // Smooth Perlin-style cyclic noise using sum of sines
-                        const flow1 = Math.sin(angle * sParams.f1 + time * sParams.s1);
-                        const flow2 = Math.cos(angle * sParams.f2 - time * sParams.s2);
-                        const flow3 = Math.sin(angle * sParams.f3 + time * sParams.s3);
-                        // Range -1.0 to 1.0, scaled down so it's a gentle wave, not a huge spike
-                        const noise = (flow1 + flow2 + flow3) / 3.0; 
-                        
-                        // Calculate radius: Base + Constant Layer Offset + Audio Reaction * Noise
-                        // targetIntensity drives how much the noise affects the expansion
-                        const expansion = targetIntensity * sizeMultiplier * (0.8 + 0.2 * noise);
-                        const r = baseRad + layerOffset + expansion + (noise * 10); // subtle base wobble
-                        
-                        points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
-                    }
+                    const half = 64;
+                    const total = half * 2;
                     
-                    const path = this.buildSmoothPath(points);
+                    for (let j = 0; j < total; j++) {
+                        // -PI/2 is top center, mapping clockwise around the circle
+                        const ang = -Math.PI/2 + (j / total) * Math.PI * 2;
+                        
+                        let i; 
+                        if (j <= half) i = j; // right side
+                        else i = total - j;   // left side mirrored
+                        
+                        let virtualIdx;
+                        const hornCenter = 16; // 16/64 = 45 degrees
+                        
+                        // Map Bass to the horns seamlessly
+                        if (i <= hornCenter) {
+                            virtualIdx = 32 - (i / hornCenter) * 32;
+                        } else {
+                            virtualIdx = ((i - hornCenter) / (half - hornCenter)) * lim;
+                        }
+                        
+                        let v = (d[Math.floor(virtualIdx)] || 0) * sens;
+                        
+                        let force = 1.0;
+                        // Smoothly merge top center
+                        if (i < 4) force *= Math.sin((i / 4) * (Math.PI / 2));
+                        // Smoothly merge bottom center
+                        if (i > half - 6) force *= Math.cos(((i - (half - 6)) / 6) * (Math.PI / 2));
+                        
+                        // Horn aggressive boost
+                        let distToHorn = Math.abs(i - hornCenter);
+                        if (distToHorn < 10) {
+                            let peak = Math.cos((distToHorn / 10) * (Math.PI / 2));
+                            force += peak * 1.8; 
+                        }
+
+                        let expansion = (v / 255.0) * 80 * force * audioMultiplier;
+                        if (expansion < 0) expansion = 0;
+                        
+                        const r = baseRad + expansion;
+                        points.push({ x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) });
+                    }
+                    return points;
+                };
+
+                const drawLayer = (color, mult) => {
+                    const pts = getPointsForLayer(mult);
+                    const path = new Path2D();
+                    if (this.smooth) {
+                        path.addPath(this.buildSmoothPath(pts));
+                    } else {
+                        if(pts.length>0) path.moveTo(pts[0].x, pts[0].y);
+                        for(let i=1; i<pts.length; i++) path.lineTo(pts[i].x, pts[i].y);
+                        path.closePath();
+                    }
                     ctx.fillStyle = color;
                     ctx.fill(path);
                 };
 
-                // Use Source-Over blending with specific transparencies exactly like the screenshot
                 ctx.globalCompositeOperation = 'source-over';
 
-                if(this.smooth) {
-                    // LAYER 1 (Bottom): Massive Green Bass Aura
-                    drawBlobLayer('rgba(34, 197, 94, 0.90)', Math.pow(bassTarget, 1.2), 
-                                 {f1: 2, s1: 0.8, f2: 3, s2: 0.6, f3: 5, s3: 0.4}, 160, 20);
-                    
-                    // LAYER 2: Warm Yellow/Orange Mid-Bass
-                    drawBlobLayer('rgba(234, 179, 8, 0.75)', Math.pow(bassTarget, 0.9), 
-                                 {f1: 3, s1: 1.1, f2: 4, s2: 0.9, f3: 2, s3: 0.5}, 120, 10);
-                                 
-                    // LAYER 3: Light Blue/Cyan Mids (adds that cool contrast seen in the pic)
-                    drawBlobLayer('rgba(56, 189, 248, 0.60)', midTarget, 
-                                 {f1: 4, s1: 1.4, f2: 5, s2: 1.2, f3: 3, s3: 0.8}, 90, 5);
-                    
-                    // LAYER 4 (Top): Purple/Pink Highs (snapping tight to the art)
-                    drawBlobLayer('rgba(168, 85, 247, 0.50)', highTarget, 
-                                 {f1: 6, s1: 2.0, f2: 7, s2: 1.8, f3: 4, s3: 1.5}, 60, 0);
+                // Trap Nation outer glowing rainbow layers
+                // Drawn largest (furthest back) to smallest
+                const layers = [
+                    { color: '#8b5cf6', mult: 1.25 }, // Purple
+                    { color: '#3b82f6', mult: 1.20 }, // Blue
+                    { color: '#10b981', mult: 1.15 }, // Green
+                    { color: '#eab308', mult: 1.10 }, // Yellow
+                    { color: '#f97316', mult: 1.05 }, // Orange
+                    { color: '#ef4444', mult: 1.02 }  // Red
+                ];
+                
+                for (let layer of layers) {
+                    drawLayer(layer.color, layer.mult);
                 }
 
-                // ACCENT CORE (Solid backplate wrapping the album art exactly)
+                // White Core Wrapper
                 const tMode = window.ui ? window.ui.themeMode : 'solid';
                 const acc = (tMode === 'solid-fill') 
                              ? (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ef4444')
                              : '#ffffff';
                              
-                const corePoints = [];
-                for(let i=0; i<64; i++) {
-                    const angle = (i / 64) * Math.PI * 2;
-                    // Tight wrap, expanding only slightly on heavy kicks
-                    const proxyR = baseRad + (bassTarget * 10);
-                    corePoints.push({ x: cx + proxyR * Math.cos(angle), y: cy + proxyR * Math.sin(angle) });
-                }
-                const corePath = this.buildSmoothPath(corePoints);
-                ctx.fillStyle = acc;
-                ctx.fill(corePath);
+                drawLayer(acc, 0.98);
+                
+                // Black Core Mask to completely guard the album art
+                ctx.beginPath();
+                ctx.arc(cx, cy, baseRad, 0, Math.PI * 2);
+                ctx.fillStyle = '#111111';
+                ctx.fill();
             }
         };
 
