@@ -1645,25 +1645,12 @@ class Visualizer {
       smoothedData.push(sum / weightSum);
     }
 
-    // Helper to calculate the PERMANENT static horn base geometry
-    const getStaticHornOffset = (index) => {
-      let dist = Math.abs(index - peakIndex);
-      if (dist < 8) {
-        // Creates a permanent 35px high horn shape that slopes down smoothly
-        return Math.cos((dist / 8) * (Math.PI / 2)) * 35;
-      }
-      return 0;
-    };
-
     // Build Right Half
     for (let i = 0; i < this.liquidBinCount; i++) {
       let rawVal = smoothedData[i] / 255.0;
 
       // FLATTEN TOP CENTER: Remove the unwanted bump between the horns
       if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
-
-      // Add the permanent geometric shape
-      const staticOffset = getStaticHornOffset(i);
 
       // Exponential mapping: Quiet sounds do almost nothing, loud drops EXPLODE outward
       const exponentialVal = Math.min(
@@ -1672,7 +1659,6 @@ class Visualizer {
       );
       const radius =
         baseRadius +
-        staticOffset +
         exponentialVal * maxBump +
         rawVal * sens * 5;
       const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
@@ -1689,15 +1675,12 @@ class Visualizer {
       // FLATTEN TOP CENTER
       if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
 
-      const staticOffset = getStaticHornOffset(i);
-
       const exponentialVal = Math.min(
         1.5,
         Math.pow(rawVal, this.exponent) * sens,
       );
       const radius =
         baseRadius +
-        staticOffset +
         exponentialVal * maxBump +
         rawVal * sens * 5;
       const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
