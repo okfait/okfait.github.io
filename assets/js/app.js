@@ -1641,21 +1641,23 @@ class Visualizer {
         if(slSens) sens = parseFloat(slSens.value);
     } catch(e) {}
 
-    const peakIndex = tunePos;
+    const peakIndex = tunePos; // Usually 16 (10:10 / 2:10)
     const halfData = [];
+    
+    // Top Half of Circle (0 to peakIndex): Treble down to Sub-Bass
+    // Map frequency bin 40 (highs) down to bin 0 (lowest bass)
     for (let i = 0; i < peakIndex; i++) {
-      let dist = peakIndex - i;
-      let val = frameData[dist];
-      // WIDER HORNS: Live adjustable pinch
-      if (dist > 0 && dist < 12) val *= Math.pow(tunePinch, dist);
-      halfData.push(val);
+        let pct = i / peakIndex; 
+        let binIndex = Math.floor(40 - (40 * pct));
+        halfData.push(frameData[binIndex] || 0);
     }
+    
+    // Bottom Half of Circle (peakIndex to 48): Sub-Bass up to Mids
+    // Map frequency bin 0 (lowest bass) up to bin 60 (mids)
     for (let i = peakIndex; i < this.liquidBinCount; i++) {
-      let dist = i - peakIndex;
-      let val = frameData[dist];
-      // WIDER HORNS: Live adjustable pinch
-      if (dist > 0 && dist < 12) val *= Math.pow(tunePinch, dist);
-      halfData.push(val);
+        let pct = (i - peakIndex) / (this.liquidBinCount - peakIndex);
+        let binIndex = Math.floor(60 * pct);
+        halfData.push(frameData[binIndex] || 0);
     }
 
     // Tighter Smoothing filter over the audio array for sharp but non-jagged curves
@@ -1673,18 +1675,17 @@ class Visualizer {
       smoothedData.push(sum / weightSum);
     }
 
+    // Convert Width Slider into an Exponent Squash (0.50 - 0.99 translates to power 3.0 to 1.0)
+    // The higher the power, the more it ignores quiet sounds and only spikes on kicks.
+    const exponentSquash = 1.0 + ((1.0 - tunePinch) * 4.0);
+
     // Build Right Half
     for (let i = 0; i < this.liquidBinCount; i++) {
       let rawVal = smoothedData[i] / 255.0;
 
-      // FLATTEN TOP CENTER: Remove the unwanted bump between the horns
-      if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
-
-      // Exponential mapping: Quiet sounds do almost nothing, loud drops EXPLODE outward
-      const exponentialVal = Math.min(
-        1.5,
-        Math.pow(rawVal, this.exponent) * sens,
-      );
+      // Organic mapping: Squish out background noise, EXPLODE on heavy kick peaks
+      let exponentialVal = Math.pow(rawVal, exponentSquash) * sens * 1.5;
+      
       const radius =
         baseRadius +
         exponentialVal * maxBump +
@@ -1700,13 +1701,8 @@ class Visualizer {
     for (let i = this.liquidBinCount - 2; i > 0; i--) {
       let rawVal = smoothedData[i] / 255.0;
 
-      // FLATTEN TOP CENTER
-      if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
+      let exponentialVal = Math.pow(rawVal, exponentSquash) * sens * 1.5;
 
-      const exponentialVal = Math.min(
-        1.5,
-        Math.pow(rawVal, this.exponent) * sens,
-      );
       const radius =
         baseRadius +
         exponentialVal * maxBump +
