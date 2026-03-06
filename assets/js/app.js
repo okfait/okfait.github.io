@@ -1625,7 +1625,8 @@ class Visualizer {
     this.liquidBinCount = 48; // Higher resolution for smooth curves
     const totalPoints = this.liquidBinCount * 2 - 2;
     const baseRadius = 130; // Shrink inside the art circle
-    const maxBump = 140; // Max bass protrusion
+    const maxBump = 160; // Max bass protrusion
+    
     // LIVE TUNER VARIABLES: Let the user sculpt the horns with the hidden sliders
     let tunePos = 16;
     let tunePinch = 0.85;
@@ -1640,79 +1641,65 @@ class Visualizer {
         if(slPinch) tunePinch = parseFloat(slPinch.value);
         if(slSens) sens = parseFloat(slSens.value);
     } catch(e) {}
-
-    const peakIndex = tunePos; // Usually 16 (10:10 / 2:10)
-    const halfData = [];
     
-    // Top Half of Circle (0 to peakIndex): Treble down to Sub-Bass
-    // Map frequency bin 40 (highs) down to bin 0 (lowest bass)
-    for (let i = 0; i < peakIndex; i++) {
-        let pct = i / peakIndex; 
-        let binIndex = Math.floor(40 - (40 * pct));
-        halfData.push(frameData[binIndex] || 0);
+    // 1. Calculate overall bass energy for the drop
+    let bassSum = 0;
+    for(let i=0; i<5; i++) bassSum += (frameData[i] || 0);
+    let bassAvg = (bassSum / 5) / 255.0; // 0.0 to 1.0
+    
+    // 2. Strict Threshold Gate
+    // Ignore bottom 50% of the bass signal so the circle stays perfectly round when there's no main drop
+    let bassSpike = 0;
+    let threshold = 0.50; 
+    if (bassAvg > threshold) {
+        bassSpike = (bassAvg - threshold) / (1.0 - threshold);
+        bassSpike = Math.pow(bassSpike, 1.5); // Accelerate the punch
     }
     
-    // Bottom Half of Circle (peakIndex to 48): Sub-Bass up to Mids
-    // Map frequency bin 0 (lowest bass) up to bin 60 (mids)
-    for (let i = peakIndex; i < this.liquidBinCount; i++) {
-        let pct = (i - peakIndex) / (this.liquidBinCount - peakIndex);
-        let binIndex = Math.floor(60 * pct);
-        halfData.push(frameData[binIndex] || 0);
-    }
-
-    // Tighter Smoothing filter over the audio array for sharp but non-jagged curves
-    const smoothedData = [];
-    for (let i = 0; i < this.liquidBinCount; i++) {
-      let sum = 0,
-        weightSum = 0;
-      for (let j = -1; j <= 1; j++) {
-        let idx = i + j;
-        if (idx < 0 || idx >= this.liquidBinCount) continue;
-        let weight = j === 0 ? 1.0 : 0.35;
-        sum += halfData[idx] * weight;
-        weightSum += weight;
-      }
-      smoothedData.push(sum / weightSum);
-    }
-
-    // Convert Width Slider into an Exponent Squash (0.50 - 0.99 translates to power 3.0 to 1.0)
-    // The higher the power, the more it ignores quiet sounds and only spikes on kicks.
-    const exponentSquash = 1.0 + ((1.0 - tunePinch) * 4.0);
+    // Width of the Gaussian horn
+    let sigma = 1.0 + ((tunePinch - 0.5) / 0.49) * 3.0; // ranges from 1.0 to 4.0
 
     // Build Right Half
     for (let i = 0; i < this.liquidBinCount; i++) {
-      let rawVal = smoothedData[i] / 255.0;
-
-      // Organic mapping: Squish out background noise, EXPLODE on heavy kick peaks
-      let exponentialVal = Math.pow(rawVal, exponentSquash) * sens * 1.5;
-      
-      const radius =
-        baseRadius +
-        exponentialVal * maxBump +
-        rawVal * sens * 5;
-      const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
-      points.push({
-        x: cx + radius * Math.cos(theta),
-        y: cy + radius * Math.sin(theta),
-      });
+        let radius = baseRadius;
+        
+        // PERFECT MATHEMATICAL GAUSSIAN HORN
+        let dist = Math.abs(i - tunePos);
+        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
+        radius += hornHeight;
+        
+        // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
+        if (i >= 20) {
+            let rippleBin = (i - 20) * 2; // sample some higher frequencies
+            let rippleVal = (frameData[rippleBin] || 0) / 255.0;
+            let fade = Math.min(1.0, (i - 20) / 10.0); // fade them in smoothly towards the bottom
+            // Remove threshold for bottom ripples so it always moves a little bit
+            radius += rippleVal * 25 * sens * fade;
+        }
+        
+        const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
+        points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
     }
-
+    
     // Build Left Half (Mirrored)
     for (let i = this.liquidBinCount - 2; i > 0; i--) {
-      let rawVal = smoothedData[i] / 255.0;
+        let radius = baseRadius;
+        
+        let dist = Math.abs(i - tunePos);
+        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
+        radius += hornHeight;
+        
+        if (i >= 20) {
+            let rippleBin = (i - 20) * 2;
+            let rippleVal = (frameData[rippleBin] || 0) / 255.0;
+            let fade = Math.min(1.0, (i - 20) / 10.0);
+            radius += rippleVal * 25 * sens * fade;
+        }
 
-      let exponentialVal = Math.pow(rawVal, exponentSquash) * sens * 1.5;
-
-      const radius =
-        baseRadius +
-        exponentialVal * maxBump +
-        rawVal * sens * 5;
-      const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
-      points.push({
-        x: cx + radius * Math.cos(theta),
-        y: cy + radius * Math.sin(theta),
-      });
+        const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
+        points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
     }
+    
     return points;
   }
 
