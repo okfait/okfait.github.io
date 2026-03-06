@@ -1647,30 +1647,23 @@ class Visualizer {
     for(let i=0; i<5; i++) bassSum += (frameData[i] || 0);
     let bassAvg = (bassSum / 5) / 255.0; // 0.0 to 1.0
     
-    if (typeof this.lastBassAvg === "undefined") this.lastBassAvg = 0;
-    if (typeof this.currHornHeight === "undefined") this.currHornHeight = 0;
+    // 2. Stateless Exponential Gate (Lightning Fast 60FPS)
+    // Avoids cross-frame memory tracking (which causes render lag).
+    // Uses a strict threshold (0.50) + an aggressive exponent (Squash) to force the 
+    // visualizer to ignore sustained tails and only punch on hard impacts.
+    let bassSpike = 0;
+    let threshold = 0.50; 
     
-    // 2. Transient Velocity Detection
-    // Instead of reading raw volume, we measure the *speed* of the bass jump. 
-    // This perfectly isolates the sharp attack of a kick drum and entirely ignores the sustained tail and background noise,
-    // allowing the horns to retract instantly even if the song's bass continues holding a note.
-    let bassVelocity = bassAvg - this.lastBassAvg;
-    this.lastBassAvg = bassAvg;
-    
-    // Ignore tiny static fluctuations
-    if (bassVelocity < 0.02) bassVelocity = 0;
-    
-    // Amplify the speed of the jump into a power scale (0.0 to 1.0)
-    let kickPower = Math.min(1.0, bassVelocity * 6.0);
-    
-    // 3. Fast Falloff Physics (Overrides the slow Web Audio decay)
-    if (kickPower > this.currHornHeight) {
-        this.currHornHeight = kickPower;    // Snap up instantly on kick
-    } else {
-        this.currHornHeight *= 0.65;        // Snap back down by 35% every single frame (Retracts in ~60ms)
+    if (bassAvg > threshold) {
+        // Normalize the remaining volume above the threshold from 0.0 to 1.0
+        let normalizedSpike = (bassAvg - threshold) / (1.0 - threshold);
+        
+        // Exponent Squash: A value of 0.8 raised to the 4th power becomes 0.40.
+        // A value of 0.95 raised to the 4th power becomes 0.81.
+        // This mathematically forces the horn to aggressively retract as soon as volume dips slightly.
+        let squashPower = 4.0; // The higher the power, the faster it falls back down
+        bassSpike = Math.pow(normalizedSpike, squashPower); 
     }
-    
-    let bassSpike = this.currHornHeight;
     
     // Width of the Gaussian horn
     let sigma = 1.0 + ((tunePinch - 0.5) / 0.49) * 3.0; // ranges from 1.0 to 4.0
