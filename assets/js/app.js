@@ -1647,14 +1647,30 @@ class Visualizer {
     for(let i=0; i<5; i++) bassSum += (frameData[i] || 0);
     let bassAvg = (bassSum / 5) / 255.0; // 0.0 to 1.0
     
-    // 2. Strict Threshold Gate
-    // Ignore bottom 50% of the bass signal so the circle stays perfectly round when there's no main drop
-    let bassSpike = 0;
-    let threshold = 0.50; 
-    if (bassAvg > threshold) {
-        bassSpike = (bassAvg - threshold) / (1.0 - threshold);
-        bassSpike = Math.pow(bassSpike, 1.5); // Accelerate the punch
+    if (typeof this.lastBassAvg === "undefined") this.lastBassAvg = 0;
+    if (typeof this.currHornHeight === "undefined") this.currHornHeight = 0;
+    
+    // 2. Transient Velocity Detection
+    // Instead of reading raw volume, we measure the *speed* of the bass jump. 
+    // This perfectly isolates the sharp attack of a kick drum and entirely ignores the sustained tail and background noise,
+    // allowing the horns to retract instantly even if the song's bass continues holding a note.
+    let bassVelocity = bassAvg - this.lastBassAvg;
+    this.lastBassAvg = bassAvg;
+    
+    // Ignore tiny static fluctuations
+    if (bassVelocity < 0.02) bassVelocity = 0;
+    
+    // Amplify the speed of the jump into a power scale (0.0 to 1.0)
+    let kickPower = Math.min(1.0, bassVelocity * 6.0);
+    
+    // 3. Fast Falloff Physics (Overrides the slow Web Audio decay)
+    if (kickPower > this.currHornHeight) {
+        this.currHornHeight = kickPower;    // Snap up instantly on kick
+    } else {
+        this.currHornHeight *= 0.65;        // Snap back down by 35% every single frame (Retracts in ~60ms)
     }
+    
+    let bassSpike = this.currHornHeight;
     
     // Width of the Gaussian horn
     let sigma = 1.0 + ((tunePinch - 0.5) / 0.49) * 3.0; // ranges from 1.0 to 4.0
