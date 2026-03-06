@@ -1657,13 +1657,23 @@ class Visualizer {
     if (bassAvg > threshold) {
         // Normalize the remaining volume above the threshold from 0.0 to 1.0
         let normalizedSpike = (bassAvg - threshold) / (1.0 - threshold);
-        
-        // Exponent Squash: A value of 0.8 raised to the 4th power becomes 0.40.
-        // A value of 0.95 raised to the 4th power becomes 0.81.
-        // This mathematically forces the horn to aggressively retract as soon as volume dips slightly.
         let squashPower = 4.0; // The higher the power, the faster it falls back down
         bassSpike = Math.pow(normalizedSpike, squashPower); 
     }
+    
+    // 3. Independent Mid-Range Energy for the Bottom Hills
+    let midSum = 0;
+    // Bins 15-25 typically contain snares, claps, and synths
+    for(let i=15; i<25; i++) midSum += (frameData[i] || 0);
+    let midAvg = (midSum / 10) / 255.0; // 0.0 to 1.0
+    
+    let midSpike = 0;
+    let midThreshold = 0.40; // Mids are usually quieter than bass, lower the threshold slightly
+    if (midAvg > midThreshold) {
+        let normalizedMid = (midAvg - midThreshold) / (1.0 - midThreshold);
+        midSpike = Math.pow(normalizedMid, 3.0); // Slightly softer squash than bass
+    }
+
     
     // Width of the Gaussian horn
     let sigma = 1.0 + ((tunePinch - 0.5) / 0.49) * 3.0; // ranges from 1.0 to 4.0
@@ -1677,10 +1687,11 @@ class Visualizer {
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
-        // SECONDARY GAUSSIAN HORN (BOTTOM HILLS)
+        // SECONDARY GAUSSIAN HORN (BOTTOM HILLS - Independent Mids Sync)
         let bottomPos = this.liquidBinCount - tunePos + 4; // roughly 36 if tunePos is 16
         let bottomDist = Math.abs(i - bottomPos);
-        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.35) * bassSpike * sens;
+        // Uses midSpike instead of bassSpike so it reacts to different instruments
+        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
         radius += bottomHornHeight;
         
         // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
@@ -1706,7 +1717,7 @@ class Visualizer {
         
         let bottomPos = this.liquidBinCount - tunePos + 4; 
         let bottomDist = Math.abs(i - bottomPos);
-        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.35) * bassSpike * sens;
+        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
         radius += bottomHornHeight;
         
         if (i >= 20) {
