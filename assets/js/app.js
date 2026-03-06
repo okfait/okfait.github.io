@@ -1108,17 +1108,29 @@ class okMUSICLearningController {
                 // Index 16 out of 48 is exactly 1/3 of the 180 degrees (60 degrees = 2 o'clock)
                 const peakIndex = 16; 
                 const halfData = [];
-                for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
-                for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
+                for (let i = 0; i < peakIndex; i++) {
+                    let dist = peakIndex - i;
+                    let val = frameData[dist];
+                    // SLIM HORNS: Pinch adjacent bass frequencies so the curve tapers sharply
+                    if (dist > 0 && dist < 12) val *= Math.pow(0.70, dist);
+                    halfData.push(val);
+                }
+                for (let i = peakIndex; i < this.liquidBinCount; i++) {
+                    let dist = i - peakIndex;
+                    let val = frameData[dist];
+                    // SLIM HORNS: Pinch adjacent bass frequencies so the curve tapers sharply
+                    if (dist > 0 && dist < 12) val *= Math.pow(0.70, dist);
+                    halfData.push(val);
+                }
                 
-                // Gaussian-style Smoothing filter over the audio array for buttery smooth curves
+                // Tighter Smoothing filter over the audio array for sharp but non-jagged curves
                 const smoothedData = [];
                 for (let i = 0; i < this.liquidBinCount; i++) {
                    let sum = 0, weightSum = 0;
-                   for (let j = -2; j <= 2; j++) {
+                   for (let j = -1; j <= 1; j++) {
                        let idx = i + j;
                        if (idx < 0 || idx >= this.liquidBinCount) continue;
-                       let weight = 1 / (1 + Math.abs(j));
+                       let weight = (j === 0) ? 1.0 : 0.35;
                        sum += halfData[idx] * weight;
                        weightSum += weight;
                    }
