@@ -1095,7 +1095,58 @@ class okMUSICLearningController {
                     ctx.fill(path);
                 }
             }
-buildSmoothPath(points) {
+
+            getSymmetricPoints(cx, cy, frameData) {
+                const points = [];
+                this.liquidBinCount = 48; // Higher resolution for smooth curves
+                const totalPoints = (this.liquidBinCount * 2) - 2;
+                const baseRadius = 130; // Shrink inside the art circle
+                const maxBump = 140; // Max bass protrusion
+                const sens = window.vizSens || 1.0;
+                
+                // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 10:10 o'clock and 2:10 o'clock
+                // Index 16 out of 48 is exactly 1/3 of the 180 degrees (60 degrees = 2 o'clock)
+                const peakIndex = 16; 
+                const halfData = [];
+                for (let i = 0; i < peakIndex; i++) halfData.push(frameData[peakIndex - i]);
+                for (let i = peakIndex; i < this.liquidBinCount; i++) halfData.push(frameData[i - peakIndex]);
+                
+                // Gaussian-style Smoothing filter over the audio array for buttery smooth curves
+                const smoothedData = [];
+                for (let i = 0; i < this.liquidBinCount; i++) {
+                   let sum = 0, weightSum = 0;
+                   for (let j = -2; j <= 2; j++) {
+                       let idx = i + j;
+                       if (idx < 0 || idx >= this.liquidBinCount) continue;
+                       let weight = 1 / (1 + Math.abs(j));
+                       sum += halfData[idx] * weight;
+                       weightSum += weight;
+                   }
+                   smoothedData.push(sum / weightSum);
+                }
+
+                // Build Right Half
+                for (let i = 0; i < this.liquidBinCount; i++) {
+                    const rawVal = smoothedData[i] / 255.0; 
+                    // Exponential mapping: Quiet sounds do almost nothing, loud drops EXPLODE outward
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
+                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
+                    const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
+                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
+                }
+                
+                // Build Left Half (Mirrored)
+                for (let i = this.liquidBinCount - 2; i > 0; i--) {
+                    const rawVal = smoothedData[i] / 255.0; 
+                    const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
+                    const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
+                    const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
+                    points.push({ x: cx + radius * Math.cos(theta), y: cy + radius * Math.sin(theta) });
+                }
+                return points;
+            }
+
+            buildSmoothPath(points) {
                 const path = new Path2D();
                 const len = points.length;
                 if (len < 3) return path;
@@ -1120,112 +1171,65 @@ buildSmoothPath(points) {
                 return path;
             }
 
-            drawLiquid(ctx, w, h, d) {
+            drawLiquid(ctx, w, h, ignored_d) {
                 const art = document.getElementById('albumArt');
                 let cx = w/2, cy = h/2 - 40;
-                let baseRad = 100;
-                if(art) { 
-                    const rect = art.getBoundingClientRect(); 
-                    cx = rect.left + rect.width/2; 
-                    cy = rect.top + rect.height/2; 
-                    baseRad = rect.width/2; 
-                }
+                if(art) { const rect = art.getBoundingClientRect(); cx = rect.left + rect.width/2; cy = rect.top + rect.height/2; }
                 
-                const sens = window.vizSens || 1.0;
-                const lim = Math.floor(d.length * 0.6);
-                
-                // Helper to generate the exact Trap Nation polar path
-                const getPointsForLayer = (audioMultiplier) => {
-                    const points = [];
-                    const half = 64;
-                    const total = half * 2;
-                    
-                    for (let j = 0; j < total; j++) {
-                        // -PI/2 is top center, mapping clockwise around the circle
-                        const ang = -Math.PI/2 + (j / total) * Math.PI * 2;
-                        
-                        let i; 
-                        if (j <= half) i = j; // right side
-                        else i = total - j;   // left side mirrored
-                        
-                        let virtualIdx;
-                        const hornCenter = 16; // 16/64 = 45 degrees
-                        
-                        // Map Bass to the horns seamlessly
-                        if (i <= hornCenter) {
-                            virtualIdx = 32 - (i / hornCenter) * 32;
-                        } else {
-                            virtualIdx = ((i - hornCenter) / (half - hornCenter)) * lim;
-                        }
-                        
-                        let v = (d[Math.floor(virtualIdx)] || 0) * sens;
-                        
-                        let force = 1.0;
-                        // Smoothly merge top center
-                        if (i < 4) force *= Math.sin((i / 4) * (Math.PI / 2));
-                        // Smoothly merge bottom center
-                        if (i > half - 6) force *= Math.cos(((i - (half - 6)) / 6) * (Math.PI / 2));
-                        
-                        // Horn aggressive boost
-                        let distToHorn = Math.abs(i - hornCenter);
-                        if (distToHorn < 10) {
-                            let peak = Math.cos((distToHorn / 10) * (Math.PI / 2));
-                            force += peak * 1.8; 
-                        }
-
-                        let expansion = (v / 255.0) * 80 * force * audioMultiplier;
-                        if (expansion < 0) expansion = 0;
-                        
-                        const r = baseRad + expansion;
-                        points.push({ x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) });
-                    }
-                    return points;
-                };
-
-                const drawLayer = (color, mult) => {
-                    const pts = getPointsForLayer(mult);
-                    const path = new Path2D();
-                    if (this.smooth) {
-                        path.addPath(this.buildSmoothPath(pts));
-                    } else {
-                        if(pts.length>0) path.moveTo(pts[0].x, pts[0].y);
-                        for(let i=1; i<pts.length; i++) path.lineTo(pts[i].x, pts[i].y);
-                        path.closePath();
-                    }
-                    ctx.fillStyle = color;
-                    ctx.fill(path);
-                };
-
-                ctx.globalCompositeOperation = 'source-over';
-
-                // Trap Nation outer glowing rainbow layers
-                // Drawn largest (furthest back) to smallest
-                const layers = [
-                    { color: '#8b5cf6', mult: 1.25 }, // Purple
-                    { color: '#3b82f6', mult: 1.20 }, // Blue
-                    { color: '#10b981', mult: 1.15 }, // Green
-                    { color: '#eab308', mult: 1.10 }, // Yellow
-                    { color: '#f97316', mult: 1.05 }, // Orange
-                    { color: '#ef4444', mult: 1.02 }  // Red
-                ];
-                
-                for (let layer of layers) {
-                    drawLayer(layer.color, layer.mult);
-                }
-
-                // White Core Wrapper
+                const renderQueue = [];
+                const isMobile = window.innerWidth < 800 || window.innerHeight < 600 || /Mobi|Android/i.test(navigator.userAgent);
                 const tMode = window.ui ? window.ui.themeMode : 'solid';
-                const acc = (tMode === 'solid-fill') 
-                             ? (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ef4444')
-                             : '#ffffff';
-                             
-                drawLayer(acc, 0.98);
+                const ghosting = this.smooth; // 'smooth' boolean handles the UI toggle for "Smooth Following"
                 
-                // Black Core Mask to completely guard the album art
-                ctx.beginPath();
-                ctx.arc(cx, cy, baseRad, 0, Math.PI * 2);
-                ctx.fillStyle = '#111111';
-                ctx.fill();
+                if (ghosting && !isMobile) {
+                    if (tMode === 'rainbow') { 
+                        // Rainbow wants distinct hard colors, not blended into white 
+                        ctx.globalCompositeOperation = 'source-over'; 
+                        renderQueue.push({ data: this.history.getDelayedFrame(21), color: '#10b981' }); // Green
+                        renderQueue.push({ data: this.history.getDelayedFrame(18), color: '#3b82f6' }); // Blue
+                        renderQueue.push({ data: this.history.getDelayedFrame(15), color: '#a855f7' }); // Purple
+                        renderQueue.push({ data: this.history.getDelayedFrame(12), color: '#f472b6' }); // Pink
+                        renderQueue.push({ data: this.history.getDelayedFrame(9),  color: '#ef4444' }); // Red
+                        renderQueue.push({ data: this.history.getDelayedFrame(6),  color: '#eab308' }); // Yellow
+                    } else {
+                        // All others use screen blending
+                        ctx.globalCompositeOperation = 'screen';
+                        if (tMode === 'gradient' && window.ui.themeGrad1 && window.ui.themeGrad2) {
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.ui.themeGrad1 });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.ui.themeGrad2 });
+                        } else if (tMode === 'dominant' && window.dominantColor) {
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: window.dominantColor2 || '#ffffff' });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: window.dominantColor });
+                        } else {
+                            const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff0044';
+                            renderQueue.push({ data: this.history.getDelayedFrame(12), color: acc });
+                            renderQueue.push({ data: this.history.getDelayedFrame(6),  color: acc });
+                        }
+                    }
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+                
+                for (const layer of renderQueue) {
+                    const points = this.getSymmetricPoints(cx, cy, layer.data);
+                    const path = this.buildSmoothPath(points);
+                    
+                    ctx.fillStyle = layer.color;
+                    ctx.fill(path);
+                }
+                
+                // Draw Core Layer (Always on top)
+                ctx.globalCompositeOperation = 'source-over';
+                const mainPts = this.getSymmetricPoints(cx, cy, this.history.getDelayedFrame(0));
+                const mainPath = this.buildSmoothPath(mainPts);
+                
+                if (tMode === 'solid-fill') {
+                    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                }
+                
+                ctx.fill(mainPath);
             }
         };
 
