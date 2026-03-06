@@ -1139,7 +1139,11 @@ class okMUSICLearningController {
 
                 // Build Right Half
                 for (let i = 0; i < this.liquidBinCount; i++) {
-                    const rawVal = smoothedData[i] / 255.0; 
+                    let rawVal = smoothedData[i] / 255.0; 
+                    
+                    // FLATTEN TOP CENTER: Remove the unwanted bump between the horns
+                    if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
+                    
                     // Exponential mapping: Quiet sounds do almost nothing, loud drops EXPLODE outward
                     const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
                     const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
@@ -1149,7 +1153,11 @@ class okMUSICLearningController {
                 
                 // Build Left Half (Mirrored)
                 for (let i = this.liquidBinCount - 2; i > 0; i--) {
-                    const rawVal = smoothedData[i] / 255.0; 
+                    let rawVal = smoothedData[i] / 255.0; 
+                    
+                    // FLATTEN TOP CENTER
+                    if (i < 8) rawVal *= Math.pow(Math.sin((i / 8) * (Math.PI / 2)), 2);
+
                     const exponentialVal = Math.min(1.5, Math.pow(rawVal, this.exponent) * sens);
                     const radius = baseRadius + (exponentialVal * maxBump) + (rawVal * sens * 5);
                     const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
