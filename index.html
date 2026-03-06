@@ -606,7 +606,12 @@
                 <span id="tunePosVal">16</span>
             </div>
             <input type="range" id="tunePosSlider" min="5" max="24" step="1" value="16" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
-            <p class="text-[9px] text-white/30 mt-1">Lower = Closer to top center. Higher = Closer to sides.</p>
+            <p class="text-[9px] text-white/30 mt-1 mb-4">Lower = Closer to top center. Higher = Closer to sides.</p>
+            
+            <label class="flex items-center space-x-2 mt-4 cursor-pointer">
+                <input type="checkbox" id="tuneBgLines" class="accent-[var(--accent)]" onchange="window.updateVizTuning()">
+                <span class="text-xs font-bold text-white/80">Enable Background Sound Lines</span>
+            </label>
         </div>
 
         <button onclick="document.getElementById('vizTunerModal').style.display='none'" class="w-full bg-[var(--accent)] hover:scale-105 text-black font-bold py-2 rounded-lg shadow-lg transition text-xs">Close</button>

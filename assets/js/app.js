@@ -1694,6 +1694,12 @@ class Visualizer {
         let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
         radius += bottomHornHeight;
         
+        // TERTIARY GAUSSIAN HORN (EQUATOR HORNS - Tiny horizontal bumps)
+        let equatorPos = Math.floor((tunePos + bottomPos) / 2); // Roughly index 26
+        let equatorDist = Math.abs(i - equatorPos);
+        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * midSpike * sens;
+        radius += equatorHornHeight;
+        
         // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
         if (i >= 20) {
             let rippleBin = (i - 20) * 2; // sample some higher frequencies
@@ -1719,6 +1725,11 @@ class Visualizer {
         let bottomDist = Math.abs(i - bottomPos);
         let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
         radius += bottomHornHeight;
+        
+        let equatorPos = Math.floor((tunePos + bottomPos) / 2);
+        let equatorDist = Math.abs(i - equatorPos);
+        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * midSpike * sens;
+        radius += equatorHornHeight;
         
         if (i >= 20) {
             let rippleBin = (i - 20) * 2;
@@ -1767,6 +1778,14 @@ class Visualizer {
       const rect = art.getBoundingClientRect();
       cx = rect.left + rect.width / 2;
       cy = rect.top + rect.height / 2;
+    }
+    
+    // UI Feature: Draw the audio spectrum "sound lines" behind the liquid visualizer
+    if (document.getElementById("tuneBgLines") && document.getElementById("tuneBgLines").checked) {
+        ctx.save();
+        ctx.globalAlpha = 0.3; // Make them fade into the background organically
+        this.drawBars(ctx, w, h, ignored_d);
+        ctx.restore();
     }
 
     const renderQueue = [];
