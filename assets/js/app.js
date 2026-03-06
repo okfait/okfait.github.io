@@ -1672,10 +1672,16 @@ class Visualizer {
     for (let i = 0; i < this.liquidBinCount; i++) {
         let radius = baseRadius;
         
-        // PERFECT MATHEMATICAL GAUSSIAN HORN
+        // PERFECT MATHEMATICAL GAUSSIAN HORN (TOP)
         let dist = Math.abs(i - tunePos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
+        
+        // SECONDARY GAUSSIAN HORN (BOTTOM HILLS)
+        let bottomPos = this.liquidBinCount - tunePos + 4; // roughly 36 if tunePos is 16
+        let bottomDist = Math.abs(i - bottomPos);
+        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.35) * bassSpike * sens;
+        radius += bottomHornHeight;
         
         // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
         if (i >= 20) {
@@ -1697,6 +1703,11 @@ class Visualizer {
         let dist = Math.abs(i - tunePos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
+        
+        let bottomPos = this.liquidBinCount - tunePos + 4; 
+        let bottomDist = Math.abs(i - bottomPos);
+        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.35) * bassSpike * sens;
+        radius += bottomHornHeight;
         
         if (i >= 20) {
             let rippleBin = (i - 20) * 2;
