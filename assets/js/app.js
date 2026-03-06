@@ -1603,30 +1603,58 @@ class Visualizer {
     }
   }
 
+  // Global handler for the Liquid Tuner hidden UI
+  updateVizTuning() {
+    try {
+        const wVal = document.getElementById("tuneWidthSlider")?.value || "0.85";
+        const sVal = document.getElementById("tuneSensSlider")?.value || "1.0";
+        const pVal = document.getElementById("tunePosSlider")?.value || "16";
+        
+        const wSpan = document.getElementById("tuneWidthVal");
+        const sSpan = document.getElementById("tuneSensVal");
+        const pSpan = document.getElementById("tunePosVal");
+        
+        if (wSpan) wSpan.innerText = wVal;
+        if (sSpan) sSpan.innerText = parseFloat(sVal).toFixed(1);
+        if (pSpan) pSpan.innerText = pVal;
+    } catch(e) {}
+  }
+
   getSymmetricPoints(cx, cy, frameData) {
     const points = [];
     this.liquidBinCount = 48; // Higher resolution for smooth curves
     const totalPoints = this.liquidBinCount * 2 - 2;
     const baseRadius = 130; // Shrink inside the art circle
     const maxBump = 140; // Max bass protrusion
-    const sens = window.vizSens || 1.0;
+    // LIVE TUNER VARIABLES: Let the user sculpt the horns with the hidden sliders
+    let tunePos = 16;
+    let tunePinch = 0.85;
+    let sens = window.vizSens || 1.0;
+    
+    // Attempt to grab live slider values if the Tuner UI is open
+    try {
+        const slPos = document.getElementById("tunePosSlider");
+        const slPinch = document.getElementById("tuneWidthSlider");
+        const slSens = document.getElementById("tuneSensSlider");
+        if(slPos) tunePos = parseInt(slPos.value);
+        if(slPinch) tunePinch = parseFloat(slPinch.value);
+        if(slSens) sens = parseFloat(slSens.value);
+    } catch(e) {}
 
-    // Pre-calculate the reshaped Half-Array to put the "Horns" EXACTLY at 10:10 o'clock and 2:10 o'clock
-    // Index 16 out of 48 is exactly 1/3 of the 180 degrees (60 degrees = 2 o'clock)
-    const peakIndex = 16;
+    const peakIndex = tunePos;
     const halfData = [];
     for (let i = 0; i < peakIndex; i++) {
       let dist = peakIndex - i;
       let val = frameData[dist];
-      // WIDER HORNS: Softer pinch so it doesn't look like a needle
-      if (dist > 0 && dist < 12) val *= Math.pow(0.85, dist);
+      // WIDER HORNS: Live adjustable pinch
+      if (dist > 0 && dist < 12) val *= Math.pow(tunePinch, dist);
       halfData.push(val);
     }
     for (let i = peakIndex; i < this.liquidBinCount; i++) {
       let dist = i - peakIndex;
       let val = frameData[dist];
-      // WIDER HORNS: Softer pinch so it doesn't look like a needle
-      if (dist > 0 && dist < 12) val *= Math.pow(0.85, dist);
+      // WIDER HORNS: Live adjustable pinch
+      if (dist > 0 && dist < 12) val *= Math.pow(tunePinch, dist);
       halfData.push(val);
     }
 
@@ -5378,3 +5406,7 @@ if ("serviceWorker" in navigator) {
       .catch((err) => console.log("SW failed", err));
   });
 }
+
+window.updateVizTuning = function() {
+    if(window.viz) window.viz.updateVizTuning();
+};

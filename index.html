@@ -577,6 +577,38 @@
         </div>
     </div>
 
+    <!-- VISUALIZER TUNING MODAL (Secret) -->
+    <div class="glass-modal" id="vizTunerModal" style="display:none; width: 340px; z-index: 1000;">
+        <h3 class="font-bold mb-4 text-xl tracking-tight"><i class="fa-solid fa-sliders text-[var(--accent)] mr-2"></i> Liquid Tuner</h3>
+        
+        <div class="mb-4">
+            <div class="flex justify-between text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">
+                <span>Horn Width (Pinch)</span>
+                <span id="tuneWidthVal">0.85</span>
+            </div>
+            <input type="range" id="tuneWidthSlider" min="0.50" max="0.99" step="0.01" value="0.85" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
+        </div>
+
+        <div class="mb-4">
+            <div class="flex justify-between text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">
+                <span>Horn Height (Sens)</span>
+                <span id="tuneSensVal">1.0</span>
+            </div>
+            <input type="range" id="tuneSensSlider" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
+        </div>
+
+        <div class="mb-6">
+            <div class="flex justify-between text-[10px] text-white/50 uppercase tracking-widest font-bold mb-1">
+                <span>Horn Position (Clock Face)</span>
+                <span id="tunePosVal">16</span>
+            </div>
+            <input type="range" id="tunePosSlider" min="5" max="24" step="1" value="16" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
+            <p class="text-[9px] text-white/30 mt-1">Lower = Closer to top center. Higher = Closer to sides.</p>
+        </div>
+
+        <button onclick="document.getElementById('vizTunerModal').style.display='none'" class="w-full bg-[var(--accent)] hover:scale-105 text-black font-bold py-2 rounded-lg shadow-lg transition text-xs">Close</button>
+    </div>
+
     <!-- METADATA EDITOR MODAL -->
     <div class="glass-modal" id="metaEditModal" style="display:none; width: 320px;">
         <h3 class="font-bold mb-4 text-xl tracking-tight"><i class="fa-solid fa-pen text-[var(--accent)] mr-2"></i> Edit Track</h3>
