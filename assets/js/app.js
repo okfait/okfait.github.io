@@ -1480,7 +1480,7 @@ class Visualizer {
     if (cfg.sparks !== false) {
         ctx.save();
         for (let i = 0; i < this.particles.length; i++) {
-            this.particles[i].update(this.smoothBass || 0);
+            this.particles[i].update(this.lastBassSpike || 0);
             this.particles[i].draw(ctx);
         }
         ctx.restore();
@@ -1748,13 +1748,11 @@ class Visualizer {
         // Base
         let width = val("tuneWidthSlider", 0.85);
         let sens = val("tuneSensSlider", 1.0);
-        let smooth = val("tuneSmoothSlider", 0.25);
         let pos = val("tunePosSlider", 16);
         let gap = val("tuneBgGapSlider", 10);
         
         setTxt("tuneWidthVal", width);
         setTxt("tuneSensVal", sens.toFixed(1));
-        setTxt("tuneSmoothVal", smooth.toFixed(2));
         setTxt("tunePosVal", pos);
         setTxt("tuneBgGapVal", gap);
         
@@ -1789,7 +1787,7 @@ class Visualizer {
         let sparks = sparksCb ? sparksCb.checked : true;
 
         window.vizConfig = {
-            width, sens, smooth, pos, gap, sparks,
+            width, sens, pos, gap, sparks,
             bEnd, bThr, bSq,
             mStart, mEnd, mThr, mSq,
             hStart, hEnd, hThr, hSq
@@ -1812,7 +1810,7 @@ class Visualizer {
     const maxBump = 160; // Max bass protrusion
     
     const cfg = window.vizConfig || {
-        width: 0.85, sens: window.vizSens || 1.0, smooth: 0.25, pos: 16, sparks: true,
+        width: 0.85, sens: window.vizSens || 1.0, pos: 16, sparks: true,
         bEnd: 5, bThr: 0.50, bSq: 4.0,
         mStart: 15, mEnd: 25, mThr: 0.40, mSq: 3.0,
         hStart: 35, hEnd: 45, hThr: 0.35, hSq: 2.5
@@ -1875,20 +1873,7 @@ class Visualizer {
         highSpike = Math.pow(normalizedHigh, cfg.hSq);
     }
     
-    // --- FRAME INTERPOLATION (ATTACK & RELEASE SMOOTHING) ---
-    if (this.smoothBass === undefined) this.smoothBass = 0;
-    if (this.smoothMid === undefined) this.smoothMid = 0;
-    if (this.smoothHigh === undefined) this.smoothHigh = 0;
-    
-    // Attack (Rise speed) is virtually instant so the drop packs a punch.
-    // Release (Fall speed) uses the UI Slider so it drops back down syrupy smooth.
-    const releaseSpeed = cfg.smooth || 0.25; 
-    const attackSpeed = 0.85; // 85% snap to target per frame (very fast)
-
-    this.smoothBass += (bassSpike > this.smoothBass ? attackSpeed : releaseSpeed) * (bassSpike - this.smoothBass);
-    this.smoothMid += (midSpike > this.smoothMid ? attackSpeed : releaseSpeed) * (midSpike - this.smoothMid);
-    this.smoothHigh += (highSpike > this.smoothHigh ? attackSpeed : releaseSpeed) * (highSpike - this.smoothHigh);
-    // -------------------------------------------------------------
+    this.lastBassSpike = bassSpike;
     
     // Save to global for the Nerd Stats UI (sampled efficiently)
     window.nerdStats = {
@@ -1915,17 +1900,17 @@ class Visualizer {
 
         // 1. TOP HORNS (Sub-Bass)
         let dist = Math.abs(i - hornPos);
-        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * this.smoothBass * sens;
+        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
         // 2. MEDIUM HILLS (Mids/Vocals)
         let midDist = Math.abs(i - midPos);
-        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * this.smoothMid * sens;
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
         radius += midHornHeight;
         
         // 3. SMALL HILLS (Treble/Highs @ Equator)
         let highDist = Math.abs(i - highPos);
-        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * this.smoothHigh * sens;
+        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
         
         const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
@@ -1941,15 +1926,15 @@ class Visualizer {
         let midPos = Math.floor(this.liquidBinCount * 0.85);
         
         let dist = Math.abs(i - hornPos);
-        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * this.smoothBass * sens;
+        let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
         let midDist = Math.abs(i - midPos);
-        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * this.smoothMid * sens;
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
         radius += midHornHeight;
         
         let highDist = Math.abs(i - highPos);
-        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * this.smoothHigh * sens;
+        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
 
 
