@@ -1307,11 +1307,17 @@ class VisualizerParticle {
         // Particles get bigger and fade out slightly as they get closer to the camera
         const projectedRadius = this.radius * scale * 2.0;
         
+        // Smooth Z-indexed Fade Out so they don't clip abruptly at z=0
+        let distanceFade = 1.0;
+        if (this.z < 400) {
+            distanceFade = Math.max(0, this.z / 400); // Smoothly fades from 1.0 down to 0.0
+        }
+        
         // Only draw if within bounds
         if (Math.abs(projectedX) < this.w && Math.abs(projectedY) < this.h) {
             ctx.beginPath();
             ctx.arc(projectedX, projectedY, Math.max(0.1, projectedRadius), 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha * scale})`;
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha * scale * distanceFade})`;
             ctx.fill();
         }
     }
