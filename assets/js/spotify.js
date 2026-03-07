@@ -129,14 +129,19 @@ export class SpotifyManager {
     }
 
     async getValidToken() {
-        // If we have a user token, use it
-        if (this.accessToken && !this.isGuest) {
-            if (Date.now() > this.expiresAt - 60000) {
-                await this.refreshAccessToken();
+        // If we have a user token that looks valid (not expired), try using it
+        if (this.accessToken && !this.isGuest && this.expiresAt) {
+            if (Date.now() < this.expiresAt - 60000) {
+                return this.accessToken;
+            } else {
+                // Try refresh if expired
+                const refreshed = await this.refreshAccessToken();
+                if (refreshed) return this.accessToken;
             }
-            return this.accessToken;
         }
-        // Otherwise, use guest mode
+        
+        // If no user token or it failed/expired, use guest mode
+        console.log("Using Spotify Guest Mode...");
         return this.getGuestToken();
     }
 
@@ -182,6 +187,15 @@ export class SpotifyManager {
             const pRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            // CRITICAL: If we get a 403 or 401, it means the token we just used is trash.
+            // This happens if the user isn't registered in the dashboard.
+            if (pRes.status === 401 || pRes.status === 403) {
+                console.error("Spotify Auth Failure (403/401). Resetting session...");
+                this.logout(); // Wipe everything so next time it uses a clean Guest Token
+                throw new Error("Spotify access denied. Please refresh and try again (Guest Mode will activate).");
+            }
+
             const pText = await pRes.text();
             let pData;
             try {
