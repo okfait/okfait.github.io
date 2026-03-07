@@ -243,6 +243,29 @@
                 </div>
             </div>
             <hr class="border-white/5">
+            
+            <!-- SPOTIFY INTEGRATION -->
+            <div class="space-y-4">
+                <label class="setting-label flex items-center gap-2"><i class="fa-brands fa-spotify text-[#1DB954]"></i> Spotify Connection</label>
+                <div id="spotifyDisconnected" class="bg-white/5 p-4 rounded-xl border border-white/5">
+                    <p class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-3">Connect to get your Premium Token & Sync Playlists</p>
+                    <button onclick="window.spotify.login()" class="w-full bg-[#1DB954] text-black font-black py-3 rounded-lg text-xs uppercase tracking-widest hover:scale-[1.02] transition shadow-[0_0_20px_rgba(29,185,84,0.3)] flex items-center justify-center gap-2">
+                        <i class="fa-brands fa-spotify text-lg"></i> Connect Spotify
+                    </button>
+                </div>
+                <div id="spotifyConnected" class="hidden bg-[#1DB954]/10 p-4 rounded-xl border border-[#1DB954]/20 flex flex-col gap-3">
+                    <div class="flex items-center gap-3">
+                        <img id="spotifyAvatar" src="" class="w-10 h-10 rounded-full border-2 border-[#1DB954] shadow-lg">
+                        <div class="flex flex-col">
+                            <span id="spotifyName" class="text-sm font-black text-white">---</span>
+                            <span id="spotifyStatus" class="text-[9px] font-bold text-[#1DB954] uppercase tracking-widest">Premium Member</span>
+                        </div>
+                    </div>
+                    <button onclick="window.spotify.logout()" class="w-full bg-white/5 border border-white/10 text-white/50 hover:text-red-400 hover:border-red-400/30 transition py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest">Disconnect</button>
+                </div>
+            </div>
+
+            <hr class="border-white/5">
             <div class="space-y-6">
                 <label class="setting-label flex justify-between items-center cursor-pointer">
                     <span>Processors</span>

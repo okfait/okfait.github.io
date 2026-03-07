@@ -14,6 +14,7 @@ import {
   uploadBytesResumable,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+import { SpotifyManager } from "./spotify.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvJ_lGnmH3Dll1E-HY5CuqzKGqQBXb-C4",
@@ -4799,6 +4800,24 @@ class UI {
     // Update internal tracker immediately for rapid clicks
     this.lastActiveTop = actualTop;
   }
+
+  updateSpotifyUI() {
+    if (!window.spotify) return;
+    const isConnected = window.spotify.isConnected();
+    const d = window.$("spotifyDisconnected");
+    const c = window.$("spotifyConnected");
+    if (d) d.style.display = isConnected ? "none" : "block";
+    if (c) c.style.display = isConnected ? "flex" : "none";
+
+    if (isConnected && window.spotify.profile) {
+      const nameEl = window.$("spotifyName");
+      const avatarEl = window.$("spotifyAvatar");
+      const statusEl = window.$("spotifyStatus");
+      if (nameEl) nameEl.innerText = window.spotify.profile.display_name;
+      if (avatarEl) avatarEl.src = window.spotify.profile.images?.[0]?.url || "";
+      if (statusEl) statusEl.innerText = window.spotify.profile.product === "premium" ? "Premium Member" : "Free Member";
+    }
+  }
 }
 
 class Player {
@@ -5779,6 +5798,24 @@ window.curveEditor = new CurveEditor();
 window.voiceControl = new VoiceCommander();
 window.exporter = new AudioExporter();
 window.partyMode = new PartyMode();
+window.spotify = new SpotifyManager();
+
+// Handle Spotify Callback
+if (window.location.search.includes("code=")) {
+  window.spotify.handleCallback().then((success) => {
+    if (success) {
+      window.ui.updateSpotifyUI();
+      window.ui.showToast("Connected to Spotify!");
+    }
+  });
+} else {
+  // Try to load profile if already connected
+  if (window.spotify.isConnected()) {
+    window.spotify.fetchProfile().then(() => {
+        window.ui.updateSpotifyUI();
+    });
+  }
+}
 
 const urlParams = new URLSearchParams(window.location.search);
 const playlistParam = urlParams.get("playlist");
