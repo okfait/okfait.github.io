@@ -1782,24 +1782,26 @@ class Visualizer {
     for (let i = 0; i < this.liquidBinCount; i++) {
         let radius = baseRadius;
         
-        // We calculate visual placement of bumps logically matching the background array (0-60)
-        // The ring `this.liquidBinCount` has 48 points covering Top (0) to Bottom (48)
+        // PRECISE GEOMETRIC PLACEMENT (Independent of Audio Bins)
+        // liquidBinCount = 48 points covering Top (0) to Bottom (48)
         
         let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
-        let midPos = Math.floor((cfg.mEnd / 60) * this.liquidBinCount);
-        let highPos = Math.floor((cfg.hEnd / 60) * this.liquidBinCount);
+        let highPos = Math.floor(this.liquidBinCount * 0.50); // index 24 (Equator)
+        // Mids mapped to Medium Hills -> placed near the bottom corners 
+        // 0.85 * 48 = index ~40
+        let midPos = Math.floor(this.liquidBinCount * 0.85);
 
         // 1. TOP HORNS (Sub-Bass)
         let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
-        // 2. MEDIUM HILLS (Mids / 44-55)
+        // 2. MEDIUM HILLS (Mids/Vocals)
         let midDist = Math.abs(i - midPos);
         let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
         radius += midHornHeight;
         
-        // 3. SMALL HILLS (Treble/Highs / 33-42)
+        // 3. SMALL HILLS (Treble/Highs @ Equator)
         let highDist = Math.abs(i - highPos);
         let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
@@ -1813,8 +1815,8 @@ class Visualizer {
         let radius = baseRadius;
         
         let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
-        let midPos = Math.floor((cfg.mEnd / 60) * this.liquidBinCount);
-        let highPos = Math.floor((cfg.hEnd / 60) * this.liquidBinCount);
+        let highPos = Math.floor(this.liquidBinCount * 0.50);
+        let midPos = Math.floor(this.liquidBinCount * 0.85);
         
         let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
@@ -1827,6 +1829,7 @@ class Visualizer {
         let highDist = Math.abs(i - highPos);
         let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
+
 
         const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
         points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
