@@ -4631,10 +4631,19 @@ class UI {
 
     try {
       let data;
-      // TRICK: If user is connected to Spotify, use the LOCAL FETCH instead of the proxy!
-      if (window.spotify && window.spotify.isConnected()) {
-          console.log("Using local Spotify token for metadata scan...");
-          data = await window.spotify.getTracksFromPlaylist(url);
+      // ALWAYS try SpotifyManager first (if it's not connected, it will use Guest Mode)
+      if (window.spotify) {
+          try {
+              console.log("Attempting high-quality scan via SpotifyManager...");
+              data = await window.spotify.getTracksFromPlaylist(url);
+          } catch (e) {
+              console.warn("SpotifyManager scan failed, falling back to proxy:", e);
+              const res = await fetch(
+                `${API_BASE}/api/playlist?url=${encodeURIComponent(url)}`,
+              );
+              data = await res.json();
+              if (!res.ok) throw new Error(data.error || "Failed to scan playlist via proxy");
+          }
       } else {
           const res = await fetch(
             `${API_BASE}/api/playlist?url=${encodeURIComponent(url)}`,

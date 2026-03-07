@@ -57,11 +57,14 @@ export class SpotifyManager {
     saveTokens(data) {
         this.accessToken = data.access_token;
         if (data.refresh_token) this.refreshToken = data.refresh_token;
-        this.expiresAt = Date.now() + (data.expires_in * 1000);
+        // Don't set expiresAt if it's a guest token (we handle that in getGuestToken)
+        if (data.expires_in) {
+            this.expiresAt = Date.now() + (data.expires_in * 1000);
+            localStorage.setItem('spotify_expires_at', this.expiresAt);
+        }
 
         localStorage.setItem('spotify_access_token', this.accessToken);
         if (this.refreshToken) localStorage.setItem('spotify_refresh_token', this.refreshToken);
-        localStorage.setItem('spotify_expires_at', this.expiresAt);
     }
 
     async refreshAccessToken() {
@@ -126,11 +129,40 @@ export class SpotifyManager {
     }
 
     async getValidToken() {
-        if (!this.accessToken) return null;
-        if (Date.now() > this.expiresAt - 60000) {
-            await this.refreshAccessToken();
+        // If we have a user token, use it
+        if (this.accessToken && !this.isGuest) {
+            if (Date.now() > this.expiresAt - 60000) {
+                await this.refreshAccessToken();
+            }
+            return this.accessToken;
         }
-        return this.accessToken;
+        // Otherwise, use guest mode
+        return this.getGuestToken();
+    }
+
+    async getGuestToken() {
+        try {
+            const body = new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: SPOTIFY_CONFIG.clientId,
+                client_secret: SPOTIFY_CONFIG.clientSecret
+            });
+
+            const res = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            });
+
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            this.isGuest = true;
+            return data.access_token;
+        } catch (e) {
+            console.error('Spotify Guest Token Error:', e);
+            return null;
+        }
     }
 
     isConnected() {
