@@ -1614,28 +1614,42 @@ class Visualizer {
     const lim = Math.floor(d.length * 0.6);
     const step = Math.max(1, Math.floor(lim / barsPerSide));
     
-    ctx.fillStyle = col;
-    // User requested "no liquid mod on the lines" so just raw clean rectangles.
-    const path = new Path2D();
+    ctx.shadowBlur = 0; // Crisp lines like the video
+    const barW = Math.max(1, sp * 0.7); // Leave a 30% gap between bars
     
-    // Left side (mirrored: bass is at the center, highs at the far left edge)
-    for (let i = 0; i < barsPerSide; i++) {
-        let binIndex = (barsPerSide - 1 - i) * step;
-        let v = (d[binIndex] || 0) * sens;
-        let bh = (v / 255) * (h * 0.8);
-        path.rect((i * sp) | 0, (h - bh) | 0, Math.max(1, sp - 2) | 0, bh | 0);
-    }
+    const drawBar = (x, val) => {
+        // MATCH THE LIQUID MATH: Exponential squashing removes the noisy "messy forest"
+        // and only lets distinct peaks through (like the yt video)
+        let norm = val / 255.0;
+        let squashed = Math.pow(norm, 2.7) * sens; // Crush the noise dynamically
+        let bh = squashed * (h * 0.7); 
+        
+        if (bh < 1) return; // Silent bins
+        
+        let yPos = h - bh;
+        
+        // Draw the main white body (70% opacity so it's smooth in the background)
+        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.fillRect(x | 0, yPos | 0, barW | 0, bh | 0);
+        
+        // Draw the colored 'corn' cap at the top
+        ctx.fillStyle = col;
+        let capHeight = Math.min(6, bh); // cap is max 6px tall
+        ctx.fillRect(x | 0, yPos | 0, barW | 0, capHeight | 0);
+    };
     
-    // Right side (normal: bass is at the center, highs at the far right edge)
+    // Left side and Right side rendered synchronously ensuring perfect mirror
     for (let i = 0; i < barsPerSide; i++) {
         let binIndex = i * step;
-        let v = (d[binIndex] || 0) * sens;
-        let bh = (v / 255) * (h * 0.8);
-        let xOffset = (w / 2) + (i * sp);
-        path.rect(xOffset | 0, (h - bh) | 0, Math.max(1, sp - 2) | 0, bh | 0);
+        let v = d[binIndex] || 0;
+        
+        // i=0 is Bass. Center is w/2.
+        let xLeft = (w / 2) - (i * sp) - sp; // Traverses left
+        let xRight = (w / 2) + (i * sp);     // Traverses right
+        
+        drawBar(xLeft, v);
+        drawBar(xRight, v);
     }
-    
-    ctx.fill(path);
   }
 
   // Global handler for the Liquid Tuner hidden UI
@@ -1652,6 +1666,11 @@ class Visualizer {
         if (wSpan) wSpan.innerText = wVal;
         if (sSpan) sSpan.innerText = parseFloat(sVal).toFixed(1);
         if (pSpan) pSpan.innerText = pVal;
+        
+        const hideUIcb = document.getElementById("tuneHideUI");
+        if(hideUIcb) {
+            document.body.classList.toggle("clean-lines-mode", hideUIcb.checked);
+        }
     } catch(e) {}
   }
 
@@ -1842,6 +1861,12 @@ class Visualizer {
         ctx.globalAlpha = 0.4; // Make them fade into the background organically
         this.drawMirroredBars(ctx, w, h, ignored_d);
         ctx.restore();
+    }
+    
+    // User Feature: "Hide UI" mode (clean-lines-mode) entirely hides the liquid ring
+    // so the user can evaluate just the raw flat-bar spectrum.
+    if (document.body.classList.contains("clean-lines-mode")) {
+        return;
     }
 
     const renderQueue = [];
