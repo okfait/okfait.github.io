@@ -124,6 +124,7 @@ export class SpotifyManager {
     }
 
     async getValidToken() {
+        if (!this.accessToken) return null;
         if (Date.now() > this.expiresAt - 60000) {
             await this.refreshAccessToken();
         }
@@ -132,5 +133,45 @@ export class SpotifyManager {
 
     isConnected() {
         return !!this.accessToken;
+    }
+
+    async getTracksFromPlaylist(url) {
+        const token = await this.getValidToken();
+        if (!token) throw new Error("Spotify not connected");
+
+        // Extract ID: https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoPBqM0
+        const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
+        const playlistId = match ? match[1] : url;
+
+        try {
+            // First get playlist title
+            const pRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const pData = await pRes.json();
+            if (!pRes.ok) throw new Error(pData.error?.message || "Failed to fetch playlist info");
+
+            const title = pData.name;
+            
+            // Then get tracks (paginated if needed, but we'll start with 100)
+            const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error?.message || "Failed to fetch tracks");
+
+            return {
+                title: title,
+                tracks: data.items.map(item => ({
+                    name: `${item.track.artists[0].name} - ${item.track.name}`,
+                    url: item.track.external_urls.spotify,
+                    id: item.track.id
+                }))
+            };
+        } catch (e) {
+            console.error("Spotify Fetch Error:", e);
+            throw e;
+        }
     }
 }

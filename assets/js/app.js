@@ -4591,7 +4591,7 @@ class UI {
           try {
             const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.url || t.name)}`;
             const res = await fetch(fetchUrl);
-            if (!res.ok) throw new Error("Failed to stream");
+            if (!res.ok) throw new Error("Download server returned status " + res.status);
             const blob = await res.blob();
 
             const songId = "stream-" + Date.now() + "-" + i;
@@ -4609,7 +4609,7 @@ class UI {
 
             successCount++;
           } catch (e) {
-            console.warn("Skipped track:", t.name);
+            console.warn("Skipped track:", t.name, e);
           }
         }
 
@@ -4618,7 +4618,7 @@ class UI {
         this.showToast(`Imported ${successCount} tracks successfully!`);
         this.closePlaylistImporter();
       } catch (e) {
-        alert("Import stopped: " + e.message);
+        alert("Import stopped: " + e.message + "\n(The Vercel download server might be offline or rate-limited)");
         btn.innerHTML = "IMPORT FAILED - TRY AGAIN";
         btn.style.pointerEvents = "auto";
       }
@@ -4630,11 +4630,18 @@ class UI {
     btn.style.pointerEvents = "none";
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/playlist?url=${encodeURIComponent(url)}`,
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to scan playlist");
+      let data;
+      // TRICK: If user is connected to Spotify, use the LOCAL FETCH instead of the proxy!
+      if (window.spotify && window.spotify.isConnected()) {
+          console.log("Using local Spotify token for metadata scan...");
+          data = await window.spotify.getTracksFromPlaylist(url);
+      } else {
+          const res = await fetch(
+            `${API_BASE}/api/playlist?url=${encodeURIComponent(url)}`,
+          );
+          data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to scan playlist via proxy");
+      }
 
       this._pendingPlaylistTracks = data.tracks;
       this._pendingPlaylistName = data.title || "Imported Playlist";
@@ -4645,7 +4652,7 @@ class UI {
       btn.innerHTML = "IMPORT TRACKS";
       btn.style.pointerEvents = "auto";
     } catch (e) {
-      alert("Scan failed: " + e.message);
+      alert("Scan failed: " + e.message + "\n\nTIP: Try connecting Spotify in Settings first to bypass proxy errors.");
       btn.innerHTML = "SCAN LINK";
       btn.style.pointerEvents = "auto";
     }
