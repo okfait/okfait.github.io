@@ -1604,15 +1604,11 @@ class Visualizer {
   }
 
   drawMirroredBars(ctx, w, h, d) {
-    const barsPerSide = 80;
-    const totalBars = barsPerSide * 2; // 160
+    const barsPerSide = 60; // 1 to 1 mapping with audio bins (0-59)
+    const totalBars = barsPerSide * 2; // 120
     const sp = w / totalBars;
     const sens = window.vizSens || 1.0;
     const col = getComputedStyle(document.documentElement).getPropertyValue("--accent");
-    
-    // Use the first 60% of frequency bins to avoid empty trailing data
-    const lim = Math.floor(d.length * 0.6);
-    const step = Math.max(1, Math.floor(lim / barsPerSide));
     
     ctx.shadowBlur = 0; // Crisp lines like the video
     const barW = Math.max(1, sp * 0.7); // Leave a 30% gap between bars
@@ -1642,16 +1638,15 @@ class Visualizer {
     // Left side and Right side rendered synchronously ensuring perfect mirror
     const cfg = window.vizConfig || { gap: 10, bSq: 2.7 };
     
-    for (let i = 0; i < barsPerSide; i++) {
-        // Create the customizable gap on the outside edges
-        let isGap = i < cfg.gap;
-        let binIndex = isGap ? 0 : (i - cfg.gap) * step;
+    for (let binIndex = 0; binIndex < barsPerSide; binIndex++) {
+        // Create the customizable gap on the outside edges (e.g., bins 0-8 are blank)
+        let isGap = binIndex < cfg.gap;
         let v = isGap ? 0 : (d[binIndex] || 0);
         
         // i=0 is Sub-Bass. Arin Nation visualizer maps Bass to the far edges of the screen,
         // and Treble (highs) into the dead center of the screen.
-        let xLeft = (i * sp);                // Left half: Bass at x=0, walks right -> to center
-        let xRight = w - (i * sp) - sp;      // Right half: Bass at x=w, walks left <- to center
+        let xLeft = (binIndex * sp);                // Left half: Bass at x=0, walks right -> to center
+        let xRight = w - (binIndex * sp) - sp;      // Right half: Bass at x=w, walks left <- to center
         
         drawBar(xLeft, v);
         drawBar(xRight, v);
@@ -1787,23 +1782,26 @@ class Visualizer {
     for (let i = 0; i < this.liquidBinCount; i++) {
         let radius = baseRadius;
         
-        // PERFECT MATHEMATICAL GAUSSIAN HORN (TOP)
-        let dist = Math.abs(i - tunePos);
+        // We calculate visual placement of bumps logically matching the background array (0-60)
+        // The ring `this.liquidBinCount` has 48 points covering Top (0) to Bottom (48)
+        
+        let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
+        let midPos = Math.floor((cfg.mEnd / 60) * this.liquidBinCount);
+        let highPos = Math.floor((cfg.hEnd / 60) * this.liquidBinCount);
+
+        // 1. TOP HORNS (Sub-Bass)
+        let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
-        // SECONDARY GAUSSIAN HORN (BOTTOM HILLS - Independent Mids Sync)
-        let bottomPos = this.liquidBinCount - tunePos + 4; // roughly 36 if tunePos is 16
-        let bottomDist = Math.abs(i - bottomPos);
-        // Uses midSpike instead of bassSpike so it reacts to different instruments
-        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
-        radius += bottomHornHeight;
+        // 2. MEDIUM HILLS (Mids / 44-55)
+        let midDist = Math.abs(i - midPos);
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
+        radius += midHornHeight;
         
-        // TERTIARY GAUSSIAN HORN (EQUATOR HORNS - Independent Treble Sync)
-        let equatorPos = Math.floor((tunePos + bottomPos) / 2); // Roughly index 26
-        let equatorDist = Math.abs(i - equatorPos);
-        // mapped to Highs (yellow box in user diagram)
-        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
+        // 3. SMALL HILLS (Treble/Highs / 33-42)
+        let highDist = Math.abs(i - highPos);
+        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
         
         const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
@@ -1814,20 +1812,22 @@ class Visualizer {
     for (let i = this.liquidBinCount - 2; i > 0; i--) {
         let radius = baseRadius;
         
-        let dist = Math.abs(i - tunePos);
+        let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
+        let midPos = Math.floor((cfg.mEnd / 60) * this.liquidBinCount);
+        let highPos = Math.floor((cfg.hEnd / 60) * this.liquidBinCount);
+        
+        let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
-        let bottomPos = this.liquidBinCount - tunePos + 4; 
-        let bottomDist = Math.abs(i - bottomPos);
-        let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
-        radius += bottomHornHeight;
+        let midDist = Math.abs(i - midPos);
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
+        radius += midHornHeight;
         
-        let equatorPos = Math.floor((tunePos + bottomPos) / 2);
-        let equatorDist = Math.abs(i - equatorPos);
-        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
+        let highDist = Math.abs(i - highPos);
+        let equatorHornHeight = Math.exp(-(highDist * highDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.25) * highSpike * sens;
         radius += equatorHornHeight;
-        
+
         const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
         points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
     }
