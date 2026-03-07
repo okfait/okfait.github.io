@@ -14,7 +14,7 @@ import {
   uploadBytesResumable,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
-import { SpotifyManager } from "./spotify.js";
+import { SpotifyManager } from "./spotify.js?v=2";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvJ_lGnmH3Dll1E-HY5CuqzKGqQBXb-C4",
