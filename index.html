@@ -604,6 +604,10 @@
                 <input type="range" id="tuneSensSlider" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
             </div>
             <div class="mb-3">
+                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Motion Smoothness</span><span id="tuneSmoothVal">0.25</span></div>
+                <input type="range" id="tuneSmoothSlider" min="0.05" max="1.0" step="0.05" value="0.25" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
+            </div>
+            <div class="mb-3">
                 <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Main Horn Angle</span><span id="tunePosVal">16</span></div>
                 <input type="range" id="tunePosSlider" min="5" max="24" step="1" value="16" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
                 <p class="text-[9px] text-white/30 mt-1">Lower = Top Center. Higher = Sides.</p>
