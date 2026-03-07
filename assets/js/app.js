@@ -1640,8 +1640,10 @@ class Visualizer {
     
     // Left side and Right side rendered synchronously ensuring perfect mirror
     for (let i = 0; i < barsPerSide; i++) {
-        let binIndex = i * step;
-        let v = d[binIndex] || 0;
+        // Create the 10-bar gap on the outside edges as requested by the user
+        let isGap = i < 10;
+        let binIndex = isGap ? 0 : (i - 10) * step;
+        let v = isGap ? 0 : (d[binIndex] || 0);
         
         // i=0 is Sub-Bass. Arin Nation visualizer maps Bass to the far edges of the screen,
         // and Treble (highs) into the dead center of the screen.
@@ -1776,15 +1778,6 @@ class Visualizer {
         let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
         radius += equatorHornHeight;
         
-        // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
-        if (i >= 20) {
-            let rippleBin = (i - 20) * 2; // sample some higher frequencies
-            let rippleVal = (frameData[rippleBin] || 0) / 255.0;
-            let fade = Math.min(1.0, (i - 20) / 10.0); // fade them in smoothly towards the bottom
-            // Remove threshold for bottom ripples so it always moves a little bit
-            radius += rippleVal * 25 * sens * fade;
-        }
-        
         const theta = -Math.PI / 2 + (i / totalPoints) * Math.PI * 2;
         points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
     }
@@ -1807,13 +1800,6 @@ class Visualizer {
         let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
         radius += equatorHornHeight;
         
-        if (i >= 20) {
-            let rippleBin = (i - 20) * 2;
-            let rippleVal = (frameData[rippleBin] || 0) / 255.0;
-            let fade = Math.min(1.0, (i - 20) / 10.0);
-            radius += rippleVal * 25 * sens * fade;
-        }
-
         const theta = -Math.PI / 2 - (i / totalPoints) * Math.PI * 2;
         points.push({ x: cx + Math.cos(theta) * radius, y: cy + Math.sin(theta) * radius });
     }
