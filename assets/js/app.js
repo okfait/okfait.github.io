@@ -922,8 +922,8 @@ class AudioSystem {
     this.revGain = this.ctx.createGain();
     this.revGain.gain.value = 0;
     this.gain = this.ctx.createGain();
+    this.src.connect(this.analyser); // Analyser receives pure un-boosted signal
     this.src.connect(this.bass);
-    this.bass.connect(this.analyser);
     this.bass.connect(this.reverb);
     this.reverb.connect(this.revGain);
     this.revGain.connect(this.gain);
@@ -1603,6 +1603,41 @@ class Visualizer {
     }
   }
 
+  drawMirroredBars(ctx, w, h, d) {
+    const barsPerSide = 80;
+    const totalBars = barsPerSide * 2; // 160
+    const sp = w / totalBars;
+    const sens = window.vizSens || 1.0;
+    const col = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    
+    // Use the first 60% of frequency bins to avoid empty trailing data
+    const lim = Math.floor(d.length * 0.6);
+    const step = Math.max(1, Math.floor(lim / barsPerSide));
+    
+    ctx.fillStyle = col;
+    // User requested "no liquid mod on the lines" so just raw clean rectangles.
+    const path = new Path2D();
+    
+    // Left side (mirrored: bass is at the center, highs at the far left edge)
+    for (let i = 0; i < barsPerSide; i++) {
+        let binIndex = (barsPerSide - 1 - i) * step;
+        let v = (d[binIndex] || 0) * sens;
+        let bh = (v / 255) * (h * 0.8);
+        path.rect((i * sp) | 0, (h - bh) | 0, Math.max(1, sp - 2) | 0, bh | 0);
+    }
+    
+    // Right side (normal: bass is at the center, highs at the far right edge)
+    for (let i = 0; i < barsPerSide; i++) {
+        let binIndex = i * step;
+        let v = (d[binIndex] || 0) * sens;
+        let bh = (v / 255) * (h * 0.8);
+        let xOffset = (w / 2) + (i * sp);
+        path.rect(xOffset | 0, (h - bh) | 0, Math.max(1, sp - 2) | 0, bh | 0);
+    }
+    
+    ctx.fill(path);
+  }
+
   // Global handler for the Liquid Tuner hidden UI
   updateVizTuning() {
     try {
@@ -1619,6 +1654,7 @@ class Visualizer {
         if (pSpan) pSpan.innerText = pVal;
     } catch(e) {}
   }
+
 
   getSymmetricPoints(cx, cy, frameData) {
     const points = [];
@@ -1674,6 +1710,25 @@ class Visualizer {
         midSpike = Math.pow(normalizedMid, 3.0); // Slightly softer squash than bass
     }
 
+    // 4. Independent Treble Energy for the sideways Equator bumps
+    let highSum = 0;
+    // Bins 35-45 typically contain high hats and extreme synth frequencies (Treble)
+    for(let i=35; i<45; i++) highSum += (frameData[i] || 0);
+    let highAvg = (highSum / 10) / 255.0; // 0.0 to 1.0
+    
+    let highSpike = 0;
+    let highThreshold = 0.35; // Treble is even quieter naturally
+    if (highAvg > highThreshold) {
+        let normalizedHigh = (highAvg - highThreshold) / (1.0 - highThreshold);
+        highSpike = Math.pow(normalizedHigh, 2.5);
+    }
+    
+    // Save to global for the Nerd Stats UI (sampled efficiently)
+    window.nerdStats = {
+        bass: bassAvg.toFixed(3),
+        mid: midAvg.toFixed(3),
+        high: highAvg.toFixed(3)
+    };
     
     // Width of the Gaussian horn
     let sigma = 1.0 + ((tunePinch - 0.5) / 0.49) * 3.0; // ranges from 1.0 to 4.0
@@ -1694,10 +1749,11 @@ class Visualizer {
         let bottomHornHeight = Math.exp(-(bottomDist * bottomDist) / (2 * (sigma * 0.8) * (sigma * 0.8))) * (maxBump * 0.40) * midSpike * sens;
         radius += bottomHornHeight;
         
-        // TERTIARY GAUSSIAN HORN (EQUATOR HORNS - Tiny horizontal bumps)
+        // TERTIARY GAUSSIAN HORN (EQUATOR HORNS - Independent Treble Sync)
         let equatorPos = Math.floor((tunePos + bottomPos) / 2); // Roughly index 26
         let equatorDist = Math.abs(i - equatorPos);
-        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * midSpike * sens;
+        // mapped to Highs (yellow box in user diagram)
+        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
         radius += equatorHornHeight;
         
         // BOTTOM FREQUENCY RIPPLES (Organic mids/highs)
@@ -1728,7 +1784,7 @@ class Visualizer {
         
         let equatorPos = Math.floor((tunePos + bottomPos) / 2);
         let equatorDist = Math.abs(i - equatorPos);
-        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * midSpike * sens;
+        let equatorHornHeight = Math.exp(-(equatorDist * equatorDist) / (2 * (sigma * 0.5) * (sigma * 0.5))) * (maxBump * 0.15) * highSpike * sens;
         radius += equatorHornHeight;
         
         if (i >= 20) {
@@ -1780,11 +1836,11 @@ class Visualizer {
       cy = rect.top + rect.height / 2;
     }
     
-    // UI Feature: Draw the audio spectrum "sound lines" behind the liquid visualizer
+    // UI Feature: Draw the perfectly mirrored audio spectrum "sound lines" behind the liquid visualizer
     if (document.getElementById("tuneBgLines") && document.getElementById("tuneBgLines").checked) {
         ctx.save();
-        ctx.globalAlpha = 0.3; // Make them fade into the background organically
-        this.drawBars(ctx, w, h, ignored_d);
+        ctx.globalAlpha = 0.4; // Make them fade into the background organically
+        this.drawMirroredBars(ctx, w, h, ignored_d);
         ctx.restore();
     }
 
@@ -5389,6 +5445,31 @@ const playlistParam = urlParams.get("playlist");
 if (playlistParam && window.libraryMgr) {
   setTimeout(() => window.libraryMgr.loadSharedLibrary(playlistParam), 1500);
 }
+
+// --- NERD STATS UI LOOP & CLIPBOARD ---
+window.copyNerdStats = function() {
+    if(!window.nerdStats) return;
+    const info = `=== LIQUID TUNER (NERD STATS) ===\nSub-Bass (Bins 0-5): ${window.nerdStats.bass}\nMids (Bins 15-25): ${window.nerdStats.mid}\nTreble (Bins 35-45): ${window.nerdStats.high}\n\nTimestamp: ${new Date().toISOString()}`;
+    navigator.clipboard.writeText(info).then(() => {
+        const msg = document.getElementById("nerdCopiedMsg");
+        if(msg) {
+            msg.style.opacity = 1;
+            setTimeout(() => msg.style.opacity = 0, 2000);
+        }
+    });
+};
+
+setInterval(() => {
+    const modal = document.getElementById('vizTunerModal');
+    if(modal && modal.style.display !== 'none' && window.nerdStats) {
+        let eBass = document.getElementById('nerdBass');
+        let eMid = document.getElementById('nerdMid');
+        let eHigh = document.getElementById('nerdHigh');
+        if(eBass) eBass.innerText = window.nerdStats.bass;
+        if(eMid) eMid.innerText = window.nerdStats.mid;
+        if(eHigh) eHigh.innerText = window.nerdStats.high;
+    }
+}, 100);
 
 // DPPD Setup
 window.updateDPPD = function () {
