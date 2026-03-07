@@ -1261,70 +1261,59 @@ class HistoryBuffer {
 }
 
 // -------------------------------------------------------------
-// Audio-Reactive Particle System (Sparks)
+// 3D Audio-Reactive Particle System (Sparks POV)
 // -------------------------------------------------------------
 class VisualizerParticle {
     constructor(w, h) {
-        this.w = w * 2; // extended bounds for camera shake
-        this.h = h * 2;
-        this.reset();
-        // Give them a random starting spot so they don't all spawn at 0,0
-        this.x = (Math.random() - 0.5) * this.w;
-        this.y = (Math.random() - 0.5) * this.h;
+        this.w = w;
+        this.h = h;
+        this.reset(true);
     }
     
-    reset() {
-        this.x = (Math.random() - 0.5) * this.w;
-        this.y = (Math.random() - 0.5) * this.h;
-        this.baseVx = (Math.random() - 0.5) * 0.5;
-        this.baseVy = -Math.random() * 1.5 - 0.5; // Natural upward drift
-        this.vx = this.baseVx;
-        this.vy = this.baseVy;
+    reset(randomZ = false) {
+        // Random placement across a wide 3D grid
+        this.x = (Math.random() - 0.5) * this.w * 4; 
+        this.y = (Math.random() - 0.5) * this.h * 4;
+        
+        // Z is "depth". 2000 is far away, 0 is hitting the camera.
+        this.z = randomZ ? Math.random() * 2000 : 2000;
+        
         this.radius = Math.random() * 1.5 + 0.5;
-        this.alpha = Math.random() * 0.5 + 0.1;
-        this.angle = Math.atan2(this.y, this.x); // Angle from center
-        this.dist = Math.hypot(this.x, this.y);
+        this.alpha = Math.random() * 0.7 + 0.1;
     }
     
-    update(bassSpike) {
-        // Standard upward drift
-        this.vx = this.baseVx;
-        this.vy = this.baseVy;
+    update(volumeIntensity) {
+        // Base drift speed + massive speed boost based on total song volume
+        const speed = 2.0 + (volumeIntensity * 40.0);
         
-        // Audio Scatter Force (Explode outward from center on beat drop)
-        if (bassSpike > 0.1) {
-            const explosionForce = bassSpike * 15.0; // How violently they push
-            // Push outwards along their angle from the center (0,0)
-            this.vx += Math.cos(this.angle) * explosionForce * (200 / Math.max(100, this.dist)); 
-            this.vy += Math.sin(this.angle) * explosionForce * (200 / Math.max(100, this.dist));
-        }
+        // Move particle TOWARD the camera (Decrease Z)
+        this.z -= speed;
         
-        this.x += this.vx;
-        this.y += this.vy;
-        
-        // Wrap around bounds (camera handles translation so 0,0 is center)
-        const hw = this.w / 2;
-        const hh = this.h / 2;
-        
-        if (this.y < -hh) {
-            this.y = hh;
-            this.x = (Math.random() - 0.5) * this.w;
-            this.dist = Math.hypot(this.x, this.y);
-            this.angle = Math.atan2(this.y, this.x);
-        }
-        if (this.x < -hw || this.x > hw) {
-            this.x = (Math.random() - 0.5) * this.w;
-            this.y = (Math.random() - 0.5) * this.h;
-            this.dist = Math.hypot(this.x, this.y);
-            this.angle = Math.atan2(this.y, this.x);
+        // If it passes behind the camera, respawn it far away
+        if (this.z <= 0) {
+            this.reset();
         }
     }
     
     draw(ctx) {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
-        ctx.fill();
+        // 3D Projection Math (Divide X and Y by Z to simulate perspective)
+        const perspective = 800; // Focal length
+        const scale = perspective / (perspective + this.z);
+        
+        // Project 3D coordinates to 2D screen coordinates
+        const projectedX = this.x * scale;
+        const projectedY = this.y * scale;
+        
+        // Particles get bigger and fade out slightly as they get closer to the camera
+        const projectedRadius = this.radius * scale * 2.0;
+        
+        // Only draw if within bounds
+        if (Math.abs(projectedX) < this.w && Math.abs(projectedY) < this.h) {
+            ctx.beginPath();
+            ctx.arc(projectedX, projectedY, Math.max(0.1, projectedRadius), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha * scale})`;
+            ctx.fill();
+        }
     }
 }
 
@@ -1460,6 +1449,27 @@ class Visualizer {
     const shake = this.xStrength * 60 * baseZoom;
     const zoom = baseZoom + this.xStrength * 0.15 * baseZoom;
     const rot = (Math.random() - 0.5) * this.xStrength * 0.25;
+    const sens = window.vizSens || 1.0;
+    
+    // Calculate Total Audio Volume for Particle POV Speed
+    let totalVol = 0;
+    for (let i = 0; i < buf.length; i++) totalVol += buf[i];
+    let avgVolume = (totalVol / buf.length) / 255.0; // 0.0 to 1.0
+    
+    ctx.clearRect(-w, -h, w * 3, h * 3);
+    // Draw Particles behind everything else (AND independent of camera shake)
+    const cfg = window.vizConfig || { sparks: true };
+    if (cfg.sparks !== false) {
+        ctx.save();
+        ctx.translate(w / 2, h / 2); // Center 0,0 without the shake
+        for (let i = 0; i < this.particles.length; i++) {
+            this.particles[i].update(avgVolume);
+            this.particles[i].draw(ctx);
+        }
+        ctx.restore();
+    }
+
+    // --- APPLY CAMERA SHAKE TO MAIN VISUALIZER ONLY ---
     ctx.save();
     ctx.translate(w / 2, h / 2);
     ctx.scale(zoom, zoom);
@@ -1473,20 +1483,7 @@ class Visualizer {
       ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
       ctx.fillRect(-w, -h, w * 3, h * 3);
     }
-    ctx.clearRect(-w, -h, w * 3, h * 3);
-    
-    // Draw Particles behind everything else
-    const cfg = window.vizConfig || { sparks: true };
-    if (cfg.sparks !== false) {
-        ctx.save();
-        for (let i = 0; i < this.particles.length; i++) {
-            this.particles[i].update(this.lastBassSpike || 0);
-            this.particles[i].draw(ctx);
-        }
-        ctx.restore();
-    }
-
-    const sens = window.vizSens || 1.0;
+    // --------------------------------------------------
     let bass = 0;
     for (let i = 0; i < 4; i++) bass += buf[i] * sens;
     bass /= 4;
