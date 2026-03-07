@@ -437,6 +437,21 @@ class LibraryManager {
     }
     return false;
   }
+  expandToItem(id) {
+    const findAndOpen = (list) => {
+      for (const item of list) {
+        if (item.id === id) return true;
+        if (item.type === "folder") {
+          if (findAndOpen(item.items)) {
+            item.isOpen = true;
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+    findAndOpen(this.structure);
+  }
 
   async shareLibrary() {
     if (!window.db || !window.storage) return alert("Firebase not connected.");
@@ -1327,10 +1342,24 @@ class Visualizer {
   constructor() {
     this.cv = window.$("vizCanvas");
     this.ctx = this.cv.getContext("2d");
-    this.mode = "ring";
+
+    // Load Persisted Mode
+    const savedMode = localStorage.getItem("okmusic_viz_mode");
+    this.mode = savedMode || "ring";
+
     this.smooth = true;
     this.flash = true;
     this.rippleEffect = true;
+
+    // Load Persisted Config
+    const savedConfig = localStorage.getItem("okmusic_viz_config");
+    if (savedConfig) {
+      try {
+        window.vizConfig = JSON.parse(savedConfig);
+      } catch (e) {
+        console.warn("Failed to parse saved viz config", e);
+      }
+    }
 
     // Temporal Ghosting Variables
     this.history = new HistoryBuffer(30, 1024);
@@ -1350,6 +1379,14 @@ class Visualizer {
     for (let i = 0; i < 200; i++) {
         this.particles.push(new VisualizerParticle(window.innerWidth, window.innerHeight));
     }
+
+    // Set UI button text on init
+    setTimeout(() => {
+        const btn = window.$("vizModeBtn");
+        if(btn) btn.innerText = this.mode.toUpperCase();
+        // Update album art shape
+        window.$("albumArt").className = `album-art glass-panel ${this.mode === "ring" || this.mode === "liquid" ? "circle" : ""}`;
+    }, 500);
   }
   resize() {
     this.cv.width = window.innerWidth;
@@ -1362,6 +1399,8 @@ class Visualizer {
     if (this.mode === "ring") this.mode = "bar";
     else if (this.mode === "bar") this.mode = "liquid";
     else this.mode = "ring";
+
+    localStorage.setItem("okmusic_viz_mode", this.mode);
     window.$("vizModeBtn").innerText = this.mode.toUpperCase();
     window.$("albumArt").className =
       `album-art glass-panel ${this.mode === "ring" || this.mode === "liquid" ? "circle" : ""}`;
@@ -1489,6 +1528,19 @@ class Visualizer {
     let bass = 0;
     for (let i = 0; i < 4; i++) bass += buf[i] * sens;
     bass /= 4;
+
+    // RESTORED: Beat Flash Logic
+    const flashEl = window.$("beat-flash");
+    if (this.flash && flashEl) {
+        const th = 80; // Even lower threshold (from 100)
+        if (bass > th) {
+            const intensity = (bass - th) / (255 - th);
+            flashEl.style.opacity = intensity * 1.2; // Even higher intensity (from 1.0)
+            flashEl.style.transform = `translate(-50%, -50%) scale(${baseZoom})`;
+        } else {
+            flashEl.style.opacity = 0;
+        }
+    }
 
     // Bass Reactive Background
     const bgLayer = window.$("bg-layer");
@@ -1759,6 +1811,8 @@ class Visualizer {
         let mEnd = val("tuneMidEndSlider", 25);
         let mThr = val("tuneMidThreshSlider", 0.40);
         let mSq = val("tuneMidSquashSlider", 3.0);
+        let mSweepCb = document.getElementById("tuneMidSweep");
+        let mSweep = mSweepCb ? mSweepCb.checked : false;
         setTxt("tuneMidBinVal", `${mStart} - ${mEnd}`);
         setTxt("tuneMidThreshVal", mThr.toFixed(2));
         setTxt("tuneMidSquashVal", mSq.toFixed(1));
@@ -1772,6 +1826,15 @@ class Visualizer {
         setTxt("tuneHighThreshVal", hThr.toFixed(2));
         setTxt("tuneHighSquashVal", hSq.toFixed(1));
         
+        // Ticks / Clicks
+        let tStart = val("tuneTickStartSlider", 80);
+        let tEnd = val("tuneTickEndSlider", 120);
+        let tThr = val("tuneTickThreshSlider", 0.25);
+        let tSq = val("tuneTickSquashSlider", 2.0);
+        setTxt("tuneTickBinVal", `${tStart} - ${tEnd}`);
+        setTxt("tuneTickThreshVal", tThr.toFixed(2));
+        setTxt("tuneTickSquashVal", tSq.toFixed(1));
+        
         // Save to global config for engine
         let sparksCb = document.getElementById("tuneSparks");
         let sparks = sparksCb ? sparksCb.checked : true;
@@ -1779,9 +1842,11 @@ class Visualizer {
         window.vizConfig = {
             width, sens, pos, gap, sparks,
             bEnd, bThr, bSq,
-            mStart, mEnd, mThr, mSq,
-            hStart, hEnd, hThr, hSq
+            mStart, mEnd, mThr, mSq, mSweep,
+            hStart, hEnd, hThr, hSq,
+            tStart, tEnd, tThr, tSq
         };
+        localStorage.setItem("okmusic_viz_config", JSON.stringify(window.vizConfig));
         
         // Hide UI
         const hideUIcb = document.getElementById("tuneHideUI");
@@ -1803,7 +1868,8 @@ class Visualizer {
         width: 0.85, sens: window.vizSens || 1.0, pos: 16, sparks: true,
         bEnd: 5, bThr: 0.50, bSq: 4.0,
         mStart: 15, mEnd: 25, mThr: 0.40, mSq: 3.0,
-        hStart: 35, hEnd: 45, hThr: 0.35, hSq: 2.5
+        hStart: 35, hEnd: 45, hThr: 0.35, hSq: 2.5,
+        tStart: 80, tEnd: 120, tThr: 0.25, tSq: 2.0
     };
     
     let tunePos = cfg.pos;
@@ -1854,6 +1920,27 @@ class Visualizer {
         midSpike = Math.pow(normalizedMid, cfg.mSq); 
     }
 
+    // --- NEW: Mid-Range Pitch Centroid (for Pitch Sweep effect) ---
+    let midCentroid = 0.5; // Default center
+    if (cfg.mSweep && midSpike > 0.05) {
+        let totalEnergy = 0;
+        let weightedIndex = 0;
+        for (let i = cfg.mStart; i <= cfg.mEnd; i++) {
+            let energy = (frameData[i] || 0) / 255.0;
+            weightedIndex += i * energy;
+            totalEnergy += energy;
+        }
+        if (totalEnergy > 0) {
+            let rawCentroid = weightedIndex / totalEnergy;
+            // Map to 0-1 range within the mid band
+            midCentroid = (rawCentroid - cfg.mStart) / (cfg.mEnd - cfg.mStart);
+            midCentroid = Math.max(0, Math.min(1, midCentroid));
+        }
+    }
+    // Smoothing the pitch factor across frames
+    if (this.smoothMidPitch === undefined) this.smoothMidPitch = 0.5;
+    this.smoothMidPitch += (midCentroid - this.smoothMidPitch) * 0.15;
+
     // 4. Independent Treble Energy for the sideways Equator bumps (With Bleed)
     let highAvg = getBleedingEnergy(cfg.hStart, cfg.hEnd); 
     
@@ -1863,13 +1950,23 @@ class Visualizer {
         highSpike = Math.pow(normalizedHigh, cfg.hSq);
     }
     
+    // 5. Independent Tick/Hi-Hat Energy for inner upper bumps
+    let tickAvg = getBleedingEnergy(cfg.tStart, cfg.tEnd); 
+    
+    let tickSpike = 0;
+    if (tickAvg > cfg.tThr) {
+        let normalizedTick = (tickAvg - cfg.tThr) / (1.0 - cfg.tThr);
+        tickSpike = Math.pow(normalizedTick, cfg.tSq);
+    }
+    
     this.lastBassSpike = bassSpike;
     
     // Save to global for the Nerd Stats UI (sampled efficiently)
     window.nerdStats = {
         bass: bassAvg.toFixed(3),
         mid: midAvg.toFixed(3),
-        high: highAvg.toFixed(3)
+        high: highAvg.toFixed(3),
+        tick: tickAvg.toFixed(3)
     };
     
     // Width of the Gaussian horn
@@ -1883,19 +1980,37 @@ class Visualizer {
         // liquidBinCount = 48 points covering Top (0) to Bottom (48)
         
         let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
+        let tickPos = hornPos + 5; // Place ticks slightly further from center than main horn
+        if (tickPos > this.liquidBinCount - 2) tickPos = this.liquidBinCount - 2;
         let highPos = Math.floor(this.liquidBinCount * 0.50); // index 24 (Equator)
-        // Mids mapped to Medium Hills -> placed near the bottom corners 
-        // 0.85 * 48 = index ~40
-        let midPos = Math.floor(this.liquidBinCount * 0.85);
+        
+        // --- DYNAMIC MID POSITIONING ---
+        let midBasePos = Math.floor(this.liquidBinCount * 0.85);
+        let midPos = midBasePos;
+        let midHeightScale = 1.0;
+
+        if (cfg.mSweep) {
+            // High Pitch (0) -> default position (~0.85)
+            // Low Pitch (1) -> sweep further right (towards index 32)
+            // Also invert height at low pitch
+            let sweep = this.smoothMidPitch; 
+            midPos = midBasePos - Math.floor(sweep * 15); // Sweep up towards equator
+            midHeightScale = 1.0 - (sweep * 2.5); // 1.0 (out) -> -1.5 (deep inside)
+        }
 
         // 1. TOP HORNS (Sub-Bass)
         let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
+        // 1b. TICK HILLS (Hi-Hats / Clicks - sharp inner bumps)
+        let tickDist = Math.abs(i - tickPos);
+        let tickHornHeight = Math.exp(-(tickDist * tickDist) / (2 * (sigma * 0.45) * (sigma * 0.45))) * (maxBump * 0.4) * tickSpike * sens;
+        radius += tickHornHeight;
+        
         // 2. MEDIUM HILLS (Mids/Vocals)
         let midDist = Math.abs(i - midPos);
-        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * midHeightScale * sens;
         radius += midHornHeight;
         
         // 3. SMALL HILLS (Treble/Highs @ Equator)
@@ -1912,15 +2027,32 @@ class Visualizer {
         let radius = baseRadius;
         
         let hornPos = Math.floor((tunePos / 60) * this.liquidBinCount);
+        let tickPos = hornPos + 5;
+        if (tickPos > this.liquidBinCount - 2) tickPos = this.liquidBinCount - 2;
         let highPos = Math.floor(this.liquidBinCount * 0.50);
-        let midPos = Math.floor(this.liquidBinCount * 0.85);
-        
+        let midBasePos = Math.floor(this.liquidBinCount * 0.85);
+        let midPos = midBasePos;
+        let midHeightScale = 1.0;
+
+        if (cfg.mSweep) {
+            let sweep = this.smoothMidPitch;
+            midPos = midBasePos - Math.floor(sweep * 15);
+            midHeightScale = 1.0 - (sweep * 2.5);
+        }
+
+        // 1. TOP HORNS (Sub-Bass)
         let dist = Math.abs(i - hornPos);
         let hornHeight = Math.exp(-(dist * dist) / (2 * sigma * sigma)) * maxBump * bassSpike * sens;
         radius += hornHeight;
         
+        // 1b. TICK HILLS
+        let tickDist = Math.abs(i - tickPos);
+        let tickHornHeight = Math.exp(-(tickDist * tickDist) / (2 * (sigma * 0.45) * (sigma * 0.45))) * (maxBump * 0.4) * tickSpike * sens;
+        radius += tickHornHeight;
+        
+        // 2. MEDIUM HILLS (Mids/Vocals)
         let midDist = Math.abs(i - midPos);
-        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * sens;
+        let midHornHeight = Math.exp(-(midDist * midDist) / (2 * (sigma * 0.7) * (sigma * 0.7))) * (maxBump * 0.50) * midSpike * midHeightScale * sens;
         radius += midHornHeight;
         
         let highDist = Math.abs(i - highPos);
@@ -2081,15 +2213,23 @@ class Visualizer {
     );
     const mainPath = this.buildSmoothPath(mainPts);
 
+    const acc = getComputedStyle(document.documentElement).getPropertyValue("--accent") || "#ff0044";
+
     if (tMode === "solid-fill") {
-      ctx.fillStyle = getComputedStyle(
-        document.documentElement,
-      ).getPropertyValue("--accent");
+      ctx.fillStyle = acc;
     } else {
       ctx.fillStyle = "#ffffff";
+      
+      // User requested "white filled in and accent color glow"
+      // Pulsing glow linked to beat flash / bass spike
+      if (this.flash && this.lastBassSpike > 0.1) {
+          ctx.shadowBlur = 30 * this.lastBassSpike;
+          ctx.shadowColor = acc;
+      }
     }
 
     ctx.fill(mainPath);
+    ctx.shadowBlur = 0; // Reset for next frame
   }
 }
 
@@ -4212,6 +4352,7 @@ class UI {
     const precisePct = (pct / 100) * (vs.offsetHeight - 12) + 6;
     vs.style.background = `linear-gradient(to top, var(--accent) ${precisePct}px, rgba(255,255,255,0.1) ${precisePct}px)`;
     window.audioSys.setVolume(v);
+    localStorage.setItem("okmusic_volume", v);
   }
   toggleLibrary() {
     window.$("libraryPanel").classList.toggle("open");
@@ -4671,9 +4812,61 @@ class Player {
     this.shuffleHistory = [];
     this.queue = [];
     this.db = new MusicDB();
-    this.db.init().then(() => this.loadLib());
+    this.db.init().then(() => {
+        this.loadLib().then(() => {
+            this.restorePlaybackState();
+        });
+    });
     this.loadSettings();
     this.currentTrack = null;
+
+    // Periodically save playback time for persistence
+    setInterval(() => {
+        if (window.audioSys && window.audioSys.audio && !window.audioSys.audio.paused) {
+            localStorage.setItem("okmusic_last_time", window.audioSys.audio.currentTime);
+        }
+    }, 5000);
+  }
+
+  restorePlaybackState() {
+    console.log("Restoring playback state...");
+    const lastSongId = localStorage.getItem("okmusic_last_song");
+    const lastPlaylist = localStorage.getItem("okmusic_last_playlist");
+    const lastTime = localStorage.getItem("okmusic_last_time");
+
+    if (lastPlaylist) {
+      try {
+        this.playlist = JSON.parse(lastPlaylist);
+      } catch (e) {}
+    }
+
+    if (lastSongId) {
+      const song = this.songs.find((s) => s.id === lastSongId);
+      if (song) {
+        console.log("Restoring song:", song.name);
+        this.currId = song.id;
+        this.currentTrack = song;
+        window.ui.setTrack(song);
+        
+        // AUTO-EXPAND folders to show the song
+        window.libraryMgr.expandToItem(song.id);
+        window.ui.renderLibrary();
+        
+        // Prepare audio system
+        if (window.audioSys && window.audioSys.audio) {
+            window.audioSys.audio.src = song.url;
+            window.audioSys.audio.load();
+            
+            if (lastTime) {
+                const onReady = () => {
+                    window.audioSys.audio.currentTime = parseFloat(lastTime);
+                    window.audioSys.audio.removeEventListener("loadedmetadata", onReady);
+                };
+                window.audioSys.audio.addEventListener("loadedmetadata", onReady);
+            }
+        }
+      }
+    }
   }
 
   async handleUpload(input) {
@@ -4712,6 +4905,7 @@ class Player {
     const s = await this.db.getAll();
     window.libraryMgr.sync(s);
     this.songs = s;
+    window.ui.renderLibrary(); // Ensure library shows on refresh
   }
 
   play(id, contextList = null, renderList = true) {
@@ -4722,12 +4916,14 @@ class Player {
         this.shuffleHistory = [];
       }
       this.playlist = contextList;
+      localStorage.setItem("okmusic_last_playlist", JSON.stringify(this.playlist));
     }
 
     const s = this.songs.find((x) => x.id === id);
     if (!s) return;
     this.currId = s.id;
     this.currentTrack = s;
+    localStorage.setItem("okmusic_last_song", s.id);
 
     if (window.curveEditor) {
       window.curveEditor.beatSignals = s.beatSignals || [];
@@ -5006,6 +5202,10 @@ class Player {
     window.$("btnLoop").style.color = this.loop ? "var(--accent)" : "inherit";
   }
   loadSettings() {
+    const vol = localStorage.getItem("okmusic_volume");
+    if (vol && window.$("volSlider")) {
+        window.ui.updateVolume(parseFloat(vol));
+    }
     const b = localStorage.getItem("sv_bass");
     if (b) {
       document.querySelectorAll(".setting-slider")[1].value = b;

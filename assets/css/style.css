@@ -109,7 +109,7 @@ input[type="number"] {
   mix-blend-mode: screen;
   opacity: 0;
   pointer-events: none;
-  z-index: -2;
+  z-index: 0;
   transition: opacity 0.1s ease-out;
   border-radius: 50%;
   filter: blur(40px);

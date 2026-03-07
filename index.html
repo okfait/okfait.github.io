@@ -223,7 +223,7 @@
                 <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
                     <span class="text-sm font-bold ml-2">Mode</span>
                     <div class="flex gap-2">
-                        <button onclick="document.getElementById('vizTunerModal').style.display='block'" class="text-[10px] bg-white/10 border border-white/5 px-3 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide"><i class="fa-solid fa-sliders"></i></button>
+                        <button onclick="document.getElementById('vizTunerModal').style.display='flex'" class="text-[10px] bg-white/10 border border-white/5 px-3 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide"><i class="fa-solid fa-sliders"></i></button>
                         <button onclick="window.viz.toggleMode()" id="vizModeBtn" class="text-[10px] bg-white/10 border border-white/5 px-4 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide">RING</button>
                     </div>
                 </div>
@@ -581,7 +581,7 @@
     </div>
 
     <!-- VISUALIZER TUNING MODAL (Secret Extended) -->
-    <div class="glass-modal" id="vizTunerModal" style="display:none; width: 360px; z-index: 10000; position: absolute; max-height: 85vh; flex-direction: column; overflow: hidden;">
+    <div class="glass-modal" id="vizTunerModal" style="display:none; width: 360px; z-index: 10000; position: absolute; top: 5%; height: 90vh; max-height: 90vh; flex-direction: column; overflow: hidden; left: 50%; transform: translateX(-50%);">
         
         <!-- Draggable Header -->
         <div id="vizTunerHeader" class="p-4 border-b border-white/10 flex justify-between items-center bg-black/40 cursor-move">
@@ -663,6 +663,11 @@
                 <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneMidSquashVal">3.0</span></div>
                 <input type="range" id="tuneMidSquashSlider" min="1.0" max="10.0" step="0.5" value="3.0" class="w-full accent-[#3b82f6]" oninput="window.updateVizTuning()">
             </div>
+            <label class="flex justify-between items-center px-1 mb-4 cursor-pointer group">
+                <span class="text-[10px] text-white/50 uppercase font-bold group-hover:text-white transition">Pitch Sweep Alignment</span>
+                <input type="checkbox" id="tuneMidSweep" class="hidden peer" onchange="window.updateVizTuning()">
+                <div class="w-8 h-4 bg-white/10 rounded-full border border-white/10 peer-checked:bg-[#3b82f6] transition-all relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-3 after:w-3 after:bg-white/40 after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+            </label>
 
             <!-- TREBLE CONFIG -->
             <h4 class="text-[11px] text-[#eab308] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Treble (Equator Bumps)</h4>
@@ -682,6 +687,24 @@
                 <input type="range" id="tuneHighSquashSlider" min="1.0" max="10.0" step="0.5" value="2.5" class="w-full accent-[#eab308]" oninput="window.updateVizTuning()">
             </div>
 
+            <!-- TICKS CONFIG -->
+            <h4 class="text-[11px] text-[#a855f7] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Ticks / Hi-Hats (Inner Bumps)</h4>
+            <div class="mb-3">
+                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Bin Range (Start/End)</span><span id="tuneTickBinVal">80 - 120</span></div>
+                <div class="flex gap-1 flex-col">
+                    <input type="range" id="tuneTickStartSlider" min="60" max="200" step="1" value="80" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
+                    <input type="range" id="tuneTickEndSlider" min="80" max="300" step="1" value="120" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
+                </div>
+            </div>
+            <div class="mb-3">
+                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Gate Threshold</span><span id="tuneTickThreshVal">0.25</span></div>
+                <input type="range" id="tuneTickThreshSlider" min="0.1" max="0.9" step="0.05" value="0.25" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
+            </div>
+            <div class="mb-3">
+                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneTickSquashVal">2.0</span></div>
+                <input type="range" id="tuneTickSquashSlider" min="1.0" max="10.0" step="0.5" value="2.0" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
+            </div>
+
             <!-- NERD STATS -->
             <div class="mt-6 mb-2 p-3 bg-black/40 rounded border border-white/5 relative">
                 <div class="text-[10px] text-[var(--accent)] uppercase tracking-widest font-bold mb-2 flex justify-between">
@@ -692,6 +715,7 @@
                     <div class="flex justify-between"><span>Sub-Bass:</span> <span id="nerdBass">0.00</span></div>
                     <div class="flex justify-between"><span>Mids:</span> <span id="nerdMid">0.00</span></div>
                     <div class="flex justify-between"><span>Treble:</span> <span id="nerdHigh">0.00</span></div>
+                    <div class="flex justify-between"><span>Ticks:</span> <span id="nerdTick">0.00</span></div>
                 </div>
                 <div id="nerdCopiedMsg" class="absolute top-2 right-10 text-[9px] text-green-400 font-bold opacity-0 transition">Copied!</div>
             </div>

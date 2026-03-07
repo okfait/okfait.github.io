@@ -1,0 +1,322 @@
+High-Performance Real-Time Adaptive Bass Onset Detection and Active Learning System Architecture for Web AudioThe Paradigm of Musical Information Retrieval in the BrowserThe engineering of a production-ready, real-time audio analysis engine within a web browser environment represents a sophisticated convergence of Digital Signal Processing (DSP), machine learning, and low-level memory management. Historically, the extraction of musical data—such as note onset detection, beat tracking, and tempo estimation—has been relegated to offline, compiled environments utilizing languages like C++ or Python. Bringing these capabilities into a live, interactive web application, such as the premium tier of "okMUSIC," requires navigating the strict execution limits of the JavaScript runtime.Rudimentary algorithms that rely on simple time-domain amplitude thresholding (e.g., triggering an event when the raw volume exceeds a fixed decibel level) are entirely insufficient for commercial music analysis. Such elementary approaches invariably fail when confronted with the highly compressed dynamic ranges, variable mastering techniques, and complex polyphonic textures characteristic of modern audio. A loud, sustained sub-bass note possesses massive amplitude but lacks the rhythmic transient required for a beat trigger. Conversely, a quiet mid-bass kick drum in a dense mix possesses the necessary rhythmic transient but lacks the raw amplitude to breach a global threshold.To achieve high-fidelity transient isolation, the system must operate in the frequency domain. By isolating specific low-frequency bands and measuring the temporal rate of change in their power spectra—a metric known as Spectral Flux—the algorithm can definitively distinguish between sustained harmonic energy and sharp, percussive transients. Furthermore, because the dynamic range varies significantly both between different tracks and within different sections of the same track (e.g., an acoustic intro transitioning into a heavily limited electronic drop), the onset detection threshold cannot be static. It must dynamically adapt to the local statistical properties of the audio signal, specifically its local mean energy and variance.This research report details the architectural specification, mathematical derivation, and algorithmic implementation of a highly advanced Adaptive Bass Onset Detection system. The system is deployed within the Web Audio API's AudioWorkletProcessor to guarantee zero-latency, synchronous execution strictly off the main user interface thread. To solve the pervasive industry issue of algorithmic false positives and missed detections, a human-in-the-loop Active Learning mechanism is natively integrated. By leveraging a single-layer perceptron trained via stochastic gradient descent, the algorithm continuously tunes its feature weights and statistical sensitivity multipliers in real-time based on immediate user feedback. The resulting architecture is a highly optimized, garbage-collection-free processing pipeline that learns, adapts, and persists track-specific analytical models.The Evolution of Web Audio ProcessingTo understand the necessity of the current architecture, one must examine the evolution of the Web Audio API. When custom audio processing was initially introduced to browsers, the standard mechanism was the ScriptProcessorNode. This interface allowed developers to manipulate raw PCM (Pulse Code Modulation) audio data using JavaScript. However, it suffered from a fatal architectural flaw: the event handlers executing the audio processing ran synchronously on the main UI thread. If the browser was busy rendering complex DOM updates, processing animations, or handling user interactions, the audio processing would be delayed, resulting in catastrophic buffer underruns, audible clicking, and visual desynchronization.Furthermore, attempts to utilize the native AnalyserNode for Fast Fourier Transform (FFT) data extraction prove inadequate for sample-accurate onset detection. The AnalyserNode operates via asynchronous polling methods such as getFloatFrequencyData(). Because the main thread requests this data at the refresh rate of the monitor (typically 60Hz or roughly every 16.6 milliseconds), the underlying audio buffer may have progressed by an arbitrary number of frames. This thread hop introduces uncontrolled skipping and overlapping of audio windows, obliterating the phase coherence and temporal precision required to calculate accurate frame-to-frame spectral differences.To circumvent these limitations, the W3C Audio Working Group introduced the AudioWorklet. The AudioWorklet establishes an AudioWorkletGlobalScope that runs entirely on a dedicated, high-priority audio rendering thread. Code executed within an AudioWorkletProcessor operates on strict 128-sample block boundaries (a quantum), guaranteeing deterministic, zero-latency processing without blocking the main thread. Consequently, for the "okMUSIC" platform to achieve production-grade onset detection, the entirety of the DSP pipeline—including the windowing, the FFT, the spectral flux calculation, and the statistical thresholding—must be programmed natively within the AudioWorkletProcessor.Advanced Spectral Analysis: The Mathematical FoundationThe foundational layer of the onset detection system relies on the conversion of the audio signal from the time domain to the frequency domain via the Short-Time Fourier Transform (STFT).The Discrete Fourier Transform and Cooley-Tukey OptimizationGiven that the native AnalyserNode cannot be utilized, an optimized FFT algorithm must be engineered in JavaScript. The Discrete Fourier Transform (DFT) converts a finite sequence of equally spaced samples of a function into a same-length sequence of equally spaced samples of the discrete-time Fourier transform. The standard DFT requires $O(N^2)$ computational complexity, which is prohibitively expensive for real-time processing.Instead, the system implements the Cooley-Tukey Radix-2 Decimation-in-Time (DIT) Fast Fourier Transform algorithm. This algorithm recursively breaks down a DFT of size $N$ into two smaller DFTs of size $N/2$, reducing the computational complexity to $O(N \log_2 N)$.For optimal performance in JavaScript, the recursive nature of the theoretical Cooley-Tukey algorithm is unrolled into an iterative, in-place computation. This requires a preliminary bit-reversal permutation step, where the input samples are rearranged according to the bit-reversed indices of their array positions. By operating entirely in-place on pre-allocated Float32Array buffers, the algorithm avoids instantiating new arrays during the audio loop, completely neutralizing the threat of JavaScript garbage collection pauses.Prior to the FFT, a Hann window function is applied to the time-domain signal to mitigate spectral leakage caused by the discontinuities at the edges of the finite sampling block. The Hann window $w[n]$ for a frame of length $N$ is defined as:$$w[n] = 0.5 \left( 1 - \cos\left(\frac{2\pi n}{N - 1}\right) \right)$$Frequency Band IsolationOperating at a standard sample rate of $f_s = 44100$ Hz with an FFT block size of $N = 2048$ samples, the frequency resolution (or bin width) is calculated as:$$\Delta f = \frac{f_s}{N} = \frac{44100}{2048} \approx 21.533 \text{ Hz per bin}$$To accurately isolate rhythmic bass elements without interference from higher-frequency harmonic content, the spectrum is partitioned into three distinct analytical bands. This multi-band approach ensures that a high-energy sustained sub-bass note (e.g., an 808 synthesizer) does not mask the detection of a punchy mid-bass kick drum.The bands are defined utilizing the logical octaves of human low-frequency perception:Band DesignationFrequency RangeBin Indices (approx.)Target Audio ElementSub-Bass21 Hz – 64 HzBins 1 – 3808s, Sub-drops, low sustained synthsMid-Bass64 Hz – 129 HzBins 3 – 6Primary kick drum fundamental, bass guitarUpper-Bass129 Hz – 258 HzBins 6 – 12Kick drum punch/attack, tom-tomsNote: Bin 0 represents the DC offset (0 Hz) and is strictly discarded to prevent zero-frequency electrical artifacts from skewing the total energy calculations.Deriving Spectral FluxUnlike raw spectral energy measurements, Spectral Flux quantifies the temporal rate of change of the power spectrum. This measurement is highly effective at isolating the attack phase of an instrument (the transient) while suppressing the sustain and decay phases.Let $X(t, k)$ represent the complex spectral value at time frame $t$ and frequency bin $k$. The magnitude spectrum is calculated as the Euclidean norm of the real and imaginary components: $|X(t, k)|$.The Spectral Flux for a given frequency band $b$ (defined by its lower bin boundary $k_{min}$ and upper bin boundary $k_{max}$) is determined by computing the difference in spectral magnitude between the current frame and the preceding frame. To ensure that only increases in energy contribute to the onset detection function (as onsets represent the beginning of a sound), a half-wave rectification function is applied.The half-wave rectified spectral flux $SF_{b}(t)$ using the $L_1$-norm is expressed as:$$SF_{b}(t) = \sum_{k=k_{min}}^{k_{max}} H\Big( |X(t, k)| - |X(t-1, k)| \Big)$$Where the half-wave rectification function $H(x)$ is defined as $\max(0, x)$. Decreases in energy, which correspond to the tail or offset of a note, result in a negative difference and are zeroed out by the $H(x)$ operator, effectively preventing false triggering on the decay of a sound.The total aggregate Spectral Flux for the current frame $t$, serving as the primary detection signal, is the dot product of the calculated sub-band fluxes and their respective algorithmic weights:$$SF_{total}(t) = \sum_{b \in \{sub, mid, upper\}} W_b \cdot SF_b(t)$$The weight vector $\mathbf{W} =$ is initialized to a baseline of $[1.0, 1.0, 1.0]$. The precise calibration of these weights is later handed over to the Active Learning controller, which optimizes them dynamically based on user feedback.Dynamic and Adaptive Statistical ThresholdingThe fundamental flaw in many amateur onset detection scripts is the reliance on a static threshold. A hardcoded numerical boundary will invariably fail because commercial audio tracks exhibit profound macroscopic variations in loudness. A threshold calibrated to detect the kick drum in a quiet, uncompressed acoustic bridge will instantly become saturated and trigger false positives continuously during a heavily limited, high-energy electronic drop.To solve this, the algorithm implements a localized statistical model to establish a dynamic, rolling threshold. This threshold adapts to the immediate acoustic environment by continuously calculating the mean and the variance of the Spectral Flux over a sliding temporal window.Rolling Energy History and Welford's Online AlgorithmThe system maintains a circular history buffer of the last $M$ flux values. Given an FFT hop size of 512 samples at a 44.1kHz sample rate, each frame represents approximately 11.6 milliseconds of audio. An analysis window of $M = 86$ frames equates to roughly 1.0 seconds of audio. This specific duration provides an optimal temporal context, mirroring human short-term rhythmic perception, and allows the threshold to ride the macro-dynamics of the track without reacting too swiftly to micro-dynamics.The local moving average $\mu(t)$ and local variance $\sigma^2(t)$ of the Spectral Flux over the window $M$ are theoretically defined as:$$\mu(t) = \frac{1}{M} \sum_{i=0}^{M-1} SF_{total}(t-i)$$$$\sigma^2(t) = \frac{1}{M} \sum_{i=0}^{M-1} (SF_{total}(t-i) - \mu(t))^2$$However, calculating the standard variance naively requires iterating over the entire buffer of $M$ items for every single audio frame, yielding an $O(M)$ time complexity. Furthermore, the naive sum-of-squares approach ($\frac{\sum x^2}{M} - (\frac{\sum x}{M})^2$) is notoriously susceptible to catastrophic cancellation errors in floating-point arithmetic.To maintain strict $O(1)$ computational efficiency and numerical stability within the AudioWorklet, these parameters are computed iteratively utilizing Welford's online algorithm. Welford's method calculates the running mean and the sum of squared differences ($M_2$) securely:Let $x_n$ be the incoming flux value at step $n$, and $x_{n-M}$ be the oldest value dropping out of the window. The updates are defined as:$$\Delta_1 = x_n - \mu_{n-1}$$$$\mu_n = \mu_{n-1} + \frac{\Delta_1}{M}$$$$\Delta_2 = x_n - \mu_n$$$$M_2^{(new)} = M_2^{(old)} + (\Delta_1 \cdot \Delta_2) - (x_{n-M} - \mu_{n-1}) \cdot (x_{n-M} - \mu_n)$$$$\sigma^2_n = \frac{M_2^{(new)}}{M}$$The Adaptive Threshold FormulaWith the precise local mean and standard deviation ($\sigma = \sqrt{\sigma^2}$) calculated efficiently, the absolute detection threshold $T(t)$ for the current frame is established dynamically:$$T(t) = \mu(t) + \Big( \alpha \cdot \sigma(t) \Big)$$The variable $\alpha$ acts as the sensitivity multiplier or scaling factor. Unlike static algorithms, $\alpha$ is not a hardcoded constant; it is an active hyper-parameter subjected to gradient adjustment during the learning phase.This statistical formulation is highly robust. If the variance is high (for example, during a highly transient, chaotic drum solo), the standard deviation term $\sigma(t)$ increases significantly, pushing the threshold higher and preventing noise-floor chatter. Conversely, if the variance is low (such as during a quiet, ambient introductory section), the threshold lowers proportionally, allowing the system to detect much softer, nuanced bass notes that would otherwise be ignored.Peak Picking, Decay Envelopes, and Biological Refractory PeriodsOnce the dynamic threshold $T(t)$ is calculated, the system evaluates the onset condition. A naive peak-picking implementation might simply trigger an event whenever $SF_{total}(t) > T(t)$. However, due to the physical nature of low-frequency sound waves, a single kick drum may exhibit a jagged, fluctuating energy profile over several milliseconds. A naive threshold comparison will result in "chatter"—multiple rapid, erroneous triggers on the tail of a single percussive hit.To enforce single-trigger accuracy, the architecture introduces two distinct debouncing mechanisms borrowed from envelope tracking and physiological electrocardiology.The Exponential Envelope FollowerTo prevent multiple triggers on the decaying tail of a transient, a programmatic envelope follower is applied to the threshold. When an onset is successfully detected, an artificial "decay threshold," $E(t)$, is instantly spiked to the magnitude of the transient. This envelope then decays exponentially over subsequent frames.$$E(t) = \max\Big( SF_{total}(t), E(t-1) \cdot e^{-\frac{\Delta t}{\tau}} \Big)$$Where $\tau$ is the decay time constant, configurable based on the genre of the music. The effective operating threshold for peak picking therefore becomes the maximum of the statistical threshold and the decaying envelope:$$T_{effective}(t) = \max(T(t), E(t))$$This ensures that the threshold is artificially elevated immediately following a loud transient, naturally masking the resonant tail of the drum shell or synthesizer, before smoothly returning to the baseline statistical threshold.BPM-Mapped Absolute Refractory PeriodThe concept of a refractory period is deeply embedded in human physiology. In neurology, an action potential leaves sodium channels inactivated for a brief duration (the absolute refractory period), preventing the neuron from firing a second time regardless of the stimulus strength. Similarly, in electrocardiology, the Pan-Tompkins algorithm for detecting the QRS complex in ECG signals enforces a strict 200-millisecond lockout window following a detected heartbeat, as it is physiologically impossible for the heart's ventricles to depolarize again within that timeframe.This exact biological paradigm is adapted for rhythmic onset detection. Musical rhythms adhere to physical and biomechanical constraints. Assuming a maximum practical musical tempo of $BPM_{max} = 200$ (covering everything up to high-speed drum and bass or fast punk rock), the shortest possible temporal interval between two valid eighth-note beats can be calculated:$$R_{min} = \frac{60,000 \text{ ms}}{BPM_{max}} \times 0.5 = 150 \text{ ms}$$The algorithm enforces a strict 150-millisecond absolute refractory period following a confirmed onset. During this lockout window, all spectral flux spikes—regardless of their magnitude relative to the threshold—are classified as acoustic sustain artifacts and forcefully discarded. This yields a highly clean, deterministic trigger output perfectly suited for driving precisely synchronized visual effects in the web application.Active Learning and the Perceptron ControllerThe defining and most advanced characteristic of this architecture is its ability to learn from user feedback without requiring page reloads, large dataset annotation, or offline batch processing. Unsupervised onset detectors inevitably fail on edge cases—such as complex polyrhythms or heavily distorted mastering—because they lack semantic understanding. To bridge this gap, a "Teach Algorithm" mechanism is integrated, placing a human-in-the-loop via an Active Learning pipeline.This mechanism relies on a single-layer perceptron learning model embedded in the main thread, which continuously optimizes the DSP weights executing within the AudioWorklet.The Perceptron Weight Update RuleThe mathematical onset detection function is formulated as a single-layer perceptron. The input features are the isolated spectral fluxes of the three target frequency bands:$$\mathbf{x_t} =^T$$The perceptron's internal state is governed by the weight vector $\mathbf{W}$. The output $\hat{y}$ represents the predicted onset strength of the current frame.When a user interacts with the "okMUSIC" UI to correct an algorithmic mistake, they are effectively providing a ground-truth target label $y_{true}$ to the perceptron:"Teach True Beat": The user presses this button to indicate the algorithm missed an obvious beat (a False Negative). The target label is $y_{true} = 1$."Teach Error": The user presses this button to indicate the algorithm triggered on a non-beat, such as a vocal plosive or a snare drum (a False Positive). The target label is $y_{true} = 0$.Because human auditory-motor reaction time introduces a measurable delay (typically 200-300 milliseconds between hearing the error and clicking the button), the learning controller cannot simply evaluate the exact audio frame occurring at the moment of the click. Instead, the controller maintains a continuous sliding history array of the feature vectors $\mathbf{x_t}$ and their resulting predictions from the past 500 milliseconds. When a "Teach" event is logged, the controller scans backward through this temporal buffer, identifies the frame with the local maximum spectral energy, and applies the weight update precisely to that specific historical frame.The weight vector is updated using Stochastic Gradient Descent (SGD), aiming to minimize the squared error loss function. The partial derivative of the loss with respect to the weights yields the perceptron update rule:$$\Delta \mathbf{W} = \eta \cdot (y_{true} - \hat{y}) \cdot \mathbf{x_t}$$$$\mathbf{W_{new}} = \mathbf{W_{old}} + \Delta \mathbf{W}$$Where $\eta$ represents the learning rate (e.g., $0.05$), ensuring the algorithm converges smoothly without overshooting the optimal vector space.If a False Positive is flagged ($y_{true} = 0, \hat{y} = 1$), the error term $(0 - 1)$ is negative, causing the weights associated with the peaking frequency bands to proportionally decrease. If a False Negative is flagged ($y_{true} = 1, \hat{y} = 0$), the error term $(1 - 0)$ is positive, causing the weights to increase.Modulating the Sensitivity MultiplierAdjusting the sub-band weights primarily helps the algorithm distinguish between different sounds (e.g., learning to ignore the upper-bass of a snare drum while emphasizing the mid-bass of the kick drum). However, weight adjustments alone are insufficient; the statistical boundaries must also be tuned to correct overall sensitivity.Therefore, the user feedback simultaneously modulates the variance multiplier $\alpha$ via a secondary gradient penalty mechanism :If a False Positive is flagged, it indicates the system is too eager to trigger. The threshold must be raised. Thus, $\alpha$ is increased:$$\alpha_{new} = \alpha_{old} + \gamma_{step}$$Conversely, if a False Negative ("Teach True Beat") is flagged, the system is too restrictive. The threshold must be lowered to capture nuanced transients. Thus, $\alpha$ is decreased:$$\alpha_{new} = \max(\alpha_{min}, \alpha_{old} - \gamma_{step})$$Once computed on the main thread, these newly optimized weight vectors and $\alpha$ scalars are instantaneously posted across the MessagePort boundary to update the live audio processing thread without interrupting playback.Implementation Part 1: The AudioWorklet ArchitectureWeb Audio's rendering thread operates under extreme constraints. Execution budgets per block are measured in microseconds. A critical requirement for high-performance audio programming in JavaScript is the complete elimination of Garbage Collection (GC) during the process() loop. If the algorithm instantiates new arrays, objects, or anonymous functions within the DSP loop, the V8 engine's garbage collector will eventually run a mark-and-sweep operation. This freezes the main and rendering threads, resulting in audible stuttering, dropped frames, and ruined visualizations.To achieve zero-GC operation, the entire DSP algorithm must utilize strictly typed Float32Array objects that are pre-allocated explicitly within the class constructor. All mathematical operations must mutate these existing memory heaps in-place.The following is the architectural blueprint for the AudioWorkletProcessor. It implements the custom Cooley-Tukey FFT, the spectral flux calculation, the moving average Welford statistics, and the refractory debouncing, while seamlessly handling real-time updates to its parameter matrix via Inter-Process Communication (IPC).JavaScript/**
+ * AdaptiveBassDetectorProcessor.js
+ * Runs entirely on the Web Audio rendering thread.
+ * Strict zero-allocation policy in the process() loop to prevent GC pauses.
+ */
+
+class AdaptiveBassDetectorProcessor extends AudioWorkletProcessor {
+    constructor() {
+        super();
+        
+        // Audio processing topological constants
+        this.fftSize = 2048;
+        this.hopSize = 512;
+        this.sampleRate = 44100;
+        this.bufferPointer = 0;
+        
+        // Pre-allocated memory heaps for zero-GC operation
+        this.audioBuffer = new Float32Array(this.fftSize);
+        this.window = new Float32Array(this.fftSize);
+        this.real = new Float32Array(this.fftSize);
+        this.imag = new Float32Array(this.fftSize);
+        this.mag = new Float32Array(this.fftSize / 2);
+        this.prevMag = new Float32Array(this.fftSize / 2);
+        
+        // Pre-compute Hann Window coefficients
+        for (let i = 0; i < this.fftSize; i++) {
+            this.window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (this.fftSize - 1)));
+        }
+
+        // Active Learning Weights:
+        this.weights = new Float32Array([1.0, 1.0, 1.0]);
+        this.alphaMultiplier = 2.5; 
+        this.decayRate = 0.95;
+        
+        // Statistical History Buffer variables (Welford's Algorithm)
+        this.historySize = 86; // ~1 second of frames at 512 hop
+        this.fluxHistory = new Float32Array(this.historySize);
+        this.historyIndex = 0;
+        this.mean = 0;
+        this.M2 = 0; 
+        
+        // Envelope & Physiological Debouncing State
+        this.currentEnvelope = 0;
+        this.framesSinceLastOnset = 9999;
+        // 150ms absolute refractory period converted to frames
+        this.refractoryFrames = Math.floor(0.150 / (this.hopSize / this.sampleRate)); 
+
+        // Setup bi-directional MessagePort communication
+        this.port.onmessage = this.handleMessage.bind(this);
+    }
+
+    // Handles IPC updates from the Active Learning Controller
+    handleMessage(event) {
+        if (event.data.type === 'UPDATE_WEIGHTS') {
+            this.weights = event.data.weights;
+            this.weights = event.data.weights;
+            this.weights = event.data.weights;
+            this.alphaMultiplier = event.data.alpha;
+        }
+    }
+
+    // In-place Cooley-Tukey Radix-2 DIT FFT (Optimized for V8 execution)
+    computeFFT(real, imag) {
+        let n = real.length;
+        
+        // Phase 1: Bit-reversal permutation
+        for (let i = 1, j = 0; i < n - 1; i++) {
+            let bit = n >> 1;
+            for (; j & bit; bit >>= 1) j ^= bit;
+            j ^= bit;
+            if (i < j) {
+                let tempReal = real[i], tempImag = imag[i];
+                real[i] = real[j]; imag[i] = imag[j];
+                real[j] = tempReal; imag[j] = tempImag;
+            }
+        }
+        
+        // Phase 2: Iterative Butterfly operations
+        for (let len = 2; len <= n; len <<= 1) {
+            let halfLen = len >> 1;
+            let angle = -2 * Math.PI / len;
+            let wRe = Math.cos(angle), wIm = Math.sin(angle);
+            for (let i = 0; i < n; i += len) {
+                let uRe = 1, uIm = 0;
+                for (let j = 0; j < halfLen; j++) {
+                    let idx1 = i + j, idx2 = i + j + halfLen;
+                    let tRe = uRe * real[idx2] - uIm * imag[idx2];
+                    let tIm = uRe * imag[idx2] + uIm * real[idx2];
+                    real[idx2] = real[idx1] - tRe;
+                    imag[idx2] = imag[idx1] - tIm;
+                    real[idx1] += tRe;
+                    imag[idx1] += tIm;
+                    let nextURe = uRe * wRe - uIm * wIm;
+                    uIm = uRe * wIm + uIm * wRe;
+                    uRe = nextURe;
+                }
+            }
+        }
+    }
+
+    // Standard 128-sample quantum processing loop
+    process(inputs, outputs, parameters) {
+        const input = inputs;
+        if (!input ||!input) return true;
+        const channelData = input; // Isolate Mono channel for bass detection
+
+        // Fill continuous circular buffer
+        for (let i = 0; i < channelData.length; i++) {
+            this.audioBuffer[this.bufferPointer] = channelData[i];
+            this.bufferPointer++;
+
+            // When the hop size threshold is breached, trigger frame analysis
+            if (this.bufferPointer >= this.hopSize) {
+                this.analyzeFrame();
+                // Shift buffer contents downward by hopSize to maintain overlap
+                this.audioBuffer.copyWithin(0, this.hopSize, this.fftSize);
+                this.bufferPointer = this.fftSize - this.hopSize;
+            }
+        }
+        return true;
+    }
+
+    analyzeFrame() {
+        // 1. Apply Hann Window to mitigate spectral leakage and copy to complex arrays
+        for (let i = 0; i < this.fftSize; i++) {
+            this.real[i] = this.audioBuffer[i] * this.window[i];
+            this.imag[i] = 0;
+        }
+
+        // 2. Execute Fast Fourier Transform
+        this.computeFFT(this.real, this.imag);
+
+        // 3. Compute L1-Norm Half-Wave Rectified Spectral Flux across isolated Bass Bands
+        let fluxSub = 0, fluxMid = 0, fluxUpper = 0;
+        
+        // Loop solely over the target bins (1 to 12) covering ~21Hz to ~258Hz
+        for (let k = 1; k <= 12; k++) { 
+            let currentMag = Math.sqrt(this.real[k] * this.real[k] + this.imag[k] * this.imag[k]);
+            this.mag[k] = currentMag;
+            
+            // Calculate difference and apply half-wave rectification
+            let diff = currentMag - this.prevMag[k];
+            let rectifiedDiff = diff > 0? diff : 0; 
+            
+            if (k >= 1 && k < 3) fluxSub += rectifiedDiff;
+            else if (k >= 3 && k < 6) fluxMid += rectifiedDiff;
+            else if (k >= 6 && k <= 12) fluxUpper += rectifiedDiff;
+            
+            // Store magnitude for next frame's differential comparison
+            this.prevMag[k] = currentMag;
+        }
+
+        // 4. Apply actively learned perceptron weights to generate the master detection function
+        let totalFlux = (fluxSub * this.weights) + 
+                        (fluxMid * this.weights) + 
+                        (fluxUpper * this.weights);
+
+        // 5. Update Online Variance Statistics via Welford's Algorithm (O(1) complexity)
+        let oldVal = this.fluxHistory[this.historyIndex];
+        this.fluxHistory[this.historyIndex] = totalFlux;
+        this.historyIndex = (this.historyIndex + 1) % this.historySize;
+        
+        let delta1 = totalFlux - this.mean;
+        this.mean += delta1 / this.historySize;
+        let delta2 = totalFlux - this.mean;
+        this.M2 += (delta1 * delta2) - ((oldVal - this.mean) * (oldVal - this.mean));
+        let variance = Math.max(0, this.M2 / this.historySize);
+        let stdDev = Math.sqrt(variance);
+
+        // 6. Dynamic Thresholding & Peak Picking
+        let threshold = this.mean + (this.alphaMultiplier * stdDev);
+        let effectiveThreshold = Math.max(threshold, this.currentEnvelope);
+
+        let isOnset = false;
+        // Evaluate condition against effective threshold AND physiological refractory lockout
+        if (totalFlux > effectiveThreshold && this.framesSinceLastOnset >= this.refractoryFrames) {
+            isOnset = true;
+            this.framesSinceLastOnset = 0;
+            this.currentEnvelope = totalFlux; // Spike the decay envelope
+            
+            // Dispatch confirmed onset back to Main Thread for visual rendering
+            this.port.postMessage({
+                type: 'ONSET_DETECTED',
+                timestamp: currentTime,
+                flux: totalFlux
+            });
+        }
+
+        // Advance state tracking
+        this.framesSinceLastOnset++;
+        this.currentEnvelope *= this.decayRate; // Apply exponential decay to envelope
+        
+        // Continuously post analytical data to main thread for the sliding learning history buffer
+        this.port.postMessage({
+            type: 'FEATURE_VECTOR',
+            timestamp: currentTime,
+            features:,
+            prediction: totalFlux
+        });
+    }
+}
+
+registerProcessor('adaptive-bass-detector', AdaptiveBassDetectorProcessor);
+Implementation Part 2: The Active Learning ControllerWhile the AudioWorklet executes the raw sample-level mathematics, the main UI thread orchestrates the neural feedback loop. The okMUSICLearningController class acts as the bridge. It receives high-frequency feature vectors from the worklet and buffers them in memory. When the user interacts with the application (e.g., clicking the "Teach" buttons), the controller cross-references the interaction timestamp against the temporal history buffer, computes the Stochastic Gradient Descent adjustments, and dispatches the newly tuned matrices back to the worklet.JavaScript/**
+ * LearningController.js
+ * Main thread interface for managing the Active Learning mechanism.
+ * Implements the Perceptron training and IPC bridging.
+ */
+
+export class okMUSICLearningController {
+    constructor(audioNode) {
+        this.workletNode = audioNode;
+        this.learningRate = 0.05; // Eta for SGD
+        this.alphaLearningRate = 0.1; // Gamma step for the sensitivity multiplier
+        
+        // State variables mirroring the Worklet architecture
+        this.weights = new Float32Array([1.0, 1.0, 1.0]); 
+        this.alphaMultiplier = 2.5;
+
+        // Temporal history buffer to align human reaction time with specific audio frames
+        this.featureHistory =;
+        this.maxHistoryLength = 50; // Caches roughly 500ms of frames (50 * 11.6ms)
+        
+        // Listen for data emitted from the AudioWorklet
+        this.workletNode.port.onmessage = (event) => {
+            if (event.data.type === 'FEATURE_VECTOR') {
+                this.cacheFeatureVector(event.data);
+            }
+            if (event.data.type === 'ONSET_DETECTED') {
+                this.triggerVisuals(); // Hook to standard UI rendering logic
+            }
+        };
+    }
+
+    cacheFeatureVector(data) {
+        this.featureHistory.push(data);
+        if (this.featureHistory.length > this.maxHistoryLength) {
+            this.featureHistory.shift();
+        }
+    }
+
+    // Invoked when user clicks "Teach True Beat" (Handling a False Negative)
+    teachTrueBeat() {
+        // Compensate for human reaction time by finding the frame with the maximum
+        // spectral energy within the recent sliding window history
+        let targetFrame = this.featureHistory.reduce((prev, current) => {
+            return (prev.prediction > current.prediction)? prev : current;
+        });
+
+        // Apply SGD with yTrue = 1.0 (indicating a positive onset should have occurred)
+        this.applyGradientDescent(targetFrame.features, targetFrame.prediction, 1.0);
+        
+        // Decrease alpha multiplier to increase global algorithmic sensitivity
+        this.alphaMultiplier = Math.max(1.0, this.alphaMultiplier - this.alphaLearningRate);
+        this.syncWithWorklet();
+    }
+
+    // Invoked when user clicks "Teach Error" (Handling a False Positive)
+    teachFalsePositive() {
+        // Grab the most recent onset prediction frame
+        let targetFrame = this.featureHistory[this.featureHistory.length - 1];
+        
+        // Apply SGD with yTrue = 0.0 (indicating an onset should NOT have occurred)
+        this.applyGradientDescent(targetFrame.features, targetFrame.prediction, 0.0);
+        
+        // Increase alpha multiplier to reduce global algorithmic sensitivity
+        this.alphaMultiplier = Math.min(5.0, this.alphaMultiplier + (this.alphaLearningRate * 2));
+        this.syncWithWorklet();
+    }
+
+    applyGradientDescent(features, prediction, yTrue) {
+        // Normalize feature inputs to ensure stable gradient descent steps
+        let maxFeature = Math.max(...features, 0.0001);
+        let x = features.map(f => f / maxFeature);
+        
+        // Calculate raw prediction error
+        let error = yTrue - prediction;
+        
+        // Apply Perceptron weight update rule: W_new = W_old + (eta * error * x_i)
+        for (let i = 0; i < this.weights.length; i++) {
+            this.weights[i] += this.learningRate * error * x[i];
+            
+            // Constrain weights to prevent negative polarity logic inversion
+            this.weights[i] = Math.max(0.1, this.weights[i]); 
+        }
+    }
+
+    // Dispatch the updated neural matrix across the MessagePort boundary
+    syncWithWorklet() {
+        this.workletNode.port.postMessage({
+            type: 'UPDATE_WEIGHTS',
+            weights: this.weights,
+            alpha: this.alphaMultiplier
+        });
+    }
+}
+State Persistence and Data ArchitectureTo ensure that the Active Learning mechanism retains its value, the finalized neural weights and statistical hyper-parameters must be persistently mapped to specific audio tracks. If a user spends time teaching the algorithm the intricate syncopations of a specific polyrhythmic electronic track, that optimized model must load instantaneously the next time the track is engaged.Upon the completion of an interactive session, the LearningController serializes the detection matrix into a strictly formulated JSON document. This schema is structurally divided into track metadata, topological frequency band definitions, and the learned coefficient state.JSON Key NodeData TypeImplementation DescriptiontrackIdStringA unique cryptographic hash (e.g., SHA-256) of the raw audio buffer. Ensuring the weights are inexorably linked to the exact audio file, circumventing issues with file renaming.baseBPMFloatThe estimated Beats Per Minute of the track, utilized to bootstrap the physiological refractory period limits prior to runtime.frequencyTopologyArray of ObjectsDefines the exact Hertz ranges and FFT bin mapping utilized during training. This ensures forward compatibility; if the application's global sample rate changes in the future, the bin targeting can be mathematically interpolated.learnedWeightsArray of FloatsThe explicit $W_{sub}, W_{mid}, W_{upper}$ coefficients yielded by the stochastic gradient descent.statisticalHyperparamsObjectStores the user-adjusted continuous scalar values, specifically the alphaMultiplier and the exponential decayRate.JSON Schema SpecificationThe resulting file structure seamlessly interfaces with modern web storage APIs (such as IndexedDB) or backend cloud databases. This allows "okMUSIC" to completely bypass the learning phase for previously processed tracks, loading a perfectly calibrated, track-specific onset detection profile upon initialization.JSON{
+  "trackId": "okm_hash_9b2d8f7e4a1c",
+  "metadata": {
+    "baseBPM": 128.0,
+    "lastTrained": "2026-03-04T19:43:00Z"
+  },
+  "dspConfig": {
+    "sampleRate": 44100,
+    "fftSize": 2048,
+    "hopSize": 512
+  },
+  "frequencyTopology": [
+    { "band": "sub", "minHz": 21, "maxHz": 64 },
+    { "band": "mid", "minHz": 64, "maxHz": 129 },
+    { "band": "upper", "minHz": 129, "maxHz": 258 }
+  ],
+  "learningState": {
+    "learnedWeights": [1.453, 0.892, 0.511],
+    "statisticalHyperparams": {
+      "alphaMultiplier": 3.15,
+      "decayRate": 0.92,
+      "historyBufferSize": 86
+    }
+  }
+}
+ConclusionThe system architecture proposed in this document establishes a highly sophisticated, production-ready paradigm for musical onset detection running natively within the constraints of a web browser. By intentionally abandoning brittle, static amplitude thresholds in favor of isolated multi-band Spectral Flux and continuous local statistical analysis, the system intrinsically adapts to the violently fluctuating dynamics of commercial audio mastering.Furthermore, by strictly isolating the heavy computational mathematics—such as the custom Cooley-Tukey FFT and Welford's online variance calculations—within an independent AudioWorkletProcessor operating via pre-allocated, GC-immune typed arrays, the primary JavaScript rendering thread remains unblocked. This ensures that the highly intensive visual interfaces of the "okMUSIC" application execute with perfect synchronicity. The integration of a Perceptron-driven Active Learning controller fundamentally elevates the system above standard DSP scripts, allowing the engine to mathematically transmute subjective human rhythmic intuition into persistent, quantifiable data models.
