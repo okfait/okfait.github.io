@@ -1643,9 +1643,10 @@ class Visualizer {
         let binIndex = i * step;
         let v = d[binIndex] || 0;
         
-        // i=0 is Bass. Center is w/2.
-        let xLeft = (w / 2) - (i * sp) - sp; // Traverses left
-        let xRight = (w / 2) + (i * sp);     // Traverses right
+        // i=0 is Sub-Bass. Arin Nation visualizer maps Bass to the far edges of the screen,
+        // and Treble (highs) into the dead center of the screen.
+        let xLeft = (i * sp);                // Left half: Bass at x=0, walks right -> to center
+        let xRight = w - (i * sp) - sp;      // Right half: Bass at x=w, walks left <- to center
         
         drawBar(xLeft, v);
         drawBar(xRight, v);
