@@ -98,16 +98,18 @@ export class SpotifyManager {
                 headers: { 'Authorization': `Bearer ${this.accessToken}` }
             });
 
-            if (res.status === 401) {
-                if (await this.refreshAccessToken()) return this.fetchProfile();
-                return;
+            const text = await res.text();
+            try {
+                this.profile = JSON.parse(text);
+            } catch (e) {
+                throw new Error("Spotify Profile Parse Error: " + text.slice(0, 100));
             }
 
-            this.profile = await res.json();
             localStorage.setItem('spotify_profile', JSON.stringify(this.profile));
             return this.profile;
         } catch (e) {
             console.error('Spotify Profile Error:', e);
+            throw e;
         }
     }
 
@@ -148,18 +150,32 @@ export class SpotifyManager {
             const pRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const pData = await pRes.json();
-            if (!pRes.ok) throw new Error(pData.error?.message || "Failed to fetch playlist info");
+            const pText = await pRes.text();
+            let pData;
+            try {
+                pData = JSON.parse(pText);
+            } catch (e) {
+                throw new Error("Playlist Info Error: " + pText.slice(0, 100));
+            }
+
+            if (!pRes.ok) throw new Error(pData.error?.message || pData.error || "Failed to fetch playlist info");
 
             const title = pData.name;
             
-            // Then get tracks (paginated if needed, but we'll start with 100)
+            // Then get tracks
             const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error?.message || "Failed to fetch tracks");
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error("Track Parse Error: " + text.slice(0, 100));
+            }
+
+            if (!res.ok) throw new Error(data.error?.message || data.error || "Failed to fetch tracks");
 
             return {
                 title: title,
