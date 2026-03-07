@@ -1260,6 +1260,74 @@ class HistoryBuffer {
   }
 }
 
+// -------------------------------------------------------------
+// Audio-Reactive Particle System (Sparks)
+// -------------------------------------------------------------
+class VisualizerParticle {
+    constructor(w, h) {
+        this.w = w * 2; // extended bounds for camera shake
+        this.h = h * 2;
+        this.reset();
+        // Give them a random starting spot so they don't all spawn at 0,0
+        this.x = (Math.random() - 0.5) * this.w;
+        this.y = (Math.random() - 0.5) * this.h;
+    }
+    
+    reset() {
+        this.x = (Math.random() - 0.5) * this.w;
+        this.y = (Math.random() - 0.5) * this.h;
+        this.baseVx = (Math.random() - 0.5) * 0.5;
+        this.baseVy = -Math.random() * 1.5 - 0.5; // Natural upward drift
+        this.vx = this.baseVx;
+        this.vy = this.baseVy;
+        this.radius = Math.random() * 1.5 + 0.5;
+        this.alpha = Math.random() * 0.5 + 0.1;
+        this.angle = Math.atan2(this.y, this.x); // Angle from center
+        this.dist = Math.hypot(this.x, this.y);
+    }
+    
+    update(bassSpike) {
+        // Standard upward drift
+        this.vx = this.baseVx;
+        this.vy = this.baseVy;
+        
+        // Audio Scatter Force (Explode outward from center on beat drop)
+        if (bassSpike > 0.1) {
+            const explosionForce = bassSpike * 15.0; // How violently they push
+            // Push outwards along their angle from the center (0,0)
+            this.vx += Math.cos(this.angle) * explosionForce * (200 / Math.max(100, this.dist)); 
+            this.vy += Math.sin(this.angle) * explosionForce * (200 / Math.max(100, this.dist));
+        }
+        
+        this.x += this.vx;
+        this.y += this.vy;
+        
+        // Wrap around bounds (camera handles translation so 0,0 is center)
+        const hw = this.w / 2;
+        const hh = this.h / 2;
+        
+        if (this.y < -hh) {
+            this.y = hh;
+            this.x = (Math.random() - 0.5) * this.w;
+            this.dist = Math.hypot(this.x, this.y);
+            this.angle = Math.atan2(this.y, this.x);
+        }
+        if (this.x < -hw || this.x > hw) {
+            this.x = (Math.random() - 0.5) * this.w;
+            this.y = (Math.random() - 0.5) * this.h;
+            this.dist = Math.hypot(this.x, this.y);
+            this.angle = Math.atan2(this.y, this.x);
+        }
+    }
+    
+    draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
+        ctx.fill();
+    }
+}
+
 class Visualizer {
   constructor() {
     this.cv = window.$("vizCanvas");
@@ -1281,6 +1349,12 @@ class Visualizer {
     this.lastTrigger = 0;
     this.lastRippleTime = 0;
     this.bassHistory = [];
+
+    // Initialize 200 background particles
+    this.particles = [];
+    for (let i = 0; i < 200; i++) {
+        this.particles.push(new VisualizerParticle(window.innerWidth, window.innerHeight));
+    }
   }
   resize() {
     this.cv.width = window.innerWidth;
@@ -1400,6 +1474,18 @@ class Visualizer {
       ctx.fillRect(-w, -h, w * 3, h * 3);
     }
     ctx.clearRect(-w, -h, w * 3, h * 3);
+    
+    // Draw Particles behind everything else
+    const cfg = window.vizConfig || { sparks: true };
+    if (cfg.sparks !== false) {
+        ctx.save();
+        for (let i = 0; i < this.particles.length; i++) {
+            this.particles[i].update(this.smoothBass || 0);
+            this.particles[i].draw(ctx);
+        }
+        ctx.restore();
+    }
+
     const sens = window.vizSens || 1.0;
     let bass = 0;
     for (let i = 0; i < 4; i++) bass += buf[i] * sens;
@@ -1699,8 +1785,11 @@ class Visualizer {
         setTxt("tuneHighSquashVal", hSq.toFixed(1));
         
         // Save to global config for engine
+        let sparksCb = document.getElementById("tuneSparks");
+        let sparks = sparksCb ? sparksCb.checked : true;
+
         window.vizConfig = {
-            width, sens, smooth, pos, gap,
+            width, sens, smooth, pos, gap, sparks,
             bEnd, bThr, bSq,
             mStart, mEnd, mThr, mSq,
             hStart, hEnd, hThr, hSq
@@ -1723,7 +1812,7 @@ class Visualizer {
     const maxBump = 160; // Max bass protrusion
     
     const cfg = window.vizConfig || {
-        width: 0.85, sens: window.vizSens || 1.0, pos: 16,
+        width: 0.85, sens: window.vizSens || 1.0, smooth: 0.25, pos: 16, sparks: true,
         bEnd: 5, bThr: 0.50, bSq: 4.0,
         mStart: 15, mEnd: 25, mThr: 0.40, mSq: 3.0,
         hStart: 35, hEnd: 45, hThr: 0.35, hSq: 2.5
