@@ -1323,47 +1323,6 @@ class VisualizerParticle {
     }
 }
 
-class VisualizerFragment {
-    constructor(x, y, z, w, h) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        this.w = w;
-        this.h = h;
-        // Violent scatter in a 3D sphere
-        this.vx = (Math.random() - 0.5) * 60; 
-        this.vy = (Math.random() - 0.5) * 60;
-        this.vz = (Math.random() - 0.5) * 60;
-        this.life = 1.0;
-        this.decay = Math.random() * 0.04 + 0.02; // Fades out over time
-        this.radius = Math.random() * 2.0 + 1.0;
-    }
-    
-    update(avgVolume) {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.z += this.vz - (avgVolume * 40.0); // Drift towards camera rapidly
-        this.life -= this.decay;
-    }
-    
-    draw(ctx) {
-        if (this.life <= 0 || this.z <= 0) return;
-        const perspective = 800;
-        const scale = perspective / (perspective + this.z);
-        const projectedX = this.x * scale;
-        const projectedY = this.y * scale;
-        const projectedRadius = this.radius * scale * 2.0;
-
-        if (Math.abs(projectedX) < this.w && Math.abs(projectedY) < this.h) {
-            ctx.beginPath();
-            ctx.arc(projectedX, projectedY, Math.max(0.1, projectedRadius), 0, Math.PI * 2);
-            // Fragments are slightly brighter/golden
-            ctx.fillStyle = `rgba(255, 230, 150, ${this.life * scale})`; 
-            ctx.fill();
-        }
-    }
-}
-
 class Visualizer {
   constructor() {
     this.cv = window.$("vizCanvas");
@@ -1388,7 +1347,6 @@ class Visualizer {
 
     // Initialize 200 background particles
     this.particles = [];
-    this.fragments = [];
     for (let i = 0; i < 200; i++) {
         this.particles.push(new VisualizerParticle(window.innerWidth, window.innerHeight));
     }
@@ -1442,26 +1400,6 @@ class Visualizer {
     this.xLobeShape = Math.floor(Math.random() * 4) + 1; // 1 to 4 lobes (line, triangle, cross, pentagon)
     this.xLobePhase = Math.random() < 0.5 ? 0 : Math.PI / 4; // Rotate the shapes 45 degrees
     setTimeout(() => (this.xMode = false), 300);
-    
-    // EXPLODE a distant particle into Fragments
-    const cfg = window.vizConfig || { sparks: true };
-    if (cfg.sparks !== false && this.particles && this.particles.length > 0) {
-        // Find particles decently far away in the background
-        let distantParticles = this.particles.filter(p => p.z > 800 && p.z < 1800);
-        if (distantParticles.length > 0) {
-            // Pick a random distant particle to explode
-            let target = distantParticles[Math.floor(Math.random() * distantParticles.length)];
-            
-            // Shatter it into 15 to 25 fragments
-            let count = Math.floor(Math.random() * 10) + 15;
-            for (let i = 0; i < count; i++) {
-                this.fragments.push(new VisualizerFragment(target.x, target.y, target.z, target.w, target.h));
-            }
-            
-            // Teleport the original particle to a new spot so it looks like it vanished into pieces
-            target.reset(true);
-        }
-    }
   }
   getCP(x0, y0, x1, y1, x2, y2) {
     const t = 0.4,
@@ -1534,16 +1472,6 @@ class Visualizer {
         for (let i = 0; i < this.particles.length; i++) {
             this.particles[i].update(avgVolume);
             this.particles[i].draw(ctx);
-        }
-        
-        // Update and draw exploding fragments
-        for (let i = this.fragments.length - 1; i >= 0; i--) {
-            this.fragments[i].update(avgVolume);
-            this.fragments[i].draw(ctx);
-            // Remove dead shards
-            if (this.fragments[i].life <= 0 || this.fragments[i].z <= 0) {
-                this.fragments.splice(i, 1);
-            }
         }
         
         ctx.restore();
