@@ -1620,8 +1620,9 @@ class Visualizer {
     const drawBar = (x, val) => {
         // MATCH THE LIQUID MATH: Exponential squashing removes the noisy "messy forest"
         // and only lets distinct peaks through (like the yt video)
+        const cfgSquash = window.vizConfig ? window.vizConfig.bSq : 2.7;
         let norm = val / 255.0;
-        let squashed = Math.pow(norm, 2.7) * sens; // Crush the noise dynamically
+        let squashed = Math.pow(norm, cfgSquash) * sens; // Crush the noise dynamically
         let bh = squashed * (h * 0.7); 
         
         if (bh < 1) return; // Silent bins
@@ -1639,10 +1640,12 @@ class Visualizer {
     };
     
     // Left side and Right side rendered synchronously ensuring perfect mirror
+    const cfg = window.vizConfig || { gap: 10, bSq: 2.7 };
+    
     for (let i = 0; i < barsPerSide; i++) {
-        // Create the 10-bar gap on the outside edges as requested by the user
-        let isGap = i < 10;
-        let binIndex = isGap ? 0 : (i - 10) * step;
+        // Create the customizable gap on the outside edges
+        let isGap = i < cfg.gap;
+        let binIndex = isGap ? 0 : (i - cfg.gap) * step;
         let v = isGap ? 0 : (d[binIndex] || 0);
         
         // i=0 is Sub-Bass. Arin Nation visualizer maps Bass to the far edges of the screen,
@@ -1658,18 +1661,55 @@ class Visualizer {
   // Global handler for the Liquid Tuner hidden UI
   updateVizTuning() {
     try {
-        const wVal = document.getElementById("tuneWidthSlider")?.value || "0.85";
-        const sVal = document.getElementById("tuneSensSlider")?.value || "1.0";
-        const pVal = document.getElementById("tunePosSlider")?.value || "16";
+        const val = (id, def) => document.getElementById(id) ? parseFloat(document.getElementById(id).value) : def;
+        const setTxt = (id, txt) => { if(document.getElementById(id)) document.getElementById(id).innerText = txt; }
         
-        const wSpan = document.getElementById("tuneWidthVal");
-        const sSpan = document.getElementById("tuneSensVal");
-        const pSpan = document.getElementById("tunePosVal");
+        // Base
+        let width = val("tuneWidthSlider", 0.85);
+        let sens = val("tuneSensSlider", 1.0);
+        let pos = val("tunePosSlider", 16);
+        let gap = val("tuneBgGapSlider", 10);
         
-        if (wSpan) wSpan.innerText = wVal;
-        if (sSpan) sSpan.innerText = parseFloat(sVal).toFixed(1);
-        if (pSpan) pSpan.innerText = pVal;
+        setTxt("tuneWidthVal", width);
+        setTxt("tuneSensVal", sens.toFixed(1));
+        setTxt("tunePosVal", pos);
+        setTxt("tuneBgGapVal", gap);
         
+        // Bass
+        let bEnd = val("tuneBassEndSlider", 5);
+        let bThr = val("tuneBassThreshSlider", 0.50);
+        let bSq = val("tuneBassSquashSlider", 4.0);
+        setTxt("tuneBassBinVal", `0 - ${bEnd}`);
+        setTxt("tuneBassThreshVal", bThr.toFixed(2));
+        setTxt("tuneBassSquashVal", bSq.toFixed(1));
+        
+        // Mids
+        let mStart = val("tuneMidStartSlider", 15);
+        let mEnd = val("tuneMidEndSlider", 25);
+        let mThr = val("tuneMidThreshSlider", 0.40);
+        let mSq = val("tuneMidSquashSlider", 3.0);
+        setTxt("tuneMidBinVal", `${mStart} - ${mEnd}`);
+        setTxt("tuneMidThreshVal", mThr.toFixed(2));
+        setTxt("tuneMidSquashVal", mSq.toFixed(1));
+        
+        // Highs
+        let hStart = val("tuneHighStartSlider", 35);
+        let hEnd = val("tuneHighEndSlider", 45);
+        let hThr = val("tuneHighThreshSlider", 0.35);
+        let hSq = val("tuneHighSquashSlider", 2.5);
+        setTxt("tuneHighBinVal", `${hStart} - ${hEnd}`);
+        setTxt("tuneHighThreshVal", hThr.toFixed(2));
+        setTxt("tuneHighSquashVal", hSq.toFixed(1));
+        
+        // Save to global config for engine
+        window.vizConfig = {
+            width, sens, pos, gap,
+            bEnd, bThr, bSq,
+            mStart, mEnd, mThr, mSq,
+            hStart, hEnd, hThr, hSq
+        };
+        
+        // Hide UI
         const hideUIcb = document.getElementById("tuneHideUI");
         if(hideUIcb) {
             document.body.classList.toggle("clean-lines-mode", hideUIcb.checked);
@@ -1685,64 +1725,52 @@ class Visualizer {
     const baseRadius = 130; // Shrink inside the art circle
     const maxBump = 160; // Max bass protrusion
     
-    // LIVE TUNER VARIABLES: Let the user sculpt the horns with the hidden sliders
-    let tunePos = 16;
-    let tunePinch = 0.85;
-    let sens = window.vizSens || 1.0;
+    const cfg = window.vizConfig || {
+        width: 0.85, sens: window.vizSens || 1.0, pos: 16,
+        bEnd: 5, bThr: 0.50, bSq: 4.0,
+        mStart: 15, mEnd: 25, mThr: 0.40, mSq: 3.0,
+        hStart: 35, hEnd: 45, hThr: 0.35, hSq: 2.5
+    };
     
-    // Attempt to grab live slider values if the Tuner UI is open
-    try {
-        const slPos = document.getElementById("tunePosSlider");
-        const slPinch = document.getElementById("tuneWidthSlider");
-        const slSens = document.getElementById("tuneSensSlider");
-        if(slPos) tunePos = parseInt(slPos.value);
-        if(slPinch) tunePinch = parseFloat(slPinch.value);
-        if(slSens) sens = parseFloat(slSens.value);
-    } catch(e) {}
+    let tunePos = cfg.pos;
+    let tunePinch = cfg.width;
+    let sens = cfg.sens;
     
     // 1. Calculate overall bass energy for the drop
     let bassSum = 0;
-    for(let i=0; i<5; i++) bassSum += (frameData[i] || 0);
-    let bassAvg = (bassSum / 5) / 255.0; // 0.0 to 1.0
+    for(let i=0; i<=cfg.bEnd; i++) bassSum += (frameData[i] || 0);
+    let bassAvg = (bassSum / (cfg.bEnd + 1)) / 255.0; // 0.0 to 1.0
     
-    // 2. Stateless Exponential Gate (Lightning Fast 60FPS)
-    // Avoids cross-frame memory tracking (which causes render lag).
-    // Uses a strict threshold (0.50) + an aggressive exponent (Squash) to force the 
-    // visualizer to ignore sustained tails and only punch on hard impacts.
+    // 2. Stateless Exponential Gate
     let bassSpike = 0;
-    let threshold = 0.50; 
-    
-    if (bassAvg > threshold) {
-        // Normalize the remaining volume above the threshold from 0.0 to 1.0
-        let normalizedSpike = (bassAvg - threshold) / (1.0 - threshold);
-        let squashPower = 4.0; // The higher the power, the faster it falls back down
-        bassSpike = Math.pow(normalizedSpike, squashPower); 
+    if (bassAvg > cfg.bThr) {
+        let normalizedSpike = (bassAvg - cfg.bThr) / (1.0 - cfg.bThr);
+        bassSpike = Math.pow(normalizedSpike, cfg.bSq); 
     }
     
     // 3. Independent Mid-Range Energy for the Bottom Hills
     let midSum = 0;
-    // Bins 15-25 typically contain snares, claps, and synths
-    for(let i=15; i<25; i++) midSum += (frameData[i] || 0);
-    let midAvg = (midSum / 10) / 255.0; // 0.0 to 1.0
+    for(let i=cfg.mStart; i<=cfg.mEnd; i++) midSum += (frameData[i] || 0);
+    // Protect against weird math if user makes start > end
+    let midDivisor = Math.max(1, (cfg.mEnd - cfg.mStart) + 1);
+    let midAvg = (midSum / midDivisor) / 255.0; 
     
     let midSpike = 0;
-    let midThreshold = 0.40; // Mids are usually quieter than bass, lower the threshold slightly
-    if (midAvg > midThreshold) {
-        let normalizedMid = (midAvg - midThreshold) / (1.0 - midThreshold);
-        midSpike = Math.pow(normalizedMid, 3.0); // Slightly softer squash than bass
+    if (midAvg > cfg.mThr) {
+        let normalizedMid = (midAvg - cfg.mThr) / (1.0 - cfg.mThr);
+        midSpike = Math.pow(normalizedMid, cfg.mSq); 
     }
 
     // 4. Independent Treble Energy for the sideways Equator bumps
     let highSum = 0;
-    // Bins 35-45 typically contain high hats and extreme synth frequencies (Treble)
-    for(let i=35; i<45; i++) highSum += (frameData[i] || 0);
-    let highAvg = (highSum / 10) / 255.0; // 0.0 to 1.0
+    for(let i=cfg.hStart; i<=cfg.hEnd; i++) highSum += (frameData[i] || 0);
+    let highDivisor = Math.max(1, (cfg.hEnd - cfg.hStart) + 1);
+    let highAvg = (highSum / highDivisor) / 255.0; 
     
     let highSpike = 0;
-    let highThreshold = 0.35; // Treble is even quieter naturally
-    if (highAvg > highThreshold) {
-        let normalizedHigh = (highAvg - highThreshold) / (1.0 - highThreshold);
-        highSpike = Math.pow(normalizedHigh, 2.5);
+    if (highAvg > cfg.hThr) {
+        let normalizedHigh = (highAvg - cfg.hThr) / (1.0 - cfg.hThr);
+        highSpike = Math.pow(normalizedHigh, cfg.hSq);
     }
     
     // Save to global for the Nerd Stats UI (sampled efficiently)
@@ -5536,3 +5564,40 @@ if ("serviceWorker" in navigator) {
 window.updateVizTuning = function() {
     if(window.viz) window.viz.updateVizTuning();
 };
+
+window.initVizDraggable = function() {
+    const modal = document.getElementById("vizTunerModal");
+    const header = document.getElementById("vizTunerHeader");
+    if(!modal || !header) return;
+    
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    
+    header.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = modal.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+        
+        modal.style.right = 'auto';
+        modal.style.bottom = 'auto';
+        modal.style.left = initialLeft + 'px';
+        modal.style.top = initialTop + 'px';
+        modal.style.margin = '0';
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if(!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        modal.style.left = (initialLeft + dx) + 'px';
+        modal.style.top = (initialTop + dy) + 'px';
+    });
+    
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+};
+setTimeout(() => window.initVizDraggable(), 1000);
