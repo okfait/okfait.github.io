@@ -5902,16 +5902,32 @@ window.initDPPDSliders = function () {
 };
 setTimeout(() => window.initDPPDSliders(), 500);
 
-// PWA SERVICE WORKER
+//=============================================================================
+// SERVICE WORKER NUKE (Forces browser to load newest GitHub version, protects IndexedDB songs)
+//=============================================================================
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("sw.js")
-      .then((reg) => {
-        console.log("SW registered!", reg);
-      })
-      .catch((err) => console.log("SW failed", err));
-  });
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for(let registration of registrations) {
+            registration.unregister().then(function(boolean) {
+                console.log("Nuked old Service Worker cache to force update!");
+            });
+        }
+    });
+}
+// Also wipe the explicit cache storage just to be safe
+if ('caches' in window) {
+    caches.keys().then((keyList) => {
+        return Promise.all(keyList.map((key) => {
+            return caches.delete(key);
+        }));
+    }).then(() => {
+        console.log("File caches cleared. Reloading with fresh code...");
+        // Use sessionStorage to prevent infinite reload loops
+        if (!sessionStorage.getItem('cacheNuked')) {
+            sessionStorage.setItem('cacheNuked', 'true');
+            window.location.reload(true);
+        }
+    });
 }
 
 window.updateVizTuning = function() {
