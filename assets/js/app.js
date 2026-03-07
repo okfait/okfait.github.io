@@ -1786,19 +1786,20 @@ class Visualizer {
         highSpike = Math.pow(normalizedHigh, cfg.hSq);
     }
     
-    // --- FRAME INTERPOLATION (SMOOTHING) ---
-    // Instead of snapping instantly from 0 to 100 on every frame, which causes
-    // the horns to look "glitchy" or violent, we use Linear Interpolation (Lerp). 
-    // This allows the bump to glide smoothly to its destination like a real liquid.
+    // --- FRAME INTERPOLATION (ATTACK & RELEASE SMOOTHING) ---
     if (this.smoothBass === undefined) this.smoothBass = 0;
     if (this.smoothMid === undefined) this.smoothMid = 0;
     if (this.smoothHigh === undefined) this.smoothHigh = 0;
     
-    const lerpSpeed = cfg.smooth || 0.25; // 0.1 is slow/syrupy, 0.9 is violent/fast
-    this.smoothBass += (bassSpike - this.smoothBass) * lerpSpeed;
-    this.smoothMid += (midSpike - this.smoothMid) * lerpSpeed;
-    this.smoothHigh += (highSpike - this.smoothHigh) * lerpSpeed;
-    // ---------------------------------------
+    // Attack (Rise speed) is virtually instant so the drop packs a punch.
+    // Release (Fall speed) uses the UI Slider so it drops back down syrupy smooth.
+    const releaseSpeed = cfg.smooth || 0.25; 
+    const attackSpeed = 0.85; // 85% snap to target per frame (very fast)
+
+    this.smoothBass += (bassSpike > this.smoothBass ? attackSpeed : releaseSpeed) * (bassSpike - this.smoothBass);
+    this.smoothMid += (midSpike > this.smoothMid ? attackSpeed : releaseSpeed) * (midSpike - this.smoothMid);
+    this.smoothHigh += (highSpike > this.smoothHigh ? attackSpeed : releaseSpeed) * (highSpike - this.smoothHigh);
+    // -------------------------------------------------------------
     
     // Save to global for the Nerd Stats UI (sampled efficiently)
     window.nerdStats = {
