@@ -1731,10 +1731,33 @@ class Visualizer {
     let tunePinch = cfg.width;
     let sens = cfg.sens;
     
-    // 1. Calculate overall bass energy for the drop
-    let bassSum = 0;
-    for(let i=0; i<=cfg.bEnd; i++) bassSum += (frameData[i] || 0);
-    let bassAvg = (bassSum / (cfg.bEnd + 1)) / 255.0; // 0.0 to 1.0
+    // Helper: Gaussian Bleed Sampler
+    // Reads a core chunk of bins, but also smoothly pulls energy from adjacent bins (±6)
+    // This perfectly replicates the "chunk bleeding" look from the TrapNation video.
+    const getBleedingEnergy = (start, end, maxDist = 6) => {
+        let totalWeight = 0;
+        let weightedSum = 0;
+        
+        let minScan = Math.max(0, start - maxDist);
+        let maxScan = Math.min(frameData.length - 1, end + maxDist);
+        
+        for (let i = minScan; i <= maxScan; i++) {
+            let distToCore = 0;
+            if (i < start) distToCore = start - i;
+            else if (i > end) distToCore = i - end;
+            
+            // Gaussian weight formula: e^(-(dist^2) / (2 * (variance^2)))
+            let weight = Math.exp(-(distToCore * distToCore) / (2 * 8.0)); 
+            
+            weightedSum += (frameData[i] || 0) * weight;
+            totalWeight += weight;
+        }
+        
+        return totalWeight > 0 ? (weightedSum / totalWeight) / 255.0 : 0;
+    };
+    
+    // 1. Calculate overall bass energy for the drop (With Bleed)
+    let bassAvg = getBleedingEnergy(0, cfg.bEnd); 
     
     // 2. Stateless Exponential Gate
     let bassSpike = 0;
@@ -1743,12 +1766,8 @@ class Visualizer {
         bassSpike = Math.pow(normalizedSpike, cfg.bSq); 
     }
     
-    // 3. Independent Mid-Range Energy for the Bottom Hills
-    let midSum = 0;
-    for(let i=cfg.mStart; i<=cfg.mEnd; i++) midSum += (frameData[i] || 0);
-    // Protect against weird math if user makes start > end
-    let midDivisor = Math.max(1, (cfg.mEnd - cfg.mStart) + 1);
-    let midAvg = (midSum / midDivisor) / 255.0; 
+    // 3. Independent Mid-Range Energy for the Bottom Hills (With Bleed)
+    let midAvg = getBleedingEnergy(cfg.mStart, cfg.mEnd); 
     
     let midSpike = 0;
     if (midAvg > cfg.mThr) {
@@ -1756,11 +1775,8 @@ class Visualizer {
         midSpike = Math.pow(normalizedMid, cfg.mSq); 
     }
 
-    // 4. Independent Treble Energy for the sideways Equator bumps
-    let highSum = 0;
-    for(let i=cfg.hStart; i<=cfg.hEnd; i++) highSum += (frameData[i] || 0);
-    let highDivisor = Math.max(1, (cfg.hEnd - cfg.hStart) + 1);
-    let highAvg = (highSum / highDivisor) / 255.0; 
+    // 4. Independent Treble Energy for the sideways Equator bumps (With Bleed)
+    let highAvg = getBleedingEnergy(cfg.hStart, cfg.hEnd); 
     
     let highSpike = 0;
     if (highAvg > cfg.hThr) {
