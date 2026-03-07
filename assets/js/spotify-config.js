@@ -1,7 +1,7 @@
 export const SPOTIFY_CONFIG = {
     clientId: '2ac7cd7c780548adbc488b444319520e',
     clientSecret: '197c79af7b974b718cb141a37aa3215c',
-    redirectUri: window.location.origin.includes('localhost') ? 'http://localhost:5500' : window.location.origin,
+    redirectUri: window.location.origin,
     scopes: [
         'user-read-private',
         'user-read-email',
