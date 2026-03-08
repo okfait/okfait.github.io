@@ -283,4 +283,9 @@ if (require.main === module) {
     app.listen(PORT, () => console.log(`okMUSIC API Server running on port ${PORT}`));
 }
 
+// Debug: Catch-all to see what path Vercel gives Express
+app.all('*', (req, res) => {
+    res.status(404).json({ debug: true, method: req.method, path: req.path, url: req.url, originalUrl: req.originalUrl });
+});
+
 module.exports = app;
