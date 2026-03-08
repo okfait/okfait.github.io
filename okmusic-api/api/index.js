@@ -122,40 +122,46 @@ app.get('/api/fetch', async (req, res) => {
         let targetUrl = url;
         let pType = play.yt_validate(targetUrl);
         
+        // Handle Spotify Track URL or search query
         if (pType !== 'video') {
-             // Handle Spotify Track URL (playlist fetching will be handled later or differently, just track for now to test)
             if (play.sp_validate(targetUrl) === 'track') {
-                const trackQuery = await fetchSpotifyTrack(targetUrl);
-                // Search for the youtube equivalent
-                const searched = await play.search(trackQuery, { limit: 1 });
+                targetUrl = await fetchSpotifyTrack(targetUrl);
+            }
+            
+            // Search for the query (or track name)
+            console.log("Searching YouTube for:", targetUrl);
+            try {
+                const searched = await play.search(targetUrl, { limit: 1 });
                 if (searched.length === 0) {
-                    return res.status(404).json({ error: 'Could not find a YouTube alternative for the Spotify track.' });
+                    return res.status(404).json({ error: 'Song not found on YouTube.' });
                 }
                 targetUrl = searched[0].url;
-            } else if (play.sp_validate(targetUrl) === 'playlist' || play.sp_validate(targetUrl) === 'album') {
-                return res.status(400).json({ error: 'Playlist URLs must be sent to /api/playlist.'});
-            } else if (pType === 'search' || !targetUrl.startsWith('http')) {
-                // If they passed a raw search string (like a track name from a playlist)
-                const searched = await play.search(targetUrl, { limit: 1 });
-                if (searched.length === 0) return res.status(404).json({ error: 'Could not find video for search query.' });
-                targetUrl = searched[0].url;
-            } else {
-                 return res.status(400).json({ error: 'Invalid URL. Only YouTube videos, Spotify tracks, or search queries are supported.' });
+            } catch (searchErr) {
+                if (searchErr.message.includes('confirm you\'re not a bot')) {
+                    console.error("YouTube SEARCH BLOCK detected.");
+                    return res.status(500).json({ 
+                        error: 'YouTube blocked this search. TIP: Open the song on YouTube and paste the direct link instead.' 
+                    });
+                }
+                throw searchErr;
             }
         }
 
-        // Get the audio stream!
-        const stream = await play.stream(targetUrl, { discordPlayerCompatibility : true });
-        
-        // Pass the stream metadata headers
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Transfer-Encoding', 'chunked');
-
-        // Pipe the raw audio directly into the HTTP response object!
-        stream.stream.pipe(res);
-        
+        // Get the audio stream
+        try {
+            const stream = await play.stream(targetUrl, { discordPlayerCompatibility : true });
+            res.setHeader('Content-Type', 'audio/mpeg');
+            res.setHeader('Transfer-Encoding', 'chunked');
+            stream.stream.pipe(res);
+        } catch (streamErr) {
+            if (streamErr.message.includes('confirm you\'re not a bot')) {
+                console.error("YouTube STREAM BLOCK detected.");
+                return res.status(500).json({ error: 'YouTube blocked the stream for this song. Search is restricted on this server.' });
+            }
+            throw streamErr;
+        }
     } catch (err) {
-        console.error(err);
+        console.error("Fetch API Error:", err);
         res.status(500).json({ error: err.message || 'Failed to fetch audio stream.' });
     }
 });
