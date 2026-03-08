@@ -2,10 +2,6 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/proxy-embed/:path*",
-      "destination": "https://open.spotify.com/embed/:path*"
-    },
-    {
       "source": "/api/:path*",
       "destination": "/okmusic-api/api/index.js"
     }
