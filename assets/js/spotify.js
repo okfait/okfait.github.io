@@ -234,7 +234,7 @@ export class SpotifyManager {
             // Determine the API backend dynamically just like app.js
             const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
                 ? "http://localhost:3000" 
-                : "https://okmusic-api.vercel.app";
+                : "https://okfait-github-io.vercel.app";
 
             // Target the Vercel rewrite route which points to open.spotify.com/embed/playlist/
             const res = await fetch(`${API_BASE}/api/proxy-embed/playlist/${playlistId}`);

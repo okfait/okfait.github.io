@@ -1243,6 +1243,10 @@ class AudioSystem {
       
       // Fallback: Remote Playback API (AirPlay / Google Cast / Smart TVs)
       if (this.audio.remote && this.audio.remote.prompt) {
+        if (!this.audio.src) {
+           window.ui.showToast("Please play a song before connecting to Cast.");
+           return;
+        }
         await this.audio.remote.prompt();
         window.ui.showToast("Casting session started.");
         return;
@@ -1250,7 +1254,9 @@ class AudioSystem {
       
       window.ui.showToast("Bluetooth/Casting not natively supported on this browser.");
     } catch (err) {
-      console.warn("Device connection cancelled or failed:", err);
+      if (err.name !== "NotAllowedError" && err.name !== "AbortError") {
+        console.warn("Device connection failed:", err);
+      }
     }
   }
 }

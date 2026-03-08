@@ -8,9 +8,17 @@
   ],
   "headers": [
     {
+      "source": "/api/proxy-embed/:path*",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS" }
+      ]
+    },
+    {
       "source": "/api/fetch",
       "headers": [
-        { "key": "Cache-Control", "value": "public, s-maxage=86400, stale-while-revalidate=43200" }
+        { "key": "Cache-Control", "value": "public, s-maxage=86400, stale-while-revalidate=43200" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     }
   ],
