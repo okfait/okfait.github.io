@@ -9,10 +9,13 @@ export class SpotifyManager {
     }
 
     login() {
+        const rUri = (SPOTIFY_CONFIG.redirectUri || "").trim();
+        console.log("Spotify Login Attempt - Redirecting to:", rUri);
+        
         const params = new URLSearchParams({
-            client_id: SPOTIFY_CONFIG.clientId,
+            client_id: (SPOTIFY_CONFIG.clientId || "").trim(),
             response_type: 'code',
-            redirect_uri: SPOTIFY_CONFIG.redirectUri,
+            redirect_uri: rUri,
             scope: SPOTIFY_CONFIG.scopes.join(' '),
             show_dialog: 'true'
         });
