@@ -30,18 +30,23 @@ const firebaseConfig = {
 
 // REPLACE THE ABOVE CONFIG WITH YOUR OWN FIREBASE KEYS
 
-let app, db, storage;
+window.isFirebaseActive = false;
 try {
   app = initializeApp(firebaseConfig);
   db = getDatabase(app);
   storage = getStorage(app);
-  storage.maxUploadRetryTime = 1200000; // Increase to 20 minutes for large libraries
+  storage.maxUploadRetryTime = 1200000; 
   storage.maxOperationRetryTime = 1200000;
 
   window.serverTimeOffset = 0;
-  onValue(dbRef(db, ".info/serverTimeOffset"), (snap) => {
-    window.serverTimeOffset = snap.val() || 0;
-  });
+  try {
+    onValue(dbRef(db, ".info/serverTimeOffset"), (snap) => {
+      window.serverTimeOffset = snap.val() || 0;
+      window.isFirebaseActive = true;
+    });
+  } catch (e) {
+    console.warn("Firebase Quota/Access blocked:", e.message);
+  }
 } catch (e) {
   console.error("Firebase init failed", e);
 }
@@ -4589,6 +4594,7 @@ class UI {
           const t = tracks[i];
           btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> DOWNLOADING ${i + 1}/${tracks.length}`;
           
+          let blob = null;
           try {
             // Priority 1: Vercel Proxy (if not blocked)
             const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.url || t.name)}`;
@@ -4598,15 +4604,24 @@ class UI {
               const err = await res.json().catch(() => ({}));
               console.warn(`Vercel download failed for ${t.name}:`, err.error);
               
-              // If we see the "Bot" error, we notify the user once and skip to next or fallback
               if (err.error?.includes("confirm you're not a bot")) {
-                  console.error("CRITICAL: YouTube has blocked the Vercel serverIP.");
+                  console.log("RETRYING with search query for:", t.name);
+                  // Try again with just the name
+                  const retryUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.name)}`;
+                  const res2 = await fetch(retryUrl);
+                  if (res2.ok) {
+                      blob = await res2.blob();
+                  } else {
+                      throw new Error("Both direct and search attempts blocked by YouTube.");
+                  }
+              } else {
+                  throw new Error(err.error || "Server Error");
               }
-              throw new Error(err.error || "Server Error");
+            } else {
+                blob = await res.blob();
             }
 
-            const blob = await res.blob();
-            if (blob.size < 1000) throw new Error("File too small");
+            if (!blob || blob.size < 1000) throw new Error("File too small or download failed.");
 
             const songId = "stream-" + Date.now() + "-" + i;
             const newSong = {
@@ -4623,7 +4638,6 @@ class UI {
             successCount++;
           } catch (e) {
             console.warn("Skipped track:", t.name, e.message);
-            // We'll keep going to try and get as many as possible
           }
         }
 

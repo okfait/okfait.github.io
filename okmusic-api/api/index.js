@@ -131,7 +131,21 @@ app.get('/api/fetch', async (req, res) => {
             // Search for the query (or track name)
             console.log("Searching YouTube for:", targetUrl);
             try {
-                const searched = await play.search(targetUrl, { limit: 1 });
+                // Configure play-dl to be more "browser-like"
+                const searchOptions = { 
+                    limit: 1,
+                    unquoted: true // Helps with some blocks
+                };
+                
+                let searched = await play.search(targetUrl, searchOptions);
+                
+                if (searched.length === 0) {
+                    // Try a secondary "Relaxed Search" if first one fails
+                    console.log("Relaxing search query...");
+                    const relaxedQuery = targetUrl.split('-')[0].split('(')[0].trim();
+                    searched = await play.search(relaxedQuery, searchOptions);
+                }
+
                 if (searched.length === 0) {
                     return res.status(404).json({ error: 'Song not found on YouTube.' });
                 }
