@@ -1,3 +1,4 @@
+// okMUSIC API v6.6 — proxy-embed + playlist + fetch
 const express = require('express');
 const cors = require('cors');
 const play = require('play-dl');
