@@ -95,6 +95,10 @@ async function fetchSpotifyPlaylistOrAlbum(url) {
     
     let tracks = [];
     if (type === 'playlist') {
+        if (!data.tracks || !data.tracks.items) {
+            console.warn("Spotify Proxy: No tracks found in playlist. Likely private.");
+            throw new Error("This playlist is likely PRIVATE. Please make it Public in Spotify settings.");
+        }
         tracks = data.tracks.items.map(i => {
             if (!i.track) return null;
             return {
@@ -103,6 +107,10 @@ async function fetchSpotifyPlaylistOrAlbum(url) {
             };
         }).filter(Boolean);
     } else {
+        if (!data.tracks || !data.tracks.items) {
+            console.warn("Spotify Proxy: No tracks found in album.");
+            throw new Error("Failed to find tracks for this album.");
+        }
         tracks = data.tracks.items.map(t => ({
             name: `${t.name} - ${t.artists?.[0]?.name || 'Unknown Artist'}`,
             originalUrl: url

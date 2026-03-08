@@ -213,10 +213,16 @@ export class SpotifyManager {
             
             // Do NOT fetch the /tracks endpoint separately, because it returns 403 Forbidden for Guest Mode!
             // The initial `/playlists/{id}` response already contains the first 100 tracks.
+            // DEFENSIVE: If tracks or items are missing, it's usually because the playlist is PRIVATE.
+            if (!pData.tracks || !pData.tracks.items) {
+                console.warn("Spotify API returned no tracks. This usually means the playlist is PRIVATE.");
+                throw new Error("This playlist is likely PRIVATE. Please make it Public in Spotify settings to scan it in Guest Mode.");
+            }
+
             const tracksData = pData.tracks.items.map(item => {
                 if (!item || !item.track) return null;
                 return {
-                    name: `${item.track.artists[0]?.name || 'Unknown Artist'} - ${item.track.name}`,
+                    name: `${item.track.artists?.[0]?.name || 'Unknown Artist'} - ${item.track.name}`,
                     url: item.track.external_urls?.spotify || "",
                     id: item.track.id
                 };
