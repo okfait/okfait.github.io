@@ -4588,11 +4588,25 @@ class UI {
         for (let i = 0; i < tracks.length; i++) {
           const t = tracks[i];
           btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> DOWNLOADING ${i + 1}/${tracks.length}`;
+          
           try {
+            // Priority 1: Vercel Proxy (if not blocked)
             const fetchUrl = `${API_BASE}/api/fetch?url=${encodeURIComponent(t.url || t.name)}`;
             const res = await fetch(fetchUrl);
-            if (!res.ok) throw new Error("Download server returned status " + res.status);
+            
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              console.warn(`Vercel download failed for ${t.name}:`, err.error);
+              
+              // If we see the "Bot" error, we notify the user once and skip to next or fallback
+              if (err.error?.includes("confirm you're not a bot")) {
+                  console.error("CRITICAL: YouTube has blocked the Vercel serverIP.");
+              }
+              throw new Error(err.error || "Server Error");
+            }
+
             const blob = await res.blob();
+            if (blob.size < 1000) throw new Error("File too small");
 
             const songId = "stream-" + Date.now() + "-" + i;
             const newSong = {
@@ -4606,10 +4620,10 @@ class UI {
 
             // Push to new folder
             newFolder.items.push({ type: "song", id: songId });
-
             successCount++;
           } catch (e) {
-            console.warn("Skipped track:", t.name, e);
+            console.warn("Skipped track:", t.name, e.message);
+            // We'll keep going to try and get as many as possible
           }
         }
 

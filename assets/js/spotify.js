@@ -208,28 +208,20 @@ export class SpotifyManager {
 
             const title = pData.name;
             
-            // Then get tracks
-            const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            const text = await res.text();
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                throw new Error("Track Parse Error: " + text.slice(0, 100));
-            }
-
-            if (!res.ok) throw new Error(data.error?.message || data.error || "Failed to fetch tracks");
+            // Do NOT fetch the /tracks endpoint separately, because it returns 403 Forbidden for Guest Mode!
+            // The initial `/playlists/{id}` response already contains the first 100 tracks.
+            const tracksData = pData.tracks.items.map(item => {
+                if (!item || !item.track) return null;
+                return {
+                    name: `${item.track.artists[0]?.name || 'Unknown Artist'} - ${item.track.name}`,
+                    url: item.track.external_urls?.spotify || "",
+                    id: item.track.id
+                };
+            }).filter(Boolean);
 
             return {
                 title: title,
-                tracks: data.items.map(item => ({
-                    name: `${item.track.artists[0].name} - ${item.track.name}`,
-                    url: item.track.external_urls.spotify,
-                    id: item.track.id
-                }))
+                tracks: tracksData
             };
         } catch (e) {
             console.error("Spotify Fetch Error:", e);
