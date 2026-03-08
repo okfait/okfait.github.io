@@ -88,6 +88,7 @@ async function fetchSpotifyPlaylistOrAlbum(url) {
         headers: { 'Authorization': 'Bearer ' + token }
     });
     if (!res.ok) {
+        if (res.status === 404) throw new Error("PRIVATE_PLAYLIST");
         const errBody = await res.json().catch(()=>({}));
         throw new Error(`Spotify ${type} API Error: ${errBody.error?.message || res.status}`);
     }
@@ -225,7 +226,33 @@ app.get('/api/playlist', async (req, res) => {
         res.json({ title: pTitle || "Imported Playlist", tracks: tracks.slice(0, 50) }); // Cap at 50 to avoid massive API abuse
     } catch (err) {
         console.error(err);
+        if (err.message === "PRIVATE_PLAYLIST" || String(err.message).includes("PRIVATE")) {
+            return res.status(403).json({ error: 'This playlist is likely PRIVATE. Please make it Public in Spotify settings.' });
+        }
         res.status(500).json({ error: err.message || 'Failed to parse playlist.' });
+    }
+});
+
+app.get('/api/proxy-embed/playlist/:id', async (req, res) => {
+    try {
+        const playlistId = req.params.id;
+        const response = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`);
+        
+        // If Spotify returns 404 for an embed, the playlist is definitely private or deleted.
+        if (response.status === 404) {
+            return res.status(403).json({ error: "Playlist is Private or Deleted. Cannot generate embed data." });
+        }
+        
+        if (!response.ok) {
+            return res.status(response.status).json({ error: `Spotify upstream embed returned ${response.status}` });
+        }
+
+        const html = await response.text();
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+    } catch (err) {
+        console.error('Embed Proxy err:', err);
+        res.status(500).json({ error: err.message || 'Failed to proxy embed HTML.' });
     }
 });
 
