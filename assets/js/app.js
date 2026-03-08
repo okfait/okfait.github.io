@@ -30,6 +30,7 @@ const firebaseConfig = {
 
 // REPLACE THE ABOVE CONFIG WITH YOUR OWN FIREBASE KEYS
 
+let app, db, storage;
 window.isFirebaseActive = false;
 try {
   app = initializeApp(firebaseConfig);
