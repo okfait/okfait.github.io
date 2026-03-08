@@ -4,6 +4,10 @@
     {
       "source": "/api/proxy-embed/:path*",
       "destination": "https://open.spotify.com/embed/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/okmusic-api/api/index.js"
     }
   ],
   "headers": [
@@ -30,12 +34,6 @@
     {
       "src": "**",
       "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "okmusic-api/api/index.js"
     }
   ]
 }
