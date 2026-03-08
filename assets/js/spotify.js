@@ -120,6 +120,11 @@ export class SpotifyManager {
     }
 
     logout() {
+        this.softLogout();
+        window.location.reload();
+    }
+
+    softLogout() {
         localStorage.removeItem('spotify_access_token');
         localStorage.removeItem('spotify_refresh_token');
         localStorage.removeItem('spotify_expires_at');
@@ -128,7 +133,6 @@ export class SpotifyManager {
         this.refreshToken = null;
         this.expiresAt = null;
         this.profile = null;
-        window.location.reload();
     }
 
     async getValidToken() {
@@ -140,6 +144,9 @@ export class SpotifyManager {
                 // Try refresh if expired
                 const refreshed = await this.refreshAccessToken();
                 if (refreshed) return this.accessToken;
+                // If refresh fails, soft logout and fallback
+                console.warn("Failed to refresh token, falling back to guest mode");
+                this.softLogout();
             }
         }
         
@@ -192,7 +199,7 @@ export class SpotifyManager {
 
             if (pRes.status === 401 || pRes.status === 403) {
                 console.warn("Spotify API Auth Failure. Falling back to oEmbed Scraper...");
-                if (this.accessToken) this.logout();
+                if (this.accessToken && !this.isGuest) this.softLogout();
                 return await this.scrapeEmbedData(playlistId);
             }
 
@@ -224,8 +231,13 @@ export class SpotifyManager {
 
     async scrapeEmbedData(playlistId) {
         try {
+            // Determine the API backend dynamically just like app.js
+            const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
+                ? "http://localhost:3000" 
+                : "https://okmusic-api.vercel.app";
+
             // Target the Vercel rewrite route which points to open.spotify.com/embed/playlist/
-            const res = await fetch(`/api/proxy-embed/playlist/${playlistId}`);
+            const res = await fetch(`${API_BASE}/api/proxy-embed/playlist/${playlistId}`);
             if (!res.ok) throw new Error("Backend Embed Proxy returned: " + res.status);
             
             const html = await res.text();
