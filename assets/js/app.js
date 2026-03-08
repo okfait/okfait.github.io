@@ -1,4 +1,5 @@
-﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+﻿import Dexie from "https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.mjs";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import {
   getDatabase,
   ref as dbRef,
@@ -258,75 +259,44 @@ class AudioExporter {
   }
 }
 
-class MusicDB {
+class MusicDB extends Dexie {
   constructor() {
-    this.name = "SonicVaultV8.0";
-    this.v = 3;
-    this.db = null;
+    super("SonicVaultV8.0");
+    // Increment version to 4 to ensure clean upgrade from previous native DB
+    this.version(4).stores({
+      songs: 'id, name, isNew'
+    });
   }
   async init() {
-    return new Promise((r) => {
-      const q = indexedDB.open(this.name, this.v);
-      q.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (db.objectStoreNames.contains("songs"))
-          db.deleteObjectStore("songs");
-        db.createObjectStore("songs", { keyPath: "id" });
-      };
-      q.onsuccess = (e) => {
-        this.db = e.target.result;
-        r();
-      };
-    });
+    await this.open();
   }
   async add(f, data = null) {
-    return new Promise((r, j) => {
-      const id = crypto.randomUUID();
-      const t = this.db.transaction(["songs"], "readwrite");
-      const baseName = f.name.replace(/\.[^/.]+$/, "");
-      const entry = {
-        id: id,
-        name: baseName,
-        blob: f,
-        art: null,
-        beatSignals: data ? data.beatSignals : [],
-        isNew: true, // Mark as new song
-      };
-      if (data && data.speedPoints) entry.speedPoints = data.speedPoints;
-
-      t.objectStore("songs").add(entry).onsuccess = () => r(id);
-      t.onerror = j;
-    });
+    const id = crypto.randomUUID();
+    const baseName = f.name.replace(/\.[^/.]+$/, "");
+    const entry = {
+      id: id,
+      name: baseName,
+      blob: f,
+      art: null,
+      beatSignals: data ? data.beatSignals : [],
+      isNew: true,
+    };
+    if (data && data.speedPoints) entry.speedPoints = data.speedPoints;
+    await this.songs.add(entry);
+    return id;
   }
   async update(id, d) {
-    return new Promise((r) => {
-      const t = this.db.transaction(["songs"], "readwrite");
-      const s = t.objectStore("songs");
-      s.get(id).onsuccess = (e) => {
-        const i = e.target.result;
-        if (i) {
-          Object.assign(i, d);
-          s.put(i).onsuccess = () => r();
-        }
-      };
-    });
+    await this.songs.update(id, d);
   }
   async delete(id) {
-    return new Promise((r) => {
-      const t = this.db.transaction(["songs"], "readwrite");
-      t.objectStore("songs").delete(id).onsuccess = () => r();
-    });
+    await this.songs.delete(id);
   }
   async getAll() {
-    return new Promise((r) => {
-      const t = this.db.transaction(["songs"], "readonly");
-      t.objectStore("songs").getAll().onsuccess = (e) => r(e.target.result);
-    });
+    return await this.songs.toArray();
   }
   async clearAll() {
     if (confirm("Factory Reset?")) {
-      const tx = this.db.transaction(["songs"], "readwrite");
-      tx.objectStore("songs").clear();
+      await this.delete(); // Deletes the entire dexie db
       localStorage.clear();
       location.reload();
     }
@@ -1258,6 +1228,29 @@ class AudioSystem {
         speed: this.baseSpeed,
         xtreme: this.xtremeOn,
       });
+    }
+  }
+
+  async connectDevice() {
+    try {
+      // Primary: Web Audio Output Selection (Bluetooth Speakers / PC Audio routing)
+      if (navigator.mediaDevices && navigator.mediaDevices.selectAudioOutput) {
+        const device = await navigator.mediaDevices.selectAudioOutput();
+        await this.audio.setSinkId(device.deviceId);
+        window.ui.showToast(`Connected to: ${device.label || 'Bluetooth Device'}`);
+        return;
+      }
+      
+      // Fallback: Remote Playback API (AirPlay / Google Cast / Smart TVs)
+      if (this.audio.remote && this.audio.remote.prompt) {
+        await this.audio.remote.prompt();
+        window.ui.showToast("Casting session started.");
+        return;
+      }
+      
+      window.ui.showToast("Bluetooth/Casting not natively supported on this browser.");
+    } catch (err) {
+      console.warn("Device connection cancelled or failed:", err);
     }
   }
 }

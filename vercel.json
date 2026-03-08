@@ -1,5 +1,19 @@
 {
   "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/proxy-embed/:path*",
+      "destination": "https://open.spotify.com/embed/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/fetch",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, s-maxage=86400, stale-while-revalidate=43200" }
+      ]
+    }
+  ],
   "builds": [
     {
       "src": "okmusic-api/api/index.js",

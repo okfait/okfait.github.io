@@ -186,39 +186,26 @@ export class SpotifyManager {
         const playlistId = match ? match[1] : url;
 
         try {
-            // First get playlist title
             const pRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            // CRITICAL: If we get a 403 or 401, it means the token we just used is trash.
-            // This happens if the user isn't registered in the dashboard.
             if (pRes.status === 401 || pRes.status === 403) {
-                console.error("Spotify Auth Failure (403/401). Resetting session...");
-                this.logout(); // Wipe everything so next time it uses a clean Guest Token
-                throw new Error("Spotify access denied. Please refresh and try again (Guest Mode will activate).");
+                console.warn("Spotify API Auth Failure. Falling back to oEmbed Scraper...");
+                if (this.accessToken) this.logout();
+                return await this.scrapeEmbedData(playlistId);
             }
 
             const pText = await pRes.text();
             let pData;
-            try {
-                pData = JSON.parse(pText);
-            } catch (e) {
-                throw new Error("Playlist Info Error: " + pText.slice(0, 100));
-            }
+            try { pData = JSON.parse(pText); } catch (e) {}
 
-            if (!pRes.ok) throw new Error(pData.error?.message || pData.error || "Failed to fetch playlist info");
+            if (!pRes.ok || !pData || !pData.tracks || !pData.tracks.items) {
+                console.warn("Spotify API returned error or no tracks. Falling back to oEmbed Scraper.");
+                return await this.scrapeEmbedData(playlistId);
+            }
 
             const title = pData.name;
-            
-            // Do NOT fetch the /tracks endpoint separately, because it returns 403 Forbidden for Guest Mode!
-            // The initial `/playlists/{id}` response already contains the first 100 tracks.
-            // DEFENSIVE: If tracks or items are missing, it's usually because the playlist is PRIVATE.
-            if (!pData.tracks || !pData.tracks.items) {
-                console.warn("Spotify API returned no tracks. This usually means the playlist is PRIVATE.");
-                throw new Error("This playlist is likely PRIVATE. Please make it Public in Spotify settings to scan it in Guest Mode.");
-            }
-
             const tracksData = pData.tracks.items.map(item => {
                 if (!item || !item.track) return null;
                 return {
@@ -228,13 +215,60 @@ export class SpotifyManager {
                 };
             }).filter(Boolean);
 
-            return {
-                title: title,
-                tracks: tracksData
-            };
+            return { title: title, tracks: tracksData };
         } catch (e) {
-            console.error("Spotify Fetch Error:", e);
-            throw e;
+            console.warn("Spotify standard fetch blocked/failed. Attempting oEmbed fallback.", e);
+            return await this.scrapeEmbedData(playlistId);
+        }
+    }
+
+    async scrapeEmbedData(playlistId) {
+        try {
+            // Target the Vercel rewrite route which points to open.spotify.com/embed/playlist/
+            const res = await fetch(`/api/proxy-embed/playlist/${playlistId}`);
+            if (!res.ok) throw new Error("Backend Embed Proxy returned: " + res.status);
+            
+            const html = await res.text();
+            // Regex to find the <script id="__NEXT_DATA__" type="application/json">...</script>
+            const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            
+            if (!scriptMatch || scriptMatch.length < 2) {
+                throw new Error("Could not extract state JSON from Spotify embed page.");
+            }
+            
+            const stateData = JSON.parse(scriptMatch[1]);
+            const entity = stateData?.props?.pageProps?.state?.data?.entity;
+            
+            if (!entity || !entity.trackList) {
+                throw new Error("Tracklist missing in embed JSON structure.");
+            }
+            
+            const title = entity.title || entity.name || "Imported Playlist";
+            const tracksData = entity.trackList.map(item => {
+                let trackName, artistName, trackId;
+                if (item.title && item.subtitle) {
+                    trackName = item.title;
+                    artistName = (typeof item.subtitle === 'string') ? item.subtitle : (Array.isArray(item.subtitle) ? item.subtitle.map(s => s.name || s.title || s).join(', ') : "Unknown");
+                    trackId = item.uri ? item.uri.split(':').pop() : crypto.randomUUID();
+                } else {
+                    return null;
+                }
+                
+                return {
+                    name: `${artistName} - ${trackName}`,
+                    url: `https://open.spotify.com/track/${trackId}`,
+                    id: trackId
+                };
+            }).filter(Boolean);
+            
+            if (tracksData.length === 0) throw new Error("Embed proxy parsed 0 tracks.");
+            
+            console.log(`Successfully scraped ${tracksData.length} tracks via oEmbed proxy.`);
+            return { title: title, tracks: tracksData };
+            
+        } catch (embedError) {
+            console.error("Embed Fallback Failed:", embedError);
+            throw new Error(`Spotify rejected access entirely. If the playlist is PRIVATE, even the embed proxy cannot read it.`);
         }
     }
 }

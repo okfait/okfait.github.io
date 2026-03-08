@@ -135,56 +135,68 @@ app.get('/api/fetch', async (req, res) => {
             if (play.sp_validate(targetUrl) === 'track') {
                 targetUrl = await fetchSpotifyTrack(targetUrl);
             }
+        }
+        
+        // V6 Architecture: Utilize Federated Piped API to bypass YouTube Bot Protection on Vercel IPs
+        const pipedApiBase = 'https://pipedapi.kavin.rocks';
+        let videoId = targetUrl;
+        
+        if (pType !== 'video') {
+            const searchResponse = await fetch(`${pipedApiBase}/search?q=${encodeURIComponent(targetUrl)}&filter=music_songs`);
+            if (!searchResponse.ok) throw new Error('Search execution failed on upstream provider.');
             
-            // Search for the query (or track name)
-            console.log("Searching YouTube for:", targetUrl);
+            const searchData = await searchResponse.json();
+            const firstResult = searchData.items.find(item => item.type === 'stream');
+            
+            if (!firstResult) {
+                return res.status(404).json({ error: 'No audio track located for the given query.' });
+            }
+            videoId = firstResult.url.replace('/watch?v=', '');
+        } else {
             try {
-                // Configure play-dl to be more "browser-like"
-                const searchOptions = { 
-                    limit: 1,
-                    unquoted: true // Helps with some blocks
-                };
-                
-                let searched = await play.search(targetUrl, searchOptions);
-                
-                if (searched.length === 0) {
-                    // Try a secondary "Relaxed Search" if first one fails
-                    console.log("Relaxing search query...");
-                    const relaxedQuery = targetUrl.split('-')[0].split('(')[0].trim();
-                    searched = await play.search(relaxedQuery, searchOptions);
-                }
-
-                if (searched.length === 0) {
-                    return res.status(404).json({ error: 'Song not found on YouTube.' });
-                }
-                targetUrl = searched[0].url;
-            } catch (searchErr) {
-                if (searchErr.message.includes('confirm you\'re not a bot')) {
-                    console.error("YouTube SEARCH BLOCK detected.");
-                    return res.status(500).json({ 
-                        error: 'YouTube blocked this search. TIP: Open the song on YouTube and paste the direct link instead.' 
-                    });
-                }
-                throw searchErr;
+               videoId = (new URL(targetUrl)).searchParams.get('v') || targetUrl.split('youtu.be/')[1].split('?')[0]; 
+            } catch (e) {
+               videoId = targetUrl.split('watch?v=')[1];
             }
         }
 
-        // Get the audio stream
-        try {
-            const stream = await play.stream(targetUrl, { discordPlayerCompatibility : true });
-            res.setHeader('Content-Type', 'audio/mpeg');
-            res.setHeader('Transfer-Encoding', 'chunked');
-            stream.stream.pipe(res);
-        } catch (streamErr) {
-            if (streamErr.message.includes('confirm you\'re not a bot')) {
-                console.error("YouTube STREAM BLOCK detected.");
-                return res.status(500).json({ error: 'YouTube blocked the stream for this song. Search is restricted on this server.' });
-            }
-            throw streamErr;
+        const streamResponse = await fetch(`${pipedApiBase}/streams/${videoId}`);
+        if (!streamResponse.ok) throw new Error('Stream metadata extraction failed (Piped API).');
+        
+        const streamData = await streamResponse.json();
+        // Prioritize highest quality audio stream
+        const audioStreams = streamData.audioStreams.sort((a, b) => b.bitrate - a.bitrate);
+        if (audioStreams.length === 0) throw new Error('No compatible audio streams available.');
+        
+        const audioFetch = await fetch(audioStreams[0].url);
+        if (!audioFetch.ok) throw new Error(`Upstream audio fetch failed: ${audioFetch.statusText}`);
+
+        // Set response headers for native browser audio playback
+        res.setHeader('Content-Type', audioStreams[0].mimeType || 'audio/mp4');
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // Edge cache for popular tracks
+        
+        const contentLength = audioFetch.headers.get('content-length');
+        if (contentLength) {
+            res.setHeader('Content-Length', contentLength);
         }
+
+        // Employ Node.js pipeline directly to the Express response (handles backpressure/memory limits)
+        const { pipeline } = require('stream/promises');
+        const { Readable } = require('stream');
+        
+        if (audioFetch.body && typeof audioFetch.body.getReader === 'function') {
+            // Node 18+ Web Streams Native `fetch`
+            await pipeline(Readable.fromWeb(audioFetch.body), res);
+        } else {
+            // Legacy / `node-fetch` compatibility
+            await pipeline(audioFetch.body, res);
+        }
+
     } catch (err) {
-        console.error("Fetch API Error:", err);
-        res.status(500).json({ error: err.message || 'Failed to fetch audio stream.' });
+        console.error('Streaming pipeline encountered an error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message || 'Internal Server Error during stream extraction and piping.' });
+        }
     }
 });
 
