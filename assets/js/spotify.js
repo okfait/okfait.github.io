@@ -236,8 +236,9 @@ export class SpotifyManager {
                 ? "http://localhost:3000" 
                 : "https://okfait-github-io.vercel.app";
 
-            // Target the Vercel rewrite route which points to open.spotify.com/embed/playlist/
-            const res = await fetch(`${API_BASE}/api/get-embed/playlist/${playlistId}`);
+            // Target the robust, shallow Vercel proxy endpoint using a query parameter to avoid Vercel nested path slicing bugs
+            const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+            const res = await fetch(`${API_BASE}/api/proxy?url=${encodeURIComponent(embedUrl)}`);
             if (!res.ok) throw new Error("Backend Embed Proxy returned: " + res.status);
             
             const html = await res.text();
