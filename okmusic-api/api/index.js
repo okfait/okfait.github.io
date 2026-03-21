@@ -234,27 +234,34 @@ app.get('/api/playlist', async (req, res) => {
     }
 });
 
-app.get('/api/get-embed/playlist/:id', async (req, res) => {
-    try {
-        const playlistId = req.params.id;
-        const response = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`);
-        
-        // If Spotify returns 404 for an embed, the playlist is definitely private or deleted.
-        if (response.status === 404) {
-            return res.status(403).json({ error: "Playlist is Private or Deleted. Cannot generate embed data." });
-        }
-        
-        if (!response.ok) {
-            return res.status(response.status).json({ error: `Spotify upstream embed returned ${response.status}` });
-        }
+app.all('*', async (req, res, next) => {
+    const path = req.path || req.url;
+    if (path.includes('/playlist/')) {
+        try {
+            // Extract playlist ID gracefully
+            const parts = path.split('/playlist/');
+            const playlistId = parts[1].split('/')[0].split('?')[0];
 
-        const html = await response.text();
-        res.setHeader('Content-Type', 'text/html');
-        res.send(html);
-    } catch (err) {
-        console.error('Embed Proxy err:', err);
-        res.status(500).json({ error: err.message || 'Failed to proxy embed HTML.' });
+            if (!playlistId) return res.status(400).json({ error: "No playlist ID provided" });
+
+            const response = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`);
+            
+            if (response.status === 404) {
+                return res.status(403).json({ error: "Playlist is Private or Deleted. Cannot generate embed data." });
+            }
+            if (!response.ok) {
+                return res.status(response.status).json({ error: `Spotify upstream embed returned ${response.status}` });
+            }
+
+            const html = await response.text();
+            res.setHeader('Content-Type', 'text/html');
+            return res.send(html);
+        } catch (err) {
+            console.error('Embed Proxy err:', err);
+            return res.status(500).json({ error: err.message || 'Failed to proxy embed HTML.' });
+        }
     }
+    next();
 });
 
 app.get('/api/proxy', async (req, res) => {
