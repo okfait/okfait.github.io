@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -18,6 +18,8 @@
             }
         }
     </script>
+    <!-- LZString for URL compression (Library Sync) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -34,7 +36,7 @@
     <div class="top-bar">
         <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.6.0</span></div>
         <div class="flex gap-4">
-            <button onclick="window.audioSys.connectDevice()" class="top-icon" id="castBtn" title="Connect to Device (Bluetooth/Cast)"><i class="fa-brands fa-bluetooth-b"></i></button>
+            <button class="top-icon" id="castBtn" title="Connect to Device (Bluetooth/Cast)"><i class="fa-brands fa-bluetooth-b"></i></button>
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
             <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
             <button onclick="window.voiceControl.toggle()" class="top-icon" id="micBtn" title="Voice Control"><i class="fa-solid fa-microphone"></i></button>
@@ -127,6 +129,7 @@
             
             <hr class="border-white/5 my-4">
             <div class="px-2 pb-4 space-y-2">
+                <button onclick="window.libraryMgr.generateSyncLink()" class="w-full bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 border border-blue-500/30 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.25)]"><i class="fa-solid fa-link mr-2"></i> Generate Sync Link via URL</button>
                 <button onclick="window.libraryMgr.exportLibrary()" class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-download mr-2"></i> Export Library Data</button>
                 <button onclick="$('importLibraryInput').click()" class="w-full bg-white/5 hover:bg-white/10 text-white opacity-50 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-upload mr-2"></i> Import Library / Data</button>
                 <input type="file" id="importLibraryInput" accept=".json" class="hidden" onchange="window.libraryMgr.importLibrary(this)">

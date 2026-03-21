@@ -1,4 +1,4 @@
-﻿import Dexie from "https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.mjs";
+import Dexie from "https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.mjs";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import {
   getDatabase,
@@ -545,6 +545,42 @@ class LibraryManager {
     } catch (e) {
       console.error("Load shared lib error", e);
       status.style.display = "none";
+    }
+  }
+
+  async generateSyncLink() {
+    try {
+      const allSongs = window.player.songs;
+      if (!allSongs || allSongs.length === 0) {
+        alert("Your library is empty. Nothing to sync!");
+        return;
+      }
+
+      // We only sync the NAMES of the songs. The receiving device will automatically redownload them.
+      // This keeps the URL extremely short and avoids Base64 limits.
+      const songNames = allSongs.map(s => s.name);
+      
+      const payload = JSON.stringify({
+        source: "okMUSIC",
+        timestamp: Date.now(),
+        tracks: songNames
+      });
+
+      const compressed = window.LZString.compressToEncodedURIComponent(payload);
+      
+      const baseUrl = window.location.origin + window.location.pathname;
+      const syncUrl = `${baseUrl}?sync=${compressed}`;
+
+      // Try to copy to clipboard immediately
+      await navigator.clipboard.writeText(syncUrl);
+      window.ui?.showToast?.("Sync Link copied to clipboard! Paste it on your phone.");
+
+      // Also show a modal with the link just in case clipboard fails
+      prompt("Copy this link and send it to your phone (Discord, WhatsApp, etc) to sync your library:\n\nNote: If you have a huge library, be patient while the phone downloads the songs.", syncUrl);
+      
+    } catch (e) {
+      console.error("Failed to generate sync link:", e);
+      alert("Failed to generate link. See console.");
     }
   }
 
@@ -5998,3 +6034,57 @@ window.initVizDraggable = function() {
     });
 };
 setTimeout(() => window.initVizDraggable(), 1000);
+
+// --- BLUETOOTH / CASTING HOOK & SYNC RECEIVER ---
+document.addEventListener("DOMContentLoaded", () => {
+    const castBtn = document.getElementById("castBtn");
+    if (castBtn) {
+        castBtn.addEventListener("click", async () => {
+            if (window.audioSys && typeof window.audioSys.connectDevice === 'function') {
+                window.audioSys.connectDevice();
+            } else {
+                console.warn("audioSys not ready for casting");
+                window.ui?.showToast?.("Audio system not ready yet. Please play a song first.");
+            }
+        });
+    }
+
+    // --- IMPORT SYNC URL ON LOAD ---
+    setTimeout(async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const syncPayload = urlParams.get('sync');
+        if (syncPayload && window.LZString) {
+            try {
+                const decompressed = window.LZString.decompressFromEncodedURIComponent(syncPayload);
+                const data = JSON.parse(decompressed);
+                if (data && data.tracks && data.tracks.length > 0) {
+                    if (confirm(`Sync Request Detected: ${data.tracks.length} songs are ready to be imported from your PC.\n\nDo you want to start downloading them now?`)) {
+                        
+                        // Clean up URL to avoid reloading the sync again
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        
+                        window.ui?.showToast?.(`Syncing ${data.tracks.length} songs... Please do not close the app.`);
+                        
+                        // Overload the playlist importer temporarily to use the sync array instead of scraping
+                        setTimeout(() => {
+                            window.ui.openPlaylistImporter();
+                            // Hack the pending tracks so scanPlaylist downloads these
+                            window.ui._pendingPlaylistTracks = data.tracks.map(name => ({ name, url: "" }));
+                            window.ui._pendingPlaylistName = "Synced Library (" + new Date().toLocaleDateString() + ")";
+                            
+                            const btn = document.getElementById("btnScanPlaylist");
+                            if (btn) {
+                                btn.innerText = "IMPORT SYNCED LIBRARY";
+                                btn.classList.remove("hidden");
+                                btn.onclick = () => window.ui.scanPlaylist();
+                            }
+                        }, 500);
+                    }
+                }
+            } catch (err) {
+                console.warn("Invalid sync payload detected", err);
+                window.ui?.showToast?.("Sync link was invalid or corrupted.");
+            }
+        }
+    }, 2000); // 2 second delay to let Dexie boot
+});

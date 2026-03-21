@@ -234,7 +234,7 @@ app.get('/api/playlist', async (req, res) => {
     }
 });
 
-app.get('/api/proxy-embed/playlist/:id', async (req, res) => {
+app.get('/api/get-embed/playlist/:id', async (req, res) => {
     try {
         const playlistId = req.params.id;
         const response = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`);
