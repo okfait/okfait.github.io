@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.6.7</title>
+    <title>okMUSIC v2.6.8</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="manifest" href="manifest.json">
@@ -322,6 +322,17 @@
                     </div>
                     <input type="checkbox" id="rippleToggle" class="hidden peer" onchange="window.viz.rippleEffect=this.checked" checked>
                     <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
+                </label>
+                <label class="flex justify-between items-center bg-white/5 border border-white/10 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-white/30 transition-all group">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70 group-hover:scale-110 transition"><i class="fa-solid fa-leaf"></i></div>
+                        <div class="flex flex-col">
+                            <span class="text-xs font-black text-white/90 tracking-widest uppercase">LITE MODE</span>
+                            <span class="text-[9px] font-bold text-white/40">Less blur &amp; motion, lighter on your PC</span>
+                        </div>
+                    </div>
+                    <input type="checkbox" id="liteToggle" class="hidden peer" onchange="window.setLiteMode(this.checked)">
+                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-white/20 border border-white/10 peer-checked:border-white/40 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-white"></div>
                 </label>
                 <!-- DYNAMIC BASS CURVE -->
                 <div class="mx-2 mt-4">
@@ -783,6 +794,6 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.6.7"></script>
+    <script type="module" src="assets/js/app.js?v=2.6.8"></script>
 </body>
 </html>

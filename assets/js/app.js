@@ -4631,7 +4631,7 @@ class UI {
         const folderId = crypto.randomUUID();
         const folderName = this._pendingPlaylistName || "Imported Playlist";
 
-        // Create Folder FIRST
+        // Folder is only added to the library if at least one song downloads
         const newFolder = {
           type: "folder",
           id: folderId,
@@ -4640,9 +4640,8 @@ class UI {
           isOpen: true,
           color: "#1db954", // Spotify Green
         };
-        window.libraryMgr.structure.unshift(newFolder);
-
         let successCount = 0;
+        const failed = [];
 
         for (let i = 0; i < tracks.length; i++) {
           const t = tracks[i];
@@ -4692,12 +4691,33 @@ class UI {
             successCount++;
           } catch (e) {
             console.warn("Skipped track:", t.name, e.message);
+            failed.push({ name: t.name, reason: e.message });
+            // If the first 3 in a row all fail, the download server is down - stop early
+            if (successCount === 0 && failed.length >= 3) break;
           }
         }
 
+        if (successCount === 0) {
+          // Nothing downloaded: don't leave an empty folder behind, and say so clearly
+          btn.innerHTML = "IMPORT TRACKS";
+          btn.style.pointerEvents = "auto";
+          alert(
+            `None of the songs could be downloaded, so nothing was added.\n\n` +
+              `First error: ${failed[0] ? failed[0].reason : "unknown"}\n\n` +
+              `The download server is probably offline or blocked. ` +
+              `Spotify itself was fine - the song LIST was found, the audio download is what failed.`,
+          );
+          return;
+        }
+
+        window.libraryMgr.structure.unshift(newFolder);
         window.libraryMgr.save();
         await window.player.loadLib();
-        this.showToast(`Imported ${successCount} tracks successfully!`);
+        this.showToast(
+          failed.length
+            ? `Imported ${successCount} of ${tracks.length} tracks (${failed.length} failed)`
+            : `Imported ${successCount} tracks successfully!`,
+        );
         this.closePlaylistImporter();
       } catch (e) {
         alert("Import stopped: " + e.message + "\n(The Vercel download server might be offline or rate-limited)");
@@ -5963,6 +5983,38 @@ setInterval(() => {
         if(eHigh) eHigh.innerText = window.nerdStats.high;
     }
 }, 100);
+
+// LITE MODE: turns off glass blur + the big spinning background to save GPU/RAM.
+// On = the Lite Mode toggle in settings, OR automatically while the window is
+// in the background / minimized (so the music keeps playing but your PC works less).
+(function setupLiteMode() {
+  const state = {
+    user: localStorage.getItem("sv_lite") === "true",
+    away: document.hidden || !document.hasFocus(),
+  };
+  const apply = () =>
+    document.body.classList.toggle("lite-mode", state.user || state.away);
+  window.setLiteMode = (on) => {
+    state.user = !!on;
+    localStorage.setItem("sv_lite", String(state.user));
+    apply();
+  };
+  window.addEventListener("blur", () => {
+    state.away = true;
+    apply();
+  });
+  window.addEventListener("focus", () => {
+    state.away = false;
+    apply();
+  });
+  document.addEventListener("visibilitychange", () => {
+    state.away = document.hidden || !document.hasFocus();
+    apply();
+  });
+  const toggle = document.getElementById("liteToggle");
+  if (toggle) toggle.checked = state.user;
+  apply();
+})();
 
 // DPPD Setup
 window.updateDPPD = function () {
