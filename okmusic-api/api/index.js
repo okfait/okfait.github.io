@@ -242,7 +242,9 @@ app.all('*', async (req, res, next) => {
             const parts = path.split('/playlist/');
             const playlistId = parts[1].split('/')[0].split('?')[0];
 
-            if (!playlistId) return res.status(400).json({ error: "No playlist ID provided" });
+            if (!playlistId || !/^[A-Za-z0-9]+$/.test(playlistId)) {
+                return res.status(400).json({ error: "No valid playlist ID provided" });
+            }
 
             const response = await fetch(`https://open.spotify.com/embed/playlist/${playlistId}`);
             
@@ -268,7 +270,18 @@ app.get('/api/proxy', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: 'Missing Proxy URL.' });
     try {
-        const response = await fetch(decodeURIComponent(url));
+        // Only allow Spotify embed pages. (This used to fetch ANY address anyone sent it.)
+        let target;
+        try {
+            target = new URL(decodeURIComponent(url));
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid Proxy URL.' });
+        }
+        if (target.protocol !== 'https:' || target.hostname !== 'open.spotify.com' || !target.pathname.startsWith('/embed/')) {
+            return res.status(403).json({ error: 'Proxy only allows Spotify embed pages.' });
+        }
+
+        const response = await fetch(target.toString());
         if (!response.ok) throw new Error(`Proxy Error: ${response.status}`);
         
         // Pass Content-Type

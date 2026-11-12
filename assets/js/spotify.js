@@ -1,4 +1,21 @@
-import { SPOTIFY_CONFIG } from './spotify-config.js';
+import { SPOTIFY_CONFIG } from './spotify-config.js?v=3';
+
+// --- Helpers for the secret-free ("PKCE") login ---------------------------
+// The site runs in the browser, so it must NEVER hold a client secret.
+// Instead, each login makes a random one-time code and a scrambled version of it.
+function randomString(len = 64) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    const arr = crypto.getRandomValues(new Uint8Array(len));
+    return Array.from(arr, (x) => chars[x % chars.length]).join('');
+}
+
+async function sha256Base64Url(text) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+}
 
 export class SpotifyManager {
     constructor() {
@@ -8,15 +25,21 @@ export class SpotifyManager {
         this.profile = JSON.parse(localStorage.getItem('spotify_profile'));
     }
 
-    login() {
+    async login() {
         const rUri = (SPOTIFY_CONFIG.redirectUri || "").trim();
         console.log("Spotify Login Attempt - Redirecting to:", rUri);
-        
+
+        const verifier = randomString(64);
+        const challenge = await sha256Base64Url(verifier);
+        localStorage.setItem('spotify_code_verifier', verifier);
+
         const params = new URLSearchParams({
             client_id: (SPOTIFY_CONFIG.clientId || "").trim(),
             response_type: 'code',
             redirect_uri: rUri,
             scope: SPOTIFY_CONFIG.scopes.join(' '),
+            code_challenge_method: 'S256',
+            code_challenge: challenge,
             show_dialog: 'true'
         });
         window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
@@ -25,18 +48,29 @@ export class SpotifyManager {
     async handleCallback() {
         const urlParams = new URL(window.location.href).searchParams;
         const code = urlParams.get('code');
+        const authError = urlParams.get('error');
+
+        if (authError) {
+            // e.g. the user pressed "Cancel" on the Spotify page
+            console.warn('Spotify login was not completed:', authError);
+            window.history.replaceState({}, document.title, SPOTIFY_CONFIG.redirectUri);
+            return false;
+        }
         if (!code) return;
 
         // Clean URL
         window.history.replaceState({}, document.title, SPOTIFY_CONFIG.redirectUri);
 
         try {
+            const verifier = localStorage.getItem('spotify_code_verifier');
+            if (!verifier) throw new Error('Missing login verifier - please press Connect Spotify again.');
+
             const body = new URLSearchParams({
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: SPOTIFY_CONFIG.redirectUri,
                 client_id: SPOTIFY_CONFIG.clientId,
-                client_secret: SPOTIFY_CONFIG.clientSecret
+                code_verifier: verifier
             });
 
             const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -48,6 +82,7 @@ export class SpotifyManager {
             const data = await res.json();
             if (data.error) throw new Error(data.error_description || data.error);
 
+            localStorage.removeItem('spotify_code_verifier');
             this.saveTokens(data);
             await this.fetchProfile();
             return true;
@@ -60,7 +95,6 @@ export class SpotifyManager {
     saveTokens(data) {
         this.accessToken = data.access_token;
         if (data.refresh_token) this.refreshToken = data.refresh_token;
-        // Don't set expiresAt if it's a guest token (we handle that in getGuestToken)
         if (data.expires_in) {
             this.expiresAt = Date.now() + (data.expires_in * 1000);
             localStorage.setItem('spotify_expires_at', this.expiresAt);
@@ -77,8 +111,7 @@ export class SpotifyManager {
             const body = new URLSearchParams({
                 grant_type: 'refresh_token',
                 refresh_token: this.refreshToken,
-                client_id: SPOTIFY_CONFIG.clientId,
-                client_secret: SPOTIFY_CONFIG.clientSecret
+                client_id: SPOTIFY_CONFIG.clientId
             });
 
             const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -88,6 +121,9 @@ export class SpotifyManager {
             });
 
             const data = await res.json();
+            if (data.error || !data.access_token) {
+                throw new Error(data.error_description || data.error || 'No access token returned');
+            }
             this.saveTokens(data);
             return true;
         } catch (e) {
@@ -129,55 +165,28 @@ export class SpotifyManager {
         localStorage.removeItem('spotify_refresh_token');
         localStorage.removeItem('spotify_expires_at');
         localStorage.removeItem('spotify_profile');
+        localStorage.removeItem('spotify_code_verifier');
         this.accessToken = null;
         this.refreshToken = null;
         this.expiresAt = null;
         this.profile = null;
     }
 
+    // Returns a logged-in user token, or null if the user isn't connected.
+    // (The old "guest mode" needed the client secret, which can't live in the browser.)
     async getValidToken() {
-        // If we have a user token that looks valid (not expired), try using it
-        if (this.accessToken && !this.isGuest && this.expiresAt) {
-            if (Date.now() < this.expiresAt - 60000) {
-                return this.accessToken;
-            } else {
-                // Try refresh if expired
-                const refreshed = await this.refreshAccessToken();
-                if (refreshed) return this.accessToken;
-                // If refresh fails, soft logout and fallback
-                console.warn("Failed to refresh token, falling back to guest mode");
-                this.softLogout();
-            }
+        if (!this.accessToken) return null;
+
+        if (this.expiresAt && Date.now() < Number(this.expiresAt) - 60000) {
+            return this.accessToken;
         }
-        
-        // If no user token or it failed/expired, use guest mode
-        console.log("Using Spotify Guest Mode...");
-        return this.getGuestToken();
-    }
 
-    async getGuestToken() {
-        try {
-            const body = new URLSearchParams({
-                grant_type: 'client_credentials',
-                client_id: SPOTIFY_CONFIG.clientId,
-                client_secret: SPOTIFY_CONFIG.clientSecret
-            });
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) return this.accessToken;
 
-            const res = await fetch('https://accounts.spotify.com/api/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body
-            });
-
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-
-            this.isGuest = true;
-            return data.access_token;
-        } catch (e) {
-            console.error('Spotify Guest Token Error:', e);
-            return null;
-        }
+        console.warn("Failed to refresh Spotify token, logging out");
+        this.softLogout();
+        return null;
     }
 
     isConnected() {
@@ -185,46 +194,62 @@ export class SpotifyManager {
     }
 
     async getTracksFromPlaylist(url) {
-        const token = await this.getValidToken();
-        if (!token) throw new Error("Spotify not connected");
-
         // Extract ID: https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoPBqM0
         const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
         const playlistId = match ? match[1] : url;
+
+        const token = await this.getValidToken();
+        if (!token) {
+            // Not connected -> read the public embed page instead
+            return await this.scrapeEmbedData(playlistId);
+        }
 
         try {
             const pRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            if (pRes.status === 401 || pRes.status === 403) {
-                console.warn("Spotify API Auth Failure. Falling back to oEmbed Scraper...");
-                if (this.accessToken && !this.isGuest) this.softLogout();
+            if (pRes.status === 401) {
+                console.warn("Spotify token rejected. Falling back to embed reader...");
+                this.softLogout();
                 return await this.scrapeEmbedData(playlistId);
             }
 
-            const pText = await pRes.text();
-            let pData;
-            try { pData = JSON.parse(pText); } catch (e) {}
+            let pData = null;
+            try { pData = await pRes.json(); } catch (e) {}
 
-            if (!pRes.ok || !pData || !pData.tracks || !pData.tracks.items) {
-                console.warn("Spotify API returned error or no tracks. Falling back to oEmbed Scraper.");
+            // Spotify renamed `tracks` to `items` in 2026 - accept both.
+            // For playlists you don't own/collaborate on, Spotify now only sends
+            // the title (no songs), so we fall back to the embed reader below.
+            let page = null;
+            if (pData) {
+                if (Array.isArray(pData.items)) page = { items: pData.items };
+                else page = pData.items || pData.tracks;
+            }
+
+            if (!pRes.ok || !page || !Array.isArray(page.items)) {
+                console.warn("Spotify API gave no song list for this playlist. Falling back to embed reader.");
                 return await this.scrapeEmbedData(playlistId);
             }
 
             const title = pData.name;
-            const tracksData = pData.tracks.items.map(item => {
-                if (!item || !item.track) return null;
+            const tracksData = page.items.map(entry => {
+                const track = entry && (entry.track || entry.item);
+                if (!track) return null;
                 return {
-                    name: `${item.track.artists?.[0]?.name || 'Unknown Artist'} - ${item.track.name}`,
-                    url: item.track.external_urls?.spotify || "",
-                    id: item.track.id
+                    name: `${track.artists?.[0]?.name || 'Unknown Artist'} - ${track.name}`,
+                    url: track.external_urls?.spotify || "",
+                    id: track.id
                 };
             }).filter(Boolean);
 
+            if (tracksData.length === 0) {
+                return await this.scrapeEmbedData(playlistId);
+            }
+
             return { title: title, tracks: tracksData };
         } catch (e) {
-            console.warn("Spotify standard fetch blocked/failed. Attempting oEmbed fallback.", e);
+            console.warn("Spotify standard fetch blocked/failed. Attempting embed fallback.", e);
             return await this.scrapeEmbedData(playlistId);
         }
     }
@@ -232,30 +257,30 @@ export class SpotifyManager {
     async scrapeEmbedData(playlistId) {
         try {
             // Determine the API backend dynamically just like app.js
-            const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
-                ? "http://localhost:3000" 
+            const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+                ? "http://localhost:3000"
                 : "https://okfait-github-io.vercel.app";
 
             // Target the robust, shallow Vercel proxy endpoint using a query parameter to avoid Vercel nested path slicing bugs
             const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
             const res = await fetch(`${API_BASE}/api/proxy?url=${encodeURIComponent(embedUrl)}`);
             if (!res.ok) throw new Error("Backend Embed Proxy returned: " + res.status);
-            
+
             const html = await res.text();
             // Regex to find the <script id="__NEXT_DATA__" type="application/json">...</script>
             const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-            
+
             if (!scriptMatch || scriptMatch.length < 2) {
                 throw new Error("Could not extract state JSON from Spotify embed page.");
             }
-            
+
             const stateData = JSON.parse(scriptMatch[1]);
             const entity = stateData?.props?.pageProps?.state?.data?.entity;
-            
+
             if (!entity || !entity.trackList) {
                 throw new Error("Tracklist missing in embed JSON structure.");
             }
-            
+
             const title = entity.title || entity.name || "Imported Playlist";
             const tracksData = entity.trackList.map(item => {
                 let trackName, artistName, trackId;
@@ -266,19 +291,19 @@ export class SpotifyManager {
                 } else {
                     return null;
                 }
-                
+
                 return {
                     name: `${artistName} - ${trackName}`,
                     url: `https://open.spotify.com/track/${trackId}`,
                     id: trackId
                 };
             }).filter(Boolean);
-            
+
             if (tracksData.length === 0) throw new Error("Embed proxy parsed 0 tracks.");
-            
+
             console.log(`Successfully scraped ${tracksData.length} tracks via oEmbed proxy.`);
             return { title: title, tracks: tracksData };
-            
+
         } catch (embedError) {
             console.error("Embed Fallback Failed:", embedError);
             throw new Error(`Spotify rejected access entirely. If the playlist is PRIVATE, even the embed proxy cannot read it.`);

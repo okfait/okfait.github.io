@@ -15,7 +15,7 @@ import {
   uploadBytesResumable,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
-import { SpotifyManager } from "./spotify.js?v=2";
+import { SpotifyManager } from "./spotify.js?v=3";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvJ_lGnmH3Dll1E-HY5CuqzKGqQBXb-C4",
@@ -749,7 +749,11 @@ class okMUSICLearningController {
     if (!analyser || window.audioSys.audio.paused) return;
 
     const dataLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(dataLength);
+    // Reuse one array instead of making a new one every frame (less memory churn)
+    if (!this._fftData || this._fftData.length !== dataLength) {
+      this._fftData = new Uint8Array(dataLength);
+    }
+    const dataArray = this._fftData;
     analyser.getByteFrequencyData(dataArray);
 
     let fluxSub = 0,
@@ -1497,6 +1501,15 @@ class Visualizer {
   }
   draw() {
     requestAnimationFrame(() => this.draw());
+
+    // Save CPU/RAM: don't draw when the tab is hidden or minimized,
+    // and only draw at ~10fps while the music is paused (music itself is not affected)
+    if (document.hidden) return;
+    if (window.audioSys.audio.paused) {
+      this._pausedTick = ((this._pausedTick || 0) + 1) % 6;
+      if (this._pausedTick !== 0) return;
+    }
+
     const t = window.audioSys.audio.currentTime;
     if (t < this.lastTrigger) this.lastTrigger = -1;
     if (
@@ -1525,7 +1538,12 @@ class Visualizer {
     // Update History Buffer BEFORE reading the active frame
     this.history.update(window.audioSys.analyser);
 
-    const buf = new Uint8Array(window.audioSys.analyser.frequencyBinCount);
+    // Reuse one array instead of making a new one every frame
+    const binCount = window.audioSys.analyser.frequencyBinCount;
+    if (!this._fftBuf || this._fftBuf.length !== binCount) {
+      this._fftBuf = new Uint8Array(binCount);
+    }
+    const buf = this._fftBuf;
     window.audioSys.analyser.getByteFrequencyData(buf);
     const ctx = this.ctx,
       w = this.cv.width,
@@ -4953,7 +4971,9 @@ class Player {
         
         // Prepare audio system
         if (window.audioSys && window.audioSys.audio) {
-            window.audioSys.audio.src = song.url;
+            // saved songs live in the library as files (no .url), so load the file
+            if (song.blob) this.setAudioSource(song.blob);
+            else window.audioSys.audio.src = song.url;
             window.audioSys.audio.load();
             
             if (lastTime) {
@@ -5005,6 +5025,19 @@ class Player {
     window.libraryMgr.sync(s);
     this.songs = s;
     window.ui.renderLibrary(); // Ensure library shows on refresh
+  }
+
+  // Points the main audio at a song and frees the PREVIOUS song's temporary URL,
+  // so every song you play doesn't stay stuck in memory until you close the tab.
+  setAudioSource(blob) {
+    const oldUrl = this._audioObjUrl;
+    const newUrl = URL.createObjectURL(blob);
+    this._audioObjUrl = newUrl;
+    window.audioSys.audio.src = newUrl;
+    if (oldUrl) {
+      // short delay: the crossfade deck may still be reading the old song
+      setTimeout(() => URL.revokeObjectURL(oldUrl), 15000);
+    }
   }
 
   play(id, contextList = null, renderList = true) {
@@ -5075,7 +5108,7 @@ class Player {
     }
     window.ui.updateMetaTags();
 
-    window.audioSys.audio.src = URL.createObjectURL(s.blob);
+    this.setAudioSource(s.blob);
     window.audioSys.audio.preservesPitch = false;
 
     if (
@@ -5115,7 +5148,7 @@ class Player {
     fetch(base64)
       .then((res) => res.blob())
       .then((blob) => {
-        window.audioSys.audio.src = URL.createObjectURL(blob);
+        this.setAudioSource(blob);
         window.audioSys.audio.preservesPitch = false;
         window.audioSys.audio.play();
         const s = {
@@ -5272,6 +5305,9 @@ class Player {
             window.fadeGain.gain.value = 0;
             clearInterval(fadeOut);
             window.fadeAudio.pause();
+            // let go of the old song held by the fade deck
+            window.fadeAudio.removeAttribute("src");
+            window.fadeAudio.load();
           }
         }, 50);
 
