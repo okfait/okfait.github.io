@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.6.8</title>
+    <title>okMUSIC v2.6.9</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="importmap">
         {
@@ -21,6 +20,9 @@
     <!-- LZString for URL compression (Library Sync) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
+         Loaded AFTER style.css on purpose: same order the CDN used. -->
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.6.9">
 </head>
 <body>
 
