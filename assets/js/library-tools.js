@@ -1,6 +1,8 @@
 // okMUSIC library tools
 // ---------------------------------------------------------------------------
 //  * Add From Link  - paste direct links to audio files, they get saved in the library
+//  * Bulk adding    - drop songs or whole folders anywhere on the page, "Add Folder"
+//                     button, progress, duplicate skipping, storage-full message
 //
 // This lives in its own file on purpose: app.js is huge, and this way these
 // features can be changed or switched off without touching it.
@@ -140,6 +142,164 @@ function alreadyInLibrary(name, size) {
   return (window.player.songs || []).some((s) => s.name === name && s.blob && s.blob.size === size);
 }
 
+// ------------------------------------------------------------- bulk adding
+const isAudioFile = (f) => (f.type && f.type.startsWith("audio/")) || AUDIO_EXT.includes(extOf(f.name));
+const isQuotaError = (e) => /quota/i.test((e && e.name) + " " + (e && e.message));
+
+function showProgress(text) {
+  let el = $("ltProgress");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "ltProgress";
+    el.style.cssText =
+      "position:fixed; left:50%; bottom:28px; transform:translateX(-50%); z-index:10060; max-width:92vw;" +
+      "padding:10px 16px; border-radius:14px; background:rgba(18,18,22,0.94); color:#fff;" +
+      "border:1px solid rgba(255,255,255,0.15); font:700 11px/1.4 system-ui,sans-serif; letter-spacing:.04em;" +
+      "box-shadow:0 10px 30px rgba(0,0,0,.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;";
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = "block";
+}
+function hideProgress() {
+  const el = $("ltProgress");
+  if (el) el.style.display = "none";
+}
+
+// Walks a dropped folder (browser "entry" objects) and collects every file in it.
+// readEntries only hands back ~100 items per call, so it has to be called until it returns nothing.
+async function walkEntry(entry, folder, out, depth = 0) {
+  if (!entry || out.length >= 5000 || depth > 12) return;
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
+    if (file) out.push({ file, folder });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    for (;;) {
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej)).catch(() => []);
+      if (!batch.length) break;
+      for (const child of batch) await walkEntry(child, folder, out, depth + 1);
+    }
+  }
+}
+
+let importBusy = false;
+
+// items: [{ file, folder }]  (folder = name of the library folder to put it in, or null)
+async function importFiles(items) {
+  if (importBusy) {
+    toast("Still adding the last batch, one moment...");
+    return;
+  }
+  const audio = items.filter((x) => isAudioFile(x.file));
+  const sidecars = items.filter((x) => /\.json$/i.test(x.file.name)).map((x) => x.file);
+  const ignored = items.length - audio.length - sidecars.length;
+  if (!audio.length) {
+    toast(items.length ? "No audio files in there" : "Nothing to add");
+    return;
+  }
+
+  importBusy = true;
+  let dup = 0;
+  let storageFull = false;
+  const failed = [];
+  const addedIds = []; // [{ id, folder }]
+  const seen = new Set(); // catches the same song twice inside one drop
+  try {
+    for (let i = 0; i < audio.length; i++) {
+      const { file, folder } = audio[i];
+      showProgress(`Adding ${i + 1}/${audio.length}  ·  ${file.name}`);
+      const base = file.name.replace(/\.[^/.]+$/, "");
+      const key = base + "|" + file.size;
+      if (seen.has(key) || alreadyInLibrary(base, file.size)) {
+        dup++;
+        continue;
+      }
+      seen.add(key);
+
+      let data = null; // optional saved settings file that sits next to a song (same rule as the old uploader)
+      const side = sidecars.find((jf) => jf.name.includes(base));
+      if (side) {
+        try {
+          data = JSON.parse(await side.text());
+        } catch (e) {
+          console.warn("Couldn't read settings file", side.name, e);
+        }
+      }
+      try {
+        const id = await window.player.db.add(file, data);
+        addedIds.push({ id, folder });
+      } catch (e) {
+        if (isQuotaError(e)) {
+          storageFull = true;
+          break;
+        }
+        console.warn("Couldn't add", file.name, e);
+        failed.push(file.name);
+      }
+      if (i % 10 === 9) await new Promise((r) => setTimeout(r, 0)); // let the page breathe on big batches
+    }
+  } finally {
+    hideProgress();
+    importBusy = false;
+  }
+
+  if (addedIds.length) {
+    // songs that came from a folder go into a library folder with the same name
+    const byFolder = new Map();
+    for (const a of addedIds) {
+      if (!a.folder) continue;
+      if (!byFolder.has(a.folder)) byFolder.set(a.folder, []);
+      byFolder.get(a.folder).push({ type: "song", id: a.id });
+    }
+    for (const [name, list] of byFolder) {
+      window.libraryMgr.structure.unshift({
+        type: "folder",
+        id: crypto.randomUUID(),
+        name,
+        items: list,
+        isOpen: true,
+        color: "#60a5fa",
+      });
+    }
+    window.libraryMgr.save();
+    await window.player.loadLib();
+    if (window.ltStorage) window.ltStorage.afterAdd();
+  }
+
+  const parts = [];
+  if (addedIds.length) parts.push(`Added ${addedIds.length} song${addedIds.length > 1 ? "s" : ""}`);
+  if (dup) parts.push(`${dup} already in your library`);
+  if (failed.length) parts.push(`${failed.length} failed`);
+  if (ignored && !addedIds.length && !dup) parts.push(`${ignored} not audio`);
+  toast(parts.join(" · ") || "Nothing was added");
+  if (storageFull) {
+    alert(
+      `Your browser's storage for this site is full, so adding stopped` +
+        (addedIds.length ? ` after ${addedIds.length} song${addedIds.length > 1 ? "s" : ""}` : "") +
+        `.\n\nFree up space by deleting songs you don't need (Collection panel), or by clearing other site data in your browser settings.`,
+    );
+  }
+}
+
+// Turns what the old uploader got (a file input, or a drag "dataTransfer") into [{file, folder}]
+function itemsFromInput(input) {
+  let files = [];
+  if (input && input.files && input.files.length) files = Array.from(input.files);
+  else if (input && input.items) files = Array.from(input.items).filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean);
+  return files.map((file) => {
+    const rel = file.webkitRelativePath || "";
+    return { file, folder: rel.includes("/") ? rel.split("/")[0] : null };
+  });
+}
+
+const hasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
+
+function setOverlay(on) {
+  const o = $("ltDropOverlay");
+  if (o) o.style.display = on ? "flex" : "none";
+}
+
 // ---------------------------------------------------------------- modal bits
 function openModal(id) {
   const m = $(id);
@@ -207,7 +367,7 @@ async function addFromLinks() {
         await saveSong(blob, name, ext, type);
         added++;
       } catch (e) {
-        if (/quota/i.test((e && e.name) + " " + (e && e.message))) {
+        if (isQuotaError(e)) {
           failed.push({ url, msg: "Your browser's storage for this site is full." });
           break;
         }
@@ -281,10 +441,78 @@ function buildUI() {
   row.id = "ltToolRow";
   row.className = "grid gap-2 mt-2";
   row.style.gridTemplateColumns = "repeat(auto-fit, minmax(90px, 1fr))";
-  row.innerHTML = `<button id="ltLinkBtn" class="bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-400/30 font-bold py-3 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-link mr-2"></i> Add From Link</button>`;
+  row.innerHTML = `
+    <button id="ltFolderBtn" class="bg-white/5 hover:bg-white/10 text-white/80 border border-white/15 font-bold py-3 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-folder-open mr-2"></i> Add Folder</button>
+    <button id="ltLinkBtn" class="bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-400/30 font-bold py-3 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-link mr-2"></i> Add From Link</button>
+    <input type="file" id="ltFolderInput" webkitdirectory multiple class="hidden">`;
   if (importBtn) importBtn.insertAdjacentElement("afterend", row);
   else if (holder) holder.appendChild(row);
   $("ltLinkBtn").addEventListener("click", openLinkModal);
+  $("ltFolderBtn").addEventListener("click", () => $("ltFolderInput").click());
+  $("ltFolderInput").addEventListener("change", async (e) => {
+    const items = itemsFromInput(e.target); // read the list BEFORE clearing the input
+    e.target.value = "";
+    await importFiles(items);
+  });
+
+  // "Drop here" screen that appears while you drag files over the page
+  const overlay = document.createElement("div");
+  overlay.id = "ltDropOverlay";
+  overlay.style.cssText =
+    "position:fixed; inset:0; z-index:10050; display:none; align-items:center; justify-content:center; pointer-events:none; background:rgba(8,8,12,0.72);";
+  overlay.innerHTML = `<div style="border:2px dashed rgba(96,165,250,0.8); border-radius:28px; padding:48px 56px; text-align:center; color:#fff; font:800 15px/1.5 system-ui,sans-serif; letter-spacing:.08em; max-width:84vw;">
+      <div style="font-size:38px; margin-bottom:10px;"><i class="fa-solid fa-cloud-arrow-up" style="color:#60a5fa"></i></div>
+      DROP SONGS OR FOLDERS<br><span style="font-weight:600; font-size:12px; opacity:.6; letter-spacing:.04em;">to add them to your library</span></div>`;
+  document.body.appendChild(overlay);
+}
+
+// Everything that listens to the whole page. Capture phase on purpose: it runs
+// before the library's own drop spots, so a file drop is handled exactly once.
+function wireDropAnywhere() {
+  window.addEventListener(
+    "dragover",
+    (e) => {
+      if (!hasFiles(e)) return; // moving songs around inside the library is not touched
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setOverlay(true);
+    },
+    true,
+  );
+  window.addEventListener(
+    "dragleave",
+    (e) => {
+      if (hasFiles(e) && !e.relatedTarget) setOverlay(false); // left the window
+    },
+    true,
+  );
+  window.addEventListener(
+    "drop",
+    async (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOverlay(false);
+      // The browser only lets us read the dropped items during this event, so grab them now.
+      const entries = [];
+      const loose = [];
+      for (const it of Array.from(e.dataTransfer.items || [])) {
+        if (it.kind !== "file") continue;
+        const entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+        if (entry) entries.push(entry);
+        else {
+          const f = it.getAsFile();
+          if (f) loose.push({ file: f, folder: null });
+        }
+      }
+      if (!entries.length && !loose.length) loose.push(...itemsFromInput(e.dataTransfer));
+      const out = [...loose];
+      for (const entry of entries) await walkEntry(entry, entry.isDirectory ? entry.name : null, out);
+      await importFiles(out);
+    },
+    true,
+  );
+  window.addEventListener("dragend", () => setOverlay(false), true);
 }
 
 function init() {
@@ -293,7 +521,17 @@ function init() {
     return;
   }
   buildUI();
-  window.libraryTools = { openLinkModal, fetchAudio, saveSong, alreadyInLibrary };
+  wireDropAnywhere();
+
+  // The old "+" button (and anything else that used the old uploader) now gets
+  // the same progress, duplicate skipping and storage-full message.
+  window.player.handleUpload = async (input) => {
+    const items = itemsFromInput(input);
+    if (input && input.tagName === "INPUT") input.value = "";
+    await importFiles(items);
+  };
+
+  window.libraryTools = { openLinkModal, fetchAudio, saveSong, alreadyInLibrary, importFiles, walkEntry };
 }
 
 init();
