@@ -6,6 +6,8 @@
 //  * Storage care   - asks the browser not to auto-delete your songs, shows usage
 //  * Media keys     - headphone / keyboard / lock-screen play-pause-next-prev + now playing info
 //  * Sleep timer    - in Settings: fade out and pause after X minutes or after this song
+//  * Use My Files   - in the Spotify playlist importer: pick audio files you already have,
+//                     they get matched to the playlist's songs by name
 //
 // This lives in its own file on purpose: app.js is huge, and this way these
 // features can be changed or switched off without touching it.
@@ -539,6 +541,137 @@ function setupSleepTimer() {
   });
 }
 
+// ------------------------------------------------- playlist: use my files
+// Words that don't help tell songs apart ("Official Video", "feat.", years...).
+const NOISE = new Set([
+  "official", "video", "audio", "lyrics", "lyric", "music", "hd", "hq", "4k", "remaster", "remastered",
+  "version", "visualizer", "visualiser", "explicit", "clean", "feat", "ft", "featuring", "with", "mono",
+  "stereo", "edit", "radio", "deluxe", "bonus", "original", "soundtrack", "from", "and", "the",
+]);
+// ...but these inside brackets DO matter: "Song (Remix)" is not "Song".
+const MODIFIERS = new Set(["remix", "live", "acoustic", "instrumental", "slowed", "sped", "cover"]);
+
+function nameTokens(text) {
+  return String(text)
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // é -> e
+    .toLowerCase()
+    .replace(/['’`]/g, "") // don't -> dont
+    .replace(/&/g, " and ")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+const isOptionalWord = (w) => NOISE.has(w) || /^(19|20)\d\d$/.test(w);
+
+// "Song (feat. X)" -> { outside: "Song ", inside: "feat. X" }
+function splitBrackets(text) {
+  let inside = "";
+  const outside = String(text).replace(/[([{]([^)\]}]*)[)\]}]/g, (_, g) => {
+    inside += " " + g;
+    return " ";
+  });
+  return { outside, inside };
+}
+
+// the words of a playlist song that a file name must contain
+function requiredWords(trackName) {
+  const { outside, inside } = splitBrackets(trackName);
+  const req = [...new Set(nameTokens(outside).filter((w) => !isOptionalWord(w)))];
+  for (const w of nameTokens(inside)) if (MODIFIERS.has(w) && !req.includes(w)) req.push(w);
+  return req;
+}
+const fileWords = (fileName) => new Set(nameTokens(fileName.replace(/\.[^/.]+$/, "")).filter((w) => !isOptionalWord(w)));
+
+// 0 = no match, otherwise higher = better
+function matchScore(req, words) {
+  if (!req.length || !words.size) return 0;
+  const hit = req.filter((w) => words.has(w)).length;
+  const cover = hit / req.length; // how much of the song's name is in the file name
+  if (cover < 0.75 || (req.length > 1 && hit < 2)) return 0;
+  const unexplained = [...words].filter((w) => !req.includes(w)).length / words.size; // leftover junk in the file name
+  return cover - 0.25 * unexplained;
+}
+
+// Pairs each playlist song with the best-matching file (every file used at most once).
+// Returns { pairs: [{track, file}] in playlist order, missing: [track], unused: [file] }
+function matchFilesToTracks(tracks, files) {
+  const reqs = tracks.map((t) => requiredWords(t.name));
+  const words = files.map((f) => fileWords(f.name));
+  const cand = [];
+  for (let ti = 0; ti < tracks.length; ti++) {
+    for (let fi = 0; fi < files.length; fi++) {
+      const s = matchScore(reqs[ti], words[fi]);
+      if (s > 0) cand.push({ ti, fi, s });
+    }
+  }
+  cand.sort((a, b) => b.s - a.s);
+  const tUsed = new Set();
+  const fUsed = new Set();
+  const picked = [];
+  for (const c of cand) {
+    if (tUsed.has(c.ti) || fUsed.has(c.fi)) continue;
+    tUsed.add(c.ti);
+    fUsed.add(c.fi);
+    picked.push(c);
+  }
+  picked.sort((a, b) => a.ti - b.ti);
+  return {
+    pairs: picked.map((p) => ({ track: tracks[p.ti], file: files[p.fi] })),
+    missing: tracks.filter((_, i) => !tUsed.has(i)),
+    unused: files.filter((_, i) => !fUsed.has(i)),
+  };
+}
+
+async function copyText(text, promptLabel) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Copied!");
+  } catch (e) {
+    window.prompt(promptLabel, text.replace(/\n/g, " | ")); // clipboard blocked: show it to copy by hand
+  }
+}
+
+async function useMyFiles(fileList) {
+  const tracks = window.ui._pendingPlaylistTracks || [];
+  const playlistName = window.ui._pendingPlaylistName || "Imported Playlist";
+  const files = Array.from(fileList).filter(isAudioFile);
+  if (!tracks.length) {
+    toast("Press SCAN LINK first, so I know the song list");
+    return;
+  }
+  if (!files.length) {
+    toast("No audio files picked");
+    return;
+  }
+  const { pairs, missing, unused } = matchFilesToTracks(tracks, files);
+  if (!pairs.length) {
+    alert(
+      `None of those ${files.length} files matched a song in "${playlistName}".\n\n` +
+        `The file names need to contain the artist and the song name, like "Artist - Song.mp3".`,
+    );
+    return;
+  }
+  window.ui.closePlaylistImporter();
+  // files go in playlist order, so the library folder ends up in playlist order too
+  await importFiles(pairs.map((p) => ({ file: p.file, folder: playlistName })));
+
+  if (!missing.length) {
+    toast(`All ${tracks.length} songs matched!`);
+    return;
+  }
+  const shown = missing.slice(0, 8).map((t) => "• " + t.name);
+  if (missing.length > 8) shown.push(`...and ${missing.length - 8} more`);
+  const skipped = unused.length ? `\n(${unused.length} of your files didn't match any song and were skipped.)` : "";
+  if (
+    confirm(
+      `Matched ${pairs.length} of ${tracks.length} songs.\n\nStill missing (${missing.length}):\n${shown.join("\n")}${skipped}\n\n` +
+        `Copy the list of missing songs?`,
+    )
+  ) {
+    await copyText(missing.map((t) => t.name).join("\n"), "Copy the missing songs (Ctrl+C):");
+  }
+}
+
 // ---------------------------------------------------------------- modal bits
 function openModal(id) {
   const m = $(id);
@@ -694,6 +827,30 @@ function buildUI() {
     await importFiles(items);
   });
 
+  // "Use my files" under the buttons of the Spotify playlist importer
+  const scanBtn = $("btnScanPlaylist");
+  if (scanBtn && scanBtn.parentElement && !$("ltMatchBtn")) {
+    const matchRow = document.createElement("div");
+    matchRow.className = "mt-3";
+    matchRow.innerHTML = `
+      <button id="ltMatchBtn" class="w-full bg-white/5 hover:bg-white/10 text-white/70 border border-white/15 font-bold py-3 rounded-xl text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-folder-open mr-2"></i> Already have the songs? Use my files</button>
+      <input type="file" id="ltMatchInput" multiple accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.weba,.webm" class="hidden">
+      <p class="text-[9px] text-white/30 font-bold leading-relaxed mt-2 text-center">Press SCAN LINK first, then pick your audio files. They get matched to the playlist by name.</p>`;
+    scanBtn.parentElement.insertAdjacentElement("afterend", matchRow);
+    $("ltMatchBtn").addEventListener("click", () => {
+      if (!(window.ui._pendingPlaylistTracks || []).length) {
+        toast("Press SCAN LINK first, so I know the song list");
+        return;
+      }
+      $("ltMatchInput").click();
+    });
+    $("ltMatchInput").addEventListener("change", async (e) => {
+      const picked = Array.from(e.target.files); // read the list BEFORE clearing the input
+      e.target.value = "";
+      await useMyFiles(picked);
+    });
+  }
+
   // "Drop here" screen that appears while you drag files over the page
   const overlay = document.createElement("div");
   overlay.id = "ltDropOverlay";
@@ -803,7 +960,7 @@ function init() {
 
   window.libraryTools = {
     openLinkModal, fetchAudio, saveSong, alreadyInLibrary, importFiles, walkEntry,
-    startSleep, sleepCancel, requestPersist, refreshStorage,
+    startSleep, sleepCancel, requestPersist, refreshStorage, matchFilesToTracks, useMyFiles,
   };
 }
 
