@@ -1,7 +1,8 @@
-const CACHE_NAME = 'okmusic-v2.6.10';
+const CACHE_NAME = 'okmusic-v2.6.11';
 const ASSETS = [
     './index.html',
     './manifest.json',
+    './favicon.png',
     './icon-192.png',
     './icon-512.png'
 ];
