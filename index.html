@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.6.11</title>
+    <title>okMUSIC v2.7.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -23,7 +23,7 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.6.9">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.7.0">
 </head>
 <body>
 
@@ -37,7 +37,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.6.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.7.0</span></div>
         <div class="flex gap-4">
             <button class="top-icon" id="castBtn" title="Connect to Device (Bluetooth/Cast)"><i class="fa-brands fa-bluetooth-b"></i></button>
             <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
@@ -798,5 +798,7 @@
         </div>
     </aside>
     <script type="module" src="assets/js/app.js?v=2.6.10"></script>
+    <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
+    <script type="module" src="assets/js/library-tools.js?v=2.7.0"></script>
 </body>
 </html>
