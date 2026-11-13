@@ -926,6 +926,11 @@ class AudioSystem {
   constructor() {
     this.ctx = null;
     this.audio = new Audio();
+    // Slowing down/speeding up must change the PITCH too (slowed = deeper, faster = higher).
+    // Set once here so it applies however a song starts (click, resume, restore, party sync).
+    this.audio.preservesPitch = false;
+    this.audio.mozPreservesPitch = false;
+    this.audio.webkitPreservesPitch = false;
     this.audio.crossOrigin = "anonymous";
     this.audio.addEventListener("timeupdate", () => window.player.onTick());
     this.audio.addEventListener("ended", () => window.player.onEnd());
@@ -5299,6 +5304,10 @@ class Player {
         // Dual-deck crossfade logic
         if (!window.fadeAudio) {
           window.fadeAudio = new Audio();
+          // same rule for the crossfade deck so the fading song keeps its pitch shift
+          window.fadeAudio.preservesPitch = false;
+          window.fadeAudio.mozPreservesPitch = false;
+          window.fadeAudio.webkitPreservesPitch = false;
           window.fadeGain = window.audioSys.ctx.createGain();
           const src = window.audioSys.ctx.createMediaElementSource(
             window.fadeAudio,
