@@ -4706,12 +4706,24 @@ class UI {
           // Nothing downloaded: don't leave an empty folder behind, and say so clearly
           btn.innerHTML = "IMPORT TRACKS";
           btn.style.pointerEvents = "auto";
-          alert(
+          const wantsList = confirm(
             `None of the songs could be downloaded, so nothing was added.\n\n` +
               `First error: ${failed[0] ? failed[0].reason : "unknown"}\n\n` +
               `The download server is probably offline or blocked. ` +
-              `Spotify itself was fine - the song LIST was found, the audio download is what failed.`,
+              `Spotify itself was fine - the song LIST was found, the audio download is what failed.\n\n` +
+              `Copy the list of ${tracks.length} song names so you can get the files yourself? ` +
+              `(Then drop the files onto this page, or use Add Folder.)`,
           );
+          if (wantsList) {
+            const listText = tracks.map((t) => t.name).join("\n");
+            try {
+              await navigator.clipboard.writeText(listText);
+              this.showToast("Song list copied!");
+            } catch (e) {
+              // clipboard not allowed here: show it so it can be copied by hand
+              window.prompt("Copy the song list (Ctrl+C):", listText.replace(/\n/g, " | "));
+            }
+          }
           return;
         }
 

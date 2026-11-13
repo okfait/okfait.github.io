@@ -3,6 +3,9 @@
 //  * Add From Link  - paste direct links to audio files, they get saved in the library
 //  * Bulk adding    - drop songs or whole folders anywhere on the page, "Add Folder"
 //                     button, progress, duplicate skipping, storage-full message
+//  * Storage care   - asks the browser not to auto-delete your songs, shows usage
+//  * Media keys     - headphone / keyboard / lock-screen play-pause-next-prev + now playing info
+//  * Sleep timer    - in Settings: fade out and pause after X minutes or after this song
 //
 // This lives in its own file on purpose: app.js is huge, and this way these
 // features can be changed or switched off without touching it.
@@ -300,6 +303,242 @@ function setOverlay(on) {
   if (o) o.style.display = on ? "flex" : "none";
 }
 
+// ------------------------------------------------------------ storage care
+let persistAsked = false;
+
+// Asks the browser to keep this site's data (your songs) even when disk space gets low.
+// Browsers may say no; that's fine, nothing breaks.
+async function requestPersist() {
+  try {
+    if (!navigator.storage || !navigator.storage.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    if (persistAsked) return false;
+    persistAsked = true;
+    return await navigator.storage.persist();
+  } catch (e) {
+    return false;
+  }
+}
+
+async function refreshStorage() {
+  const el = $("ltStorageLine");
+  if (!el || !navigator.storage || !navigator.storage.estimate) return;
+  try {
+    const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+    const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    const size = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : Math.round(b / 1048576) + " MB");
+    el.textContent = `Storage used: ${size(usage)}` + (quota ? ` of ~${size(quota)}` : "") + (persisted ? " · protected" : "");
+    el.title = persisted
+      ? "Your browser promised not to clear your songs by itself."
+      : "If your computer gets very low on disk space the browser may clear site data. Adding songs asks it to protect them.";
+  } catch (e) {
+    /* estimate not available - the line just stays as it was */
+  }
+}
+
+window.ltStorage = {
+  refresh: refreshStorage,
+  afterAdd: async () => {
+    await requestPersist();
+    refreshStorage();
+  },
+};
+
+// ------------------------------------------------------------- media keys
+function setupMediaSession() {
+  const ms = navigator.mediaSession;
+  if (!ms) return;
+  const audio = window.audioSys.audio;
+  const on = (name, fn) => {
+    try {
+      ms.setActionHandler(name, fn);
+    } catch (e) {
+      /* this browser doesn't know that button */
+    }
+  };
+  const toggleIf = (wantPlaying) => {
+    if (audio.paused === wantPlaying) window.player.togglePlay();
+  };
+  on("play", () => toggleIf(true));
+  on("pause", () => toggleIf(false));
+  on("stop", () => toggleIf(false));
+  on("nexttrack", () => window.player.next());
+  on("previoustrack", () => window.player.prev());
+  on("seekto", (d) => {
+    if (d && typeof d.seekTime === "number") audio.currentTime = d.seekTime;
+  });
+  on("seekbackward", (d) => {
+    audio.currentTime = Math.max(0, audio.currentTime - ((d && d.seekOffset) || 10));
+  });
+  on("seekforward", (d) => {
+    audio.currentTime = Math.min(audio.duration || Infinity, audio.currentTime + ((d && d.seekOffset) || 10));
+  });
+
+  const setInfo = () => {
+    const t = window.player.currentTrack;
+    if (!t || typeof MediaMetadata === "undefined") return;
+    const raw = String(t.name || "okMUSIC");
+    const i = raw.indexOf(" - ");
+    const md = { title: i > 0 ? raw.slice(i + 3) : raw, artist: i > 0 ? raw.slice(0, i) : "okMUSIC", album: "okMUSIC" };
+    if (typeof t.art === "string" && /^(data:|https?:|blob:)/.test(t.art)) md.artwork = [{ src: t.art }];
+    try {
+      ms.metadata = new MediaMetadata(md);
+    } catch (e) {
+      /* bad artwork etc. - keep the old info */
+    }
+  };
+  const setPos = () => {
+    try {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        ms.setPositionState({
+          duration: audio.duration,
+          playbackRate: audio.playbackRate || 1,
+          position: Math.min(audio.currentTime, audio.duration),
+        });
+      }
+    } catch (e) {
+      /* odd speed/position values - skip this update */
+    }
+  };
+  audio.addEventListener("loadedmetadata", setInfo);
+  audio.addEventListener("play", () => {
+    setInfo();
+    ms.playbackState = "playing";
+  });
+  audio.addEventListener("pause", () => {
+    ms.playbackState = "paused";
+  });
+  ["loadedmetadata", "play", "pause", "seeked", "ratechange"].forEach((ev) => audio.addEventListener(ev, setPos));
+}
+
+// ------------------------------------------------------------- sleep timer
+const sleep = { endAt: 0, timer: 0, tick: 0, fade: 0, afterSong: false, gainBefore: null };
+const mmss = (ms) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+const sleepSay = (text) => {
+  const el = $("ltSleepStatus");
+  if (el) el.textContent = text;
+};
+const gainParam = () => {
+  const a = window.audioSys;
+  return a && a.gain && a.gain.gain ? a.gain.gain : null;
+};
+
+// Stops every timer. restoreVolume=true puts the volume back if a fade-out was running.
+function sleepCancel(restoreVolume = true) {
+  clearTimeout(sleep.timer);
+  clearInterval(sleep.tick);
+  clearInterval(sleep.fade);
+  sleep.timer = sleep.tick = sleep.fade = 0;
+  sleep.afterSong = false;
+  sleep.endAt = 0;
+  const g = gainParam();
+  if (restoreVolume && g && sleep.gainBefore != null) g.value = sleep.gainBefore;
+  sleep.gainBefore = null;
+  sleepSay("Off");
+  const sel = $("ltSleepSelect");
+  if (sel && sel.value !== "0") sel.value = "0";
+}
+
+// Fades the volume to nothing, pauses, then puts the volume back for next time.
+function sleepFadeAndPause(fadeMs) {
+  const audio = window.audioSys.audio;
+  const g = gainParam();
+  const done = () => {
+    const before = sleep.gainBefore;
+    clearInterval(sleep.fade);
+    sleep.fade = 0;
+    audio.pause();
+    window.ui.updatePlayBtn(false);
+    // put the volume back a moment later so a bit of leftover sound can't blip out
+    setTimeout(() => {
+      if (g && before != null) g.value = before;
+    }, 400);
+    sleep.gainBefore = null;
+    sleepCancel(false);
+    toast("Sleep timer: paused. Good night!");
+  };
+  if (audio.paused) {
+    sleepCancel(false);
+    return;
+  }
+  if (!g || fadeMs <= 0) {
+    done();
+    return;
+  }
+  sleep.gainBefore = g.value;
+  const started = performance.now();
+  sleep.fade = setInterval(() => {
+    const t = (performance.now() - started) / fadeMs;
+    if (t >= 1) done();
+    else g.value = sleep.gainBefore * (1 - t);
+  }, 200);
+}
+
+// value: "0" (off), "song" (after this song) or minutes
+function startSleep(value, fadeSeconds = 10) {
+  sleepCancel(true);
+  if (value === "song") {
+    sleep.afterSong = true;
+    sleepSay("After this song");
+    toast("Will pause after this song");
+    const sel = $("ltSleepSelect");
+    if (sel) sel.value = "song";
+    return;
+  }
+  const minutes = Number(value);
+  if (!(minutes > 0)) return;
+  const total = minutes * 60000;
+  const fadeMs = Math.min(fadeSeconds * 1000, total / 2);
+  sleep.endAt = Date.now() + total;
+  sleep.timer = setTimeout(() => sleepFadeAndPause(fadeMs), total - fadeMs);
+  sleep.tick = setInterval(() => sleepSay("Pauses in " + mmss(Math.max(0, sleep.endAt - Date.now()))), 1000);
+  sleepSay("Pauses in " + mmss(total));
+  toast(`Sleep timer set: ${minutes < 1 ? minutes * 60 + " sec" : minutes + " min"}`);
+}
+
+function setupSleepTimer() {
+  // "After this song": the app calls player.onEnd() when a song finishes, so we step in there
+  const origOnEnd = window.player.onEnd.bind(window.player);
+  window.player.onEnd = (...args) => {
+    if (sleep.afterSong) {
+      sleepCancel(true);
+      window.audioSys.audio.pause();
+      window.ui.updatePlayBtn(false);
+      toast("Sleep timer: paused. Good night!");
+      return;
+    }
+    return origOnEnd(...args);
+  };
+
+  // Row in the settings panel, under Lite Mode
+  const liteRow = $("liteToggle") ? $("liteToggle").closest("label") : null;
+  if (!liteRow) return;
+  liteRow.insertAdjacentHTML(
+    "afterend",
+    `<div class="flex justify-between items-center bg-white/5 border border-white/10 p-4 h-[72px] mx-2 mt-4 rounded-xl">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70"><i class="fa-solid fa-moon"></i></div>
+            <div class="flex flex-col">
+                <span class="text-xs font-black text-white/90 tracking-widest uppercase">SLEEP TIMER</span>
+                <span id="ltSleepStatus" class="text-[9px] font-bold text-white/40">Off</span>
+            </div>
+        </div>
+        <select id="ltSleepSelect" style="color-scheme:dark" class="bg-black/60 border border-white/10 rounded-lg text-[11px] font-bold text-white p-2 outline-none cursor-pointer">
+            <option value="0">Off</option><option value="song">After this song</option>
+            <option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option>
+            <option value="60">1 hour</option><option value="90">1.5 hours</option>
+        </select>
+    </div>`,
+  );
+  $("ltSleepSelect").addEventListener("change", (e) => {
+    if (e.target.value === "0") sleepCancel(true);
+    else startSleep(e.target.value);
+  });
+}
+
 // ---------------------------------------------------------------- modal bits
 function openModal(id) {
   const m = $(id);
@@ -531,7 +770,41 @@ function init() {
     await importFiles(items);
   };
 
-  window.libraryTools = { openLinkModal, fetchAudio, saveSong, alreadyInLibrary, importFiles, walkEntry };
+  // Each extra is wrapped on its own, so if one breaks the others (and the player) keep working.
+  const safely = (label, fn) => {
+    try {
+      fn();
+    } catch (e) {
+      console.warn("library-tools:", label, "failed to start", e);
+    }
+  };
+  safely("media keys", setupMediaSession);
+  safely("sleep timer", setupSleepTimer);
+  safely("storage line", () => {
+    // small line above "Factory Reset" in the library panel
+    const reset = document.querySelector('button[onclick="window.player.db.clearAll()"]');
+    if (reset && reset.parentElement && !$("ltStorageLine")) {
+      const line = document.createElement("div");
+      line.id = "ltStorageLine";
+      line.className = "text-center text-[9px] font-bold text-white/30 tracking-wider uppercase pb-2";
+      reset.parentElement.insertAdjacentElement("beforebegin", line);
+    }
+    refreshStorage();
+    window.addEventListener("focus", refreshStorage);
+    const origToggle = window.ui.toggleLibrary && window.ui.toggleLibrary.bind(window.ui);
+    if (origToggle) {
+      window.ui.toggleLibrary = (...args) => {
+        const r = origToggle(...args);
+        refreshStorage();
+        return r;
+      };
+    }
+  });
+
+  window.libraryTools = {
+    openLinkModal, fetchAudio, saveSong, alreadyInLibrary, importFiles, walkEntry,
+    startSleep, sleepCancel, requestPersist, refreshStorage,
+  };
 }
 
 init();
