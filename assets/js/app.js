@@ -15,7 +15,7 @@ import {
   uploadBytesResumable,
   getDownloadURL,
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
-import { SpotifyManager } from "./spotify.js?v=3";
+import { SpotifyManager } from "./spotify.js?v=4";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvJ_lGnmH3Dll1E-HY5CuqzKGqQBXb-C4",
@@ -1253,8 +1253,8 @@ class AudioSystem {
         rev = 0;
         break;
     }
-    document.querySelectorAll(".setting-slider")[1].value = bass;
-    document.querySelectorAll(".setting-slider")[2].value = rev;
+    window.$("bassSlider").value = bass;
+    window.$("reverbSlider").value = rev;
     this.setBass(bass);
     this.setReverb(rev);
   }
@@ -5123,9 +5123,9 @@ class Player {
           ? s.xtremeOn
           : localStorage.getItem("sv_xtreme") === "true";
 
-      document.querySelectorAll(".setting-slider")[1].value = bass;
-      document.querySelectorAll(".setting-slider")[2].value = rev;
-      document.querySelectorAll(".setting-slider")[3].value = spd;
+      window.$("bassSlider").value = bass;
+      window.$("reverbSlider").value = rev;
+      window.$("warpSlider").value = spd;
       window.$("xtremeToggle").checked = xtr;
 
       if (window.audioSys.ctx) {
@@ -5384,17 +5384,17 @@ class Player {
     }
     const b = localStorage.getItem("sv_bass");
     if (b) {
-      document.querySelectorAll(".setting-slider")[1].value = b;
+      window.$("bassSlider").value = b;
       window.audioSys.setBass(b);
     }
     const r = localStorage.getItem("sv_reverb");
     if (r) {
-      document.querySelectorAll(".setting-slider")[2].value = r;
+      window.$("reverbSlider").value = r;
       window.audioSys.setReverb(r);
     }
     const p = localStorage.getItem("sv_pitch");
     if (p) {
-      document.querySelectorAll(".setting-slider")[3].value = p;
+      window.$("warpSlider").value = p;
       window.audioSys.setBaseSpeed(p);
     }
     const c = localStorage.getItem("sv_theme");
@@ -5865,7 +5865,7 @@ class PartyMode {
         }
       }
     } else if (data.type === "FX_SYNC" && !this.isHost) {
-      const sl = document.querySelectorAll(".setting-slider");
+      const sl = [null, window.$("bassSlider"), window.$("reverbSlider"), window.$("warpSlider")];
       if (data.bass !== undefined) {
         sl[1].value = data.bass;
         window.audioSys.setBass(data.bass);
@@ -6002,6 +6002,8 @@ setInterval(() => {
         if(eBass) eBass.innerText = window.nerdStats.bass;
         if(eMid) eMid.innerText = window.nerdStats.mid;
         if(eHigh) eHigh.innerText = window.nerdStats.high;
+        let eTick = document.getElementById('nerdTick');
+        if(eTick) eTick.innerText = window.nerdStats.tick;
     }
 }, 100);
 
@@ -6111,36 +6113,33 @@ window.initVizDraggable = function() {
     const modal = document.getElementById("vizTunerModal");
     const header = document.getElementById("vizTunerHeader");
     if(!modal || !header) return;
-    
-    let isDragging = false;
-    let startX, startY, initialLeft, initialTop;
-    
-    header.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
+
+    // Drag the tuner by its header. Clicks on the header buttons (reset / X) are NOT drags -
+    // before, pressing X started a drag and the panel jumped to the left.
+    let drag = null;
+    const start = (x, y, target) => {
+        if (target.closest("button")) return;
         const rect = modal.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
-        
-        modal.style.right = 'auto';
-        modal.style.bottom = 'auto';
-        modal.style.left = initialLeft + 'px';
-        modal.style.top = initialTop + 'px';
-        modal.style.margin = '0';
-    });
-    
-    document.addEventListener('mousemove', (e) => {
-        if(!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        modal.style.left = (initialLeft + dx) + 'px';
-        modal.style.top = (initialTop + dy) + 'px';
-    });
-    
-    document.addEventListener('mouseup', () => {
-        isDragging = false;
-    });
+        modal.style.transform = "none"; // stop centering, use real pixel position from now on
+        modal.style.left = rect.left + "px";
+        modal.style.top = rect.top + "px";
+        modal.classList.add("dragging");
+        drag = { x, y, left: rect.left, top: rect.top, w: rect.width };
+    };
+    const move = (x, y) => {
+        if (!drag) return;
+        const left = Math.min(window.innerWidth - 60, Math.max(60 - drag.w, drag.left + x - drag.x));
+        const top = Math.min(window.innerHeight - 50, Math.max(0, drag.top + y - drag.y));
+        modal.style.left = left + "px";
+        modal.style.top = top + "px";
+    };
+    const end = () => { drag = null; modal.classList.remove("dragging"); };
+    header.addEventListener("mousedown", (e) => start(e.clientX, e.clientY, e.target));
+    header.addEventListener("touchstart", (e) => { const t = e.touches[0]; start(t.clientX, t.clientY, e.target); }, { passive: true });
+    document.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
+    document.addEventListener("touchmove", (e) => { if (drag) move(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    document.addEventListener("mouseup", end);
+    document.addEventListener("touchend", end);
 };
 setTimeout(() => window.initVizDraggable(), 1000);
 
@@ -6174,19 +6173,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         
                         window.ui?.showToast?.(`Syncing ${data.tracks.length} songs... Please do not close the app.`);
                         
-                        // Overload the playlist importer temporarily to use the sync array instead of scraping
+                        // v3: hand the song names to "Add Songs", it downloads them through the PC helper
                         setTimeout(() => {
-                            window.ui.openPlaylistImporter();
-                            // Hack the pending tracks so scanPlaylist downloads these
-                            window.ui._pendingPlaylistTracks = data.tracks.map(name => ({ name, url: "" }));
-                            window.ui._pendingPlaylistName = "Synced Library (" + new Date().toLocaleDateString() + ")";
-                            
-                            const btn = document.getElementById("btnScanPlaylist");
-                            if (btn) {
-                                btn.innerText = "IMPORT SYNCED LIBRARY";
-                                btn.classList.remove("hidden");
-                                btn.onclick = () => window.ui.scanPlaylist();
-                            }
+                            window.finder.loadNames("Synced Library (" + new Date().toLocaleDateString() + ")", data.tracks);
                         }, 500);
                     }
                 }

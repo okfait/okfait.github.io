@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.10.0</title>
+    <title>okMUSIC v2.11.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -23,7 +23,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.10.0">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.11.0">
+    <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.11.0">
 </head>
 <body>
 
@@ -37,17 +39,25 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.10.0</span></div>
-        <div class="flex gap-4">
-            <button class="top-icon" id="castBtn" title="Connect to Device (Bluetooth/Cast)"><i class="fa-brands fa-bluetooth-b"></i></button>
-            <button onclick="window.toggleDisplayMode()" class="top-icon" id="displayModeBtn" title="Clean Display"><i class="fa-solid fa-expand"></i></button>
-            <button onclick="window.partyMode.toggleSetup()" class="top-icon" id="partyBtn" title="Party Mode"><i class="fa-solid fa-satellite-dish"></i></button>
-            <button onclick="window.voiceControl.toggle()" class="top-icon" id="micBtn" title="Voice Control"><i class="fa-solid fa-microphone"></i></button>
-            <button onclick="window.ui.toggleQueue()" class="top-icon" title="Queue"><i class="fa-solid fa-list-ul"></i></button>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.11.0</span></div>
+        <div class="top-actions">
             <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
+            <button onclick="window.ui.toggleQueue()" class="top-icon" title="Queue"><i class="fa-solid fa-list-ul"></i></button>
             <button onclick="window.ui.toggleSettings()" class="top-icon" title="Settings"><i class="fa-solid fa-sliders"></i></button>
+            <div class="more-wrap">
+                <button onclick="window.uiv3.toggleMenu('moreMenu', this)" class="top-icon" id="moreBtn" title="More"><i class="fa-solid fa-ellipsis"></i></button>
+                <div id="moreMenu" class="ios-menu ios-menu-right">
+                    <button onclick="window.uiv3.closeMenus(); window.finder.open()"><i class="fa-solid fa-cloud-arrow-down"></i> Add songs</button>
+                    <button onclick="window.uiv3.closeMenus(); window.toggleDisplayMode()" id="displayModeBtn"><i class="fa-solid fa-expand"></i> Clean display <small>Esc to exit</small></button>
+                    <button onclick="window.uiv3.closeMenus(); window.partyMode.toggleSetup()" id="partyBtn"><i class="fa-solid fa-satellite-dish"></i> Party mode</button>
+                    <button onclick="window.uiv3.closeMenus(); window.voiceControl.toggle()" id="micBtn"><i class="fa-solid fa-microphone"></i> Voice control <small>beta</small></button>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- shows up in clean display so there's always a way back -->
+    <button id="exitCleanBtn" onclick="window.uiv3.exitClean()"><i class="fa-solid fa-compress"></i> Exit</button>
 
     <!-- CENTER PLAYER -->
     <div class="player-wrapper" id="playerWrapper">
@@ -97,11 +107,13 @@
     <aside class="side-panel left-panel" id="libraryPanel">
         <!-- HEADER -->
         <div class="panel-header" ondrop="window.ui.handleRootDrop(event)" ondragover="event.preventDefault();">
-            <span>COLLECTION</span>
+            <span>Library</span>
             <button onclick="window.ui.toggleLibrary()" class="action-btn"><i class="fa-solid fa-xmark text-white"></i></button>
         </div>
         
         <div class="panel-content custom-scrollbar fade-mask relative pb-4">
+            <button onclick="window.finder.open()" class="lib-add-btn"><i class="fa-solid fa-cloud-arrow-down"></i><span><b>Add Songs</b><small>Search any song or grab a whole Spotify playlist</small></span></button>
+
             <!-- QUICK ACTIONS (Restored to Top) -->
             <div class="quick-actions" style="grid-template-columns: repeat(5, 1fr);">
                 <button onclick="document.getElementById('fileInput').click()" class="q-btn" title="Add Files"><i class="fa-solid fa-plus"></i></button>
@@ -137,7 +149,7 @@
                 <button onclick="$('importLibraryInput').click()" class="w-full bg-white/5 hover:bg-white/10 text-white opacity-50 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-upload mr-2"></i> Import Library / Data</button>
                 <input type="file" id="importLibraryInput" accept=".json" class="hidden" onchange="window.libraryMgr.importLibrary(this)">
                 
-                <button onclick="window.ui.openPlaylistImporter()" class="w-full bg-gradient-to-r from-[#1DB954]/20 to-[#1DB954]/5 hover:from-[#1DB954]/30 hover:to-[#1DB954]/10 text-[#1DB954] border border-[#1DB954]/30 font-bold py-3 mt-4 rounded-lg text-[10px] tracking-wider uppercase transition shadow-[0_0_15px_rgba(29,185,84,0.1)] hover:shadow-[0_0_20px_rgba(29,185,84,0.25)]"><i class="fa-brands fa-spotify mr-2 text-base"></i> <i class="fa-brands fa-youtube mr-2 text-base text-red-400"></i> Import URL</button>
+                <button onclick="window.ui.openPlaylistImporter()" class="lib-row-btn lib-row-spotify"><i class="fa-brands fa-spotify"></i> Import Spotify / YouTube playlist</button>
             </div>
 
             <div class="mt-2 text-center">
@@ -153,58 +165,118 @@
     <!-- RIGHT PANEL: SETTINGS -->
     <aside class="side-panel right-panel" id="settingsPanel">
         <div class="panel-header">
-            <span>SETTINGS</span>
-            <button onclick="window.ui.toggleSettings()" class="action-btn"><i class="fa-solid fa-xmark text-white text-lg"></i></button>
+            <span>Settings</span>
+            <button onclick="window.ui.toggleSettings()" class="action-btn" aria-label="Close settings"><i class="fa-solid fa-xmark text-white text-lg"></i></button>
         </div>
-        <div class="panel-content space-y-8">
-            <!-- EXPORT OPTIONS -->
-            <div class="space-y-2">
-                <button onclick="window.exporter.exportAudio()" class="w-full py-3 bg-[var(--accent)] text-black rounded-lg text-xs font-bold hover:scale-105 transition shadow-lg flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-download"></i> Export Processed Audio
-                </button>
-                <p class="text-[10px] text-white/40 text-center leading-tight">Downloads .wav with current Bass, Speed, and Reverb</p>
-            </div>
-            
-            <hr class="border-white/5">
+        <div class="panel-content set-scroll custom-scrollbar">
 
-            <div class="space-y-6">
-                <label class="setting-label">Visuals</label>
-                <!-- THEME UI SYSTEM -->
-                <div class="flex flex-col bg-white/5 p-3 rounded-xl gap-2">
-                    <div class="flex justify-between items-center w-full relative">
-                        <span class="text-sm font-bold ml-2">Theme Source</span>
-                        <div class="relative" id="themeDropdownWrapper">
-                            <button onclick="document.getElementById('themeMenu').classList.toggle('scale-y-0'); document.getElementById('themeMenu').classList.toggle('opacity-0')" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition flex items-center gap-2">
-                                <span id="themeModeTxt">Solid Accent Color</span> <i class="fa-solid fa-chevron-down"></i>
-                            </button>
-                            <div id="themeMenu" class="absolute right-0 top-[120%] w-48 bg-[#0a0a0a] border border-white/10 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] origin-top scale-y-0 opacity-0 transition-all duration-200 flex flex-col">
-                                <button onclick="window.ui.setThemeMode('solid'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Solid Accent Color</button>
-                                <button onclick="window.ui.setThemeMode('solid-fill'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Solid Full Color</button>
-                                <button onclick="window.ui.setThemeMode('dominant'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Album Art (Dominant)</button>
-                                <button onclick="window.ui.setThemeMode('gradient'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-[var(--accent)] hover:text-black transition">Custom 2-Color Gradient</button>
-                                <button onclick="window.ui.setThemeMode('rainbow'); document.getElementById('themeMenu').classList.add('scale-y-0','opacity-0')" class="w-full text-left px-4 py-2.5 text-xs font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-500 to-blue-500 hover:bg-white/10 transition">Rainbow Follow</button>
-                            </div>
+            <!-- ===== SOUND ===== -->
+            <div class="set-group-title">Sound</div>
+            <div class="set-group">
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#ef4444"><i class="fa-solid fa-drum"></i></span><span class="set-label">Bass Boost</span><span id="bassVal" class="set-value">0dB</span></div>
+                    <input type="range" id="bassSlider" class="setting-slider" min="0" max="40" value="0" oninput="window.audioSys.setBass(this.value)">
+                </div>
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#38bdf8"><i class="fa-solid fa-water"></i></span><span class="set-label">Reverb</span><span id="reverbVal" class="set-value">0%</span></div>
+                    <input type="range" id="reverbSlider" class="setting-slider" min="0" max="100" value="0" oninput="window.audioSys.setReverb(this.value)">
+                </div>
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#a855f7"><i class="fa-solid fa-gauge-high"></i></span><span class="set-label">Speed &amp; Pitch</span><span id="pitchVal" class="set-value">1.0x</span></div>
+                    <input type="range" id="warpSlider" class="setting-slider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="window.audioSys.setBaseSpeed(this.value)">
+                </div>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#fbbf24"><i class="fa-solid fa-lock"></i></span>
+                    <span class="set-text"><span class="set-label">Same FX for every song</span><span class="set-sub">Off = each song remembers its own</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="globalAudioToggle" onchange="window.audioSys.toggleGlobal(this.checked)"><i></i></span>
+                </label>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#dc2626"><i class="fa-solid fa-burst"></i></span>
+                    <span class="set-text"><span class="set-label">Xtreme Bass</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="xtremeToggle" onchange="window.audioSys.toggleXtreme()"><i></i></span>
+                </label>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#22c55e"><i class="fa-solid fa-shuffle"></i></span>
+                    <span class="set-text"><span class="set-label">Auto DJ</span><span class="set-sub">Smooth crossfade between songs</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="autoDjToggle" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()" checked><i></i></span>
+                </label>
+                <details class="set-details">
+                    <summary class="set-row">
+                        <span class="set-icon" style="--c:#64748b"><i class="fa-solid fa-sliders"></i></span>
+                        <span class="set-text"><span class="set-label">EQ Presets</span></span>
+                        <i class="fa-solid fa-chevron-right set-chev"></i>
+                    </summary>
+                    <div class="set-details-body">
+                        <div class="chip-grid" id="eqPresetsGroup">
+                            <button class="chip" onclick="window.audioSys.applyPreset('electronic')">Electronic</button>
+                            <button class="chip" onclick="window.audioSys.applyPreset('acoustic')">Acoustic</button>
+                            <button class="chip" onclick="window.audioSys.applyPreset('bass_boost')">Bass Boost</button>
+                            <button class="chip" onclick="window.audioSys.applyPreset('vocal')">Vocal</button>
+                            <button class="chip chip-wide" onclick="window.audioSys.applyPreset('flat')">Reset (Flat)</button>
                         </div>
                     </div>
-                    
-                    <!-- Solid Color Picker (Visible when solid) -->
-                    <div id="solidColorContainer" class="flex justify-between items-center w-full mt-1">
-                        <span class="text-xs font-bold text-white/50 ml-2">Pick Color</span>
-                        <input type="color" id="colorPicker" value="#60a5fa" oninput="window.ui.setTheme(this.value)" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+                </details>
+                <details class="set-details">
+                    <summary class="set-row">
+                        <span class="set-icon" style="--c:#8b5cf6"><i class="fa-solid fa-chart-line"></i></span>
+                        <span class="set-text"><span class="set-label">Dynamic Bass Curve</span><span class="set-sub">More bass at chosen volumes</span></span>
+                        <span class="ios-switch" onclick="event.stopPropagation()"><input type="checkbox" id="curveToggle" onchange="window.audioSys.toggleBassCurve(this.checked)" checked><i></i></span>
+                        <i class="fa-solid fa-chevron-right set-chev"></i>
+                    </summary>
+                    <div class="set-details-body" id="perfCurveGroup">
+                        <p class="set-hint">Map volumes to bass boosts. It blends smoothly between your points.</p>
+                        <div id="bassCurveNodes" class="flex flex-col gap-2 relative"></div>
+                        <div class="set-btn-row">
+                            <button class="set-btn" onclick="window.audioSys.addCurveNodeLive()"><i class="fa-regular fa-copy"></i> Catch Current</button>
+                            <button class="set-btn set-btn-square" onclick="window.audioSys.addCurveNodeBlank()" title="Add blank point"><i class="fa-solid fa-plus"></i></button>
+                        </div>
                     </div>
+                </details>
+            </div>
+            <button onclick="window.exporter.exportAudio()" class="set-btn set-btn-accent">
+                <i class="fa-solid fa-download"></i> Export Processed Audio
+            </button>
+            <p class="set-foot">Saves a .wav with your current bass, speed and reverb.</p>
 
-                    <!-- Custom Gradient Pickers (Visible when gradient) -->
-                    <div id="gradientColorContainer" class="flex justify-between items-center w-full mt-1 hidden">
-                        <span class="text-xs font-bold text-white/50 ml-2">Gradient Fade</span>
-                        <div class="flex gap-2">
-                            <input type="color" id="gradColor1" value="#ff0044" oninput="window.ui.updateGradientTheme()" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
-                            <input type="color" id="gradColor2" value="#0055ff" oninput="window.ui.updateGradientTheme()" class="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 bg-transparent">
+            <!-- ===== LOOK ===== -->
+            <div class="set-group-title">Look</div>
+            <div class="set-group">
+                <div class="set-row">
+                    <span class="set-icon" style="--c:var(--accent)"><i class="fa-solid fa-palette"></i></span>
+                    <span class="set-text"><span class="set-label">Theme</span></span>
+                    <div class="ios-select" id="themeDropdownWrapper">
+                        <button type="button" class="ios-select-btn" onclick="window.uiv3.toggleMenu('themeMenu', this)">
+                            <span id="themeModeTxt">Solid Accent Color</span> <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div id="themeMenu" class="ios-menu">
+                            <button onclick="window.ui.setThemeMode('solid'); window.uiv3.closeMenus()">Solid Accent Color</button>
+                            <button onclick="window.ui.setThemeMode('solid-fill'); window.uiv3.closeMenus()">Solid Full Color</button>
+                            <button onclick="window.ui.setThemeMode('dominant'); window.uiv3.closeMenus()">Album Art (Dominant)</button>
+                            <button onclick="window.ui.setThemeMode('gradient'); window.uiv3.closeMenus()">Custom 2-Color Gradient</button>
+                            <button onclick="window.ui.setThemeMode('rainbow'); window.uiv3.closeMenus()"><span class="rainbow-text">Rainbow Follow</span></button>
                         </div>
                     </div>
                 </div>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl mb-4">
-                    <span class="text-sm font-bold ml-2">Font Style</span>
-                    <select id="fontSelector" onchange="window.ui.setFontFamily(this.value)" class="text-[10px] bg-white/10 border border-white/10 px-3 py-2 rounded-lg text-white font-bold outline-none cursor-pointer hover:bg-[var(--accent)] hover:text-black transition">
+                <div id="solidColorContainer" class="set-row set-row-col">
+                    <div class="swatches" id="accentSwatches">
+                        <!-- filled by ui-v3.js -->
+                        <label class="swatch swatch-custom" title="Pick any color">
+                            <input type="color" id="colorPicker" value="#60a5fa" oninput="window.ui.setTheme(this.value); window.uiv3.markSwatch(this.value)">
+                        </label>
+                    </div>
+                </div>
+                <div id="gradientColorContainer" class="set-row hidden">
+                    <span class="set-text"><span class="set-label">Gradient colors</span></span>
+                    <div class="grad-pickers">
+                        <label class="swatch swatch-solo"><input type="color" id="gradColor1" value="#ff0044" oninput="window.ui.updateGradientTheme(); this.parentElement.style.background=this.value"></label>
+                        <i class="fa-solid fa-arrow-right text-white/30 text-xs"></i>
+                        <label class="swatch swatch-solo"><input type="color" id="gradColor2" value="#0055ff" oninput="window.ui.updateGradientTheme(); this.parentElement.style.background=this.value"></label>
+                    </div>
+                </div>
+                <div class="set-row">
+                    <span class="set-icon" style="--c:#f97316"><i class="fa-solid fa-font"></i></span>
+                    <span class="set-text"><span class="set-label">Font</span></span>
+                    <select id="fontSelector" onchange="window.ui.setFontFamily(this.value)" class="ios-native-select" data-ios-select>
                         <option value="'Nunito', sans-serif">Nunito (Default)</option>
                         <option value="'Outfit', sans-serif">Outfit</option>
                         <option value="'Poppins', sans-serif">Poppins</option>
@@ -223,209 +295,110 @@
                         <option value="'Quicksand', sans-serif">Quicksand</option>
                     </select>
                 </div>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Brightness</span>
-                    <input type="range" id="bgBrightSlider" class="setting-slider" style="width: 120px; background: rgba(255,255,255,0.3);" min="0" max="1" step="0.05" value="0.3" oninput="window.ui.setBgBrightness(this.value)">
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#eab308"><i class="fa-solid fa-sun"></i></span><span class="set-label">Background Glow</span><span id="bgBrightVal" class="set-value">30%</span></div>
+                    <input type="range" id="bgBrightSlider" class="setting-slider" min="0" max="1" step="0.05" value="0.3" oninput="window.ui.setBgBrightness(this.value); $('bgBrightVal').innerText=Math.round(this.value*100)+'%'">
                 </div>
-                <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                    <span class="text-sm font-bold ml-2">Mode</span>
-                    <div class="flex gap-2">
-                        <button onclick="document.getElementById('vizTunerModal').style.display='flex'" class="text-[10px] bg-white/10 border border-white/5 px-3 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide"><i class="fa-solid fa-sliders"></i></button>
-                        <button onclick="window.viz.toggleMode()" id="vizModeBtn" class="text-[10px] bg-white/10 border border-white/5 px-4 py-2 rounded-lg hover:bg-[var(--accent)] hover:text-white transition font-bold tracking-wide">RING</button>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#475569"><i class="fa-solid fa-leaf"></i></span>
+                    <span class="set-text"><span class="set-label">Lite Mode</span><span class="set-sub">Less blur &amp; motion, lighter on your PC</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="liteToggle" onchange="window.setLiteMode(this.checked)"><i></i></span>
+                </label>
+            </div>
+
+            <!-- ===== VISUALIZER ===== -->
+            <div class="set-group-title">Visualizer</div>
+            <div class="set-group">
+                <div class="set-row">
+                    <span class="set-icon" style="--c:#06b6d4"><i class="fa-solid fa-circle-nodes"></i></span>
+                    <span class="set-text"><span class="set-label">Style</span></span>
+                    <div class="seg" id="vizModeSeg">
+                        <button data-mode="ring" onclick="window.uiv3.setVizMode('ring')">Ring</button>
+                        <button data-mode="bar" onclick="window.uiv3.setVizMode('bar')">Bar</button>
+                        <button data-mode="liquid" onclick="window.uiv3.setVizMode('liquid')">Liquid</button>
                     </div>
+                    <span id="vizModeBtn" hidden>RING</span>
                 </div>
-                <label class="flex justify-between items-center px-2 pt-2 cursor-pointer">
-                    <span class="text-xs font-bold">Liquid Lines</span>
-                    <input type="checkbox" checked onchange="window.viz.smooth=this.checked" class="hidden peer">
-                    <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-white/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
+                <button type="button" class="set-row set-row-btn" id="vizTunerOpenBtn" onclick="window.uiv3.toggleTuner()">
+                    <span class="set-icon" style="--c:var(--accent)"><i class="fa-solid fa-sliders"></i></span>
+                    <span class="set-text"><span class="set-label">Liquid Tuner Pro</span><span class="set-sub">Fine-tune the liquid shape</span></span>
+                    <i class="fa-solid fa-chevron-right set-chev"></i>
+                </button>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#0ea5e9"><i class="fa-solid fa-wave-square"></i></span>
+                    <span class="set-text set-label">Liquid Lines</span>
+                    <span class="ios-switch"><input type="checkbox" id="liquidLinesToggle" checked onchange="window.viz.smooth=this.checked"><i></i></span>
                 </label>
-                <label class="flex justify-between items-center px-2 pt-2 cursor-pointer">
-                    <span class="text-xs font-bold">Beat Flash</span>
-                    <input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()" class="hidden peer">
-                    <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-white/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#f43f5e"><i class="fa-solid fa-bolt"></i></span>
+                    <span class="set-text"><span class="set-label">Beat Flash</span></span>
+                    <span class="ios-switch"><input type="checkbox" checked onchange="window.viz.flash=this.checked; if(!this.checked)window.viz.clearFlash()"><i></i></span>
                 </label>
-                <div class="flex flex-col px-2 mt-4">
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Viz Sensitivity</span> <span id="vizSensVal" class="text-[var(--accent)]">1.0x</span></div>
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#3b82f6"><i class="fa-solid fa-droplet"></i></span>
+                    <span class="set-text"><span class="set-label">Bass Ripple</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="rippleToggle" onchange="window.viz.rippleEffect=this.checked" checked><i></i></span>
+                </label>
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#14b8a6"><i class="fa-solid fa-signal"></i></span><span class="set-label">Sensitivity</span><span id="vizSensVal" class="set-value">1.0x</span></div>
                     <input type="range" id="vizSensSlider" class="setting-slider" min="0.1" max="3.0" step="0.1" value="1.0" oninput="window.vizSens=parseFloat(this.value); $('vizSensVal').innerText=parseFloat(this.value).toFixed(1)+'x'; localStorage.setItem('sv_viz_sens', this.value);">
                 </div>
             </div>
-            <hr class="border-white/5">
-            
-            <!-- SPOTIFY INTEGRATION -->
-            <div class="space-y-4">
-                <label class="setting-label flex items-center gap-2"><i class="fa-brands fa-spotify text-[#1DB954]"></i> Spotify Connection</label>
-                <div id="spotifyDisconnected" class="bg-white/5 p-4 rounded-xl border border-white/5">
-                    <p class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-3">Connect to get your Premium Token & Sync Playlists</p>
-                    <button onclick="window.spotify.login()" class="w-full bg-[#1DB954] text-black font-black py-3 rounded-lg text-xs uppercase tracking-widest hover:scale-[1.02] transition shadow-[0_0_20px_rgba(29,185,84,0.3)] flex items-center justify-center gap-2">
-                        <i class="fa-brands fa-spotify text-lg"></i> Connect Spotify
-                    </button>
-                </div>
-                <div id="spotifyConnected" class="hidden bg-[#1DB954]/10 p-4 rounded-xl border border-[#1DB954]/20 flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <img id="spotifyAvatar" src="" class="w-10 h-10 rounded-full border-2 border-[#1DB954] shadow-lg">
-                        <div class="flex flex-col">
-                            <span id="spotifyName" class="text-sm font-black text-white">---</span>
-                            <span id="spotifyStatus" class="text-[9px] font-bold text-[#1DB954] uppercase tracking-widest">Premium Member</span>
-                        </div>
-                    </div>
-                    <button onclick="window.spotify.logout()" class="w-full bg-white/5 border border-white/10 text-white/50 hover:text-red-400 hover:border-red-400/30 transition py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest">Disconnect</button>
-                </div>
-            </div>
 
-            <hr class="border-white/5">
-            <div class="space-y-6">
-                <label class="setting-label flex justify-between items-center cursor-pointer">
-                    <span>Processors</span>
-                    <div class="flex items-center gap-3">
-                        <span class="text-[10px] font-bold uppercase tracking-widest text-[#fbbf24]">Global Lock</span>
-                        <input type="checkbox" id="globalAudioToggle" class="hidden peer" onchange="window.audioSys.toggleGlobal(this.checked)">
-                        <div class="w-10 h-5 relative bg-white/10 border border-white/10 rounded-full peer peer-checked:bg-[#fbbf24]/20 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-[#fbbf24]"></div>
-                    </div>
-                </label>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Bass Boost</span> <span id="bassVal" class="text-[var(--accent)]">0dB</span></div>
-                    <input type="range" class="setting-slider" min="0" max="40" value="0" oninput="window.audioSys.setBass(this.value)">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Reverb</span> <span id="reverbVal" class="text-[var(--accent)]">0%</span></div>
-                    <input type="range" class="setting-slider" min="0" max="100" value="0" oninput="window.audioSys.setReverb(this.value)">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Warp (Pitch/Speed)</span> <span id="pitchVal" class="text-[var(--accent)]">1.0x</span></div>
-                    <input type="range" class="setting-slider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="window.audioSys.setBaseSpeed(this.value)">
-                </div>
-                
-                <!-- EQ Presets -->
-                <div class="pt-2 border-t border-white/10 mt-2">
-                    <button onclick="const p=$('eqPresetsGroup'); p.style.display=p.style.display==='none'?'block':'none'" class="w-full text-left text-xs font-bold text-white/70 hover:text-white transition flex justify-between items-center mb-2">
-                        <span><i class="fa-solid fa-sliders mr-2"></i> EQ Presets</span> <i class="fa-solid fa-chevron-down mr-1"></i>
-                    </button>
-                    <div id="eqPresetsGroup" style="display:none;" class="space-y-2">
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="window.audioSys.applyPreset('electronic')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Electronic</button>
-                            <button onclick="window.audioSys.applyPreset('acoustic')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Acoustic</button>
-                            <button onclick="window.audioSys.applyPreset('bass_boost')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Bass Boost</button>
-                            <button onclick="window.audioSys.applyPreset('vocal')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Vocal</button>
-                            <button onclick="window.audioSys.applyPreset('flat')" class="bg-white/5 border border-white/5 hover:bg-[var(--accent)] hover:text-black transition text-[10px] font-bold py-2 rounded-full uppercase tracking-wider col-span-2 shadow-lg hover:shadow-[0_0_15px_var(--accent)] hover:scale-105">Reset (Flat)</button>
-                        </div>
-                    </div>
-                </div>
-                <label class="flex justify-between items-center bg-gradient-to-r from-red-900/40 to-black/40 border border-red-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-red-500/60 transition-all group">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition"><i class="fa-solid fa-burst"></i></div>
-                        <span class="text-xs font-black text-white/90 tracking-widest uppercase">XTREME BASS</span>
-                    </div>
-                    <input type="checkbox" id="xtremeToggle" class="hidden peer" onchange="window.audioSys.toggleXtreme()">
-                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-red-900/50 border border-white/10 peer-checked:border-red-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-red-500"></div>
-                </label>
-                <label class="flex justify-between items-center bg-gradient-to-r from-blue-900/40 to-black/40 border border-blue-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-blue-500/60 transition-all group">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition"><i class="fa-solid fa-droplet"></i></div>
-                        <span class="text-xs font-black text-white/90 tracking-widest uppercase">BASS RIPPLE</span>
-                    </div>
-                    <input type="checkbox" id="rippleToggle" class="hidden peer" onchange="window.viz.rippleEffect=this.checked" checked>
-                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-blue-900/50 border border-white/10 peer-checked:border-blue-500/50 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-blue-400"></div>
-                </label>
-                <label class="flex justify-between items-center bg-white/5 border border-white/10 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-white/30 transition-all group">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70 group-hover:scale-110 transition"><i class="fa-solid fa-leaf"></i></div>
-                        <div class="flex flex-col">
-                            <span class="text-xs font-black text-white/90 tracking-widest uppercase">LITE MODE</span>
-                            <span class="text-[9px] font-bold text-white/40">Less blur &amp; motion, lighter on your PC</span>
-                        </div>
-                    </div>
-                    <input type="checkbox" id="liteToggle" class="hidden peer" onchange="window.setLiteMode(this.checked)">
-                    <div class="w-10 h-5 relative bg-black/60 rounded-full peer peer-checked:bg-white/20 border border-white/10 peer-checked:border-white/40 after:content-[''] after:absolute after:top-1/2 after:-translate-y-1/2 after:left-[2px] after:h-4 after:w-4 after:bg-white/50 after:rounded-full after:transition-all peer-checked:after:translate-x-[18px] peer-checked:after:bg-white"></div>
-                </label>
-                <!-- DYNAMIC BASS CURVE -->
-                <div class="mx-2 mt-4">
-                    <div class="bg-gradient-to-r from-purple-900/40 to-black/40 border border-purple-500/30 rounded-xl flex flex-col group overflow-hidden transition-all shadow-lg">
-                        <div class="flex justify-between items-center p-4 cursor-pointer hover:bg-white/5 transition-all w-full" onclick="$('perfCurveBtnInternal').click()">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition shadow-[0_0_15px_rgba(168,85,247,0.2)]"><i class="fa-solid fa-chart-line"></i></div>
-                                <span class="text-xs font-black tracking-widest uppercase text-white/90">DYNAMIC BASS CURVE</span>
-                            </div>
-                            <div class="flex items-center gap-3" onclick="event.stopPropagation()">
-                                <label class="relative inline-flex items-center cursor-pointer mb-0">
-                                    <input type="checkbox" id="curveToggle" class="hidden peer" onchange="window.audioSys.toggleBassCurve(this.checked)" checked>
-                                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-purple-400 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-900/50 border border-white/10 peer-checked:border-purple-500/50"></div>
-                                </label>
-                                <button id="perfCurveBtnInternal" onclick="const p=$('perfCurveGroup'); const icon=$('perfCurveIcon'); const isActive=p.style.display==='none'; p.style.display=isActive?'block':'none'; icon.className=isActive?'fa-solid fa-chevron-up':'fa-solid fa-chevron-down';" class="text-purple-400 w-6 h-6 flex justify-center items-center hover:bg-white/10 rounded-full transition"><i id="perfCurveIcon" class="fa-solid fa-chevron-down"></i></button>
-                            </div>
-                        </div>
-                        
-                        <div id="perfCurveGroup" style="display:none;" class="bg-black/40 border-t border-purple-500/20 pt-6 pb-4 px-4 shadow-inner">
-                        <p class="text-[9px] text-white/40 font-bold mb-3 tracking-wide leading-tight text-center">Map specific volumes to precise bass boosts. The system will smoothly interpolate between your points!</p>
-                        
-                        <div id="bassCurveNodes" class="flex flex-col gap-2 relative">
-                            <!-- Populated by JS -->
-                        </div>
-                        
-                        <div class="flex gap-2 mt-3">
-                            <button onclick="window.audioSys.addCurveNodeLive()" class="flex-1 bg-purple-600/20 border border-purple-500/30 hover:bg-purple-500 hover:text-black hover:border-purple-400 text-purple-300 font-bold py-2 px-3 rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-[0_4px_10px_rgba(0,0,0,0.5)] flex items-center justify-center gap-2 group">
-                                <i class="fa-regular fa-copy group-hover:scale-110 transition"></i> Catch Current
-                            </button>
-                            <button onclick="window.audioSys.addCurveNodeBlank()" class="w-12 bg-white/5 border border-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-lg transition flex items-center justify-center" title="Add blank node">
-                                <i class="fa-solid fa-plus text-[12px]"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            <!-- ===== SPOTIFY ===== -->
+            <div class="set-group-title"><i class="fa-brands fa-spotify" style="color:#1DB954"></i> Spotify</div>
+            <div id="spotifyDisconnected" class="set-group set-pad">
+                <p class="set-hint">Connect to see your own playlists and Liked Songs when adding songs.</p>
+                <button onclick="window.spotify.login()" class="set-btn set-btn-spotify"><i class="fa-brands fa-spotify text-lg"></i> Connect Spotify</button>
             </div>
-            
-            <label class="flex justify-between items-center bg-gradient-to-r from-green-900/40 to-black/40 border border-green-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-green-500/60 transition-all group">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 group-hover:scale-110 transition"><i class="fa-solid fa-list-ol"></i></div>
-                    <span class="text-xs font-black text-white/90 tracking-widest uppercase">Auto DJ (Crossfade)</span>
-                </div>
-                <div class="relative inline-flex items-center">
-                    <input type="checkbox" id="autoDjToggle" class="sr-only peer" onchange="window.player.autoDj=this.checked; window.ui.updateMetaTags()" checked>
-                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-green-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-900/50 border border-white/10 peer-checked:border-green-500/50"></div>
-                </div>
-            </label>
-            
-            <label class="flex justify-between items-center bg-gradient-to-r from-orange-900/40 to-black/40 border border-orange-500/30 p-4 h-[72px] mx-2 mt-4 rounded-xl cursor-pointer hover:border-orange-500/60 transition-all group">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500 group-hover:scale-110 transition"><i class="fa-solid fa-satellite-dish"></i></div>
-                    <span class="text-xs font-black text-white/90 tracking-widest uppercase">Host FX Override</span>
-                </div>
-                <div class="relative inline-flex items-center">
-                    <input type="checkbox" id="hostFxToggle" class="sr-only peer" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked>
-                    <div class="w-10 h-5 bg-black/60 rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/50 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-900/50 border border-white/10 peer-checked:border-orange-500/50"></div>
-                </div>
-            </label>
-            <div class="px-2 pb-2 mt-4">
-                <div class="flex justify-between text-xs mb-2 font-bold opacity-70"><span>Party Sync Offset</span> <span id="syncOffsetVal" class="text-[var(--accent)]">0ms</span></div>
-                <input type="range" id="syncOffsetSlider" class="setting-slider" min="-500" max="500" value="0" oninput="$('syncOffsetVal').innerText = this.value + 'ms'; window.partyMode.manualOffset = parseInt(this.value); localStorage.setItem('sv_party_sync', this.value);">
-                <p class="text-[9px] text-white/30 mt-1 leading-tight">Adjust if the phone visualizer is slightly early/late compared to PC.</p>
-            </div>
-            
-
-            <div class="px-2 pb-2 mt-4 mb-4">
-                <div class="border border-white/10 bg-black/20 rounded-xl p-3 mb-3">
-                    <p class="text-center text-[10px] font-black uppercase text-white/50 tracking-widest mb-3">Auto-Beat Deep Research DPPD</p>
-                    
-                    <div class="flex flex-col mb-3">
-                        <div class="flex justify-between text-[10px] mb-1 font-bold text-white/70"><span>Sensitivity (Z-Score)</span> <span id="dppdSensVal" class="text-[var(--accent)]">3.5</span></div>
-                        <input type="range" id="dppdSensSlider" class="setting-slider" min="1.5" max="7.0" step="0.1" value="3.5" oninput="$('dppdSensVal').innerText = this.value; window.updateDPPD();">
-                        <p class="text-[9px] text-white/30 mt-1 leading-tight">Higher value ignores more noise. Lower captures quiet hits.</p>
-                    </div>
-
+            <div id="spotifyConnected" class="hidden set-group set-pad">
+                <div class="flex items-center gap-3 mb-3">
+                    <img id="spotifyAvatar" src="" alt="" class="w-10 h-10 rounded-full border-2 border-[#1DB954]">
                     <div class="flex flex-col">
-                        <div class="flex justify-between text-[10px] mb-1 font-bold text-white/70"><span>Max Tempo (Min Gap)</span> <span id="dppdGapVal" class="text-[var(--accent)]">0.18s</span></div>
-                        <input type="range" id="dppdGapSlider" class="setting-slider" min="0.05" max="0.4" step="0.01" value="0.18" oninput="$('dppdGapVal').innerText = this.value + 's'; window.updateDPPD();">
-                        <p class="text-[9px] text-white/30 mt-1 leading-tight">Controls refractory period to avoid double-beats.</p>
+                        <span id="spotifyName" class="text-sm font-black text-white">---</span>
+                        <span id="spotifyStatus" class="set-sub" style="color:#1DB954">Connected</span>
                     </div>
                 </div>
+                <button onclick="window.spotify.logout()" class="set-btn">Disconnect</button>
+            </div>
 
-                <button onclick="window.curveEditor.exportAlgorithmData()" class="w-full bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 font-bold py-3 rounded-lg text-xs uppercase tracking-widest transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-file-export"></i> Download Algorithm Data
-                </button>
+            <!-- ===== PARTY ===== -->
+            <div class="set-group-title">Party Mode</div>
+            <div class="set-group">
+                <label class="set-row">
+                    <span class="set-icon" style="--c:#f97316"><i class="fa-solid fa-satellite-dish"></i></span>
+                    <span class="set-text"><span class="set-label">Host controls FX</span><span class="set-sub">Guests hear the host's bass/speed</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="hostFxToggle" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked><i></i></span>
+                </label>
+                <div class="set-row set-row-col">
+                    <div class="set-row-top"><span class="set-icon" style="--c:#64748b"><i class="fa-solid fa-clock"></i></span><span class="set-label">Sync Offset</span><span id="syncOffsetVal" class="set-value">0ms</span></div>
+                    <input type="range" id="syncOffsetSlider" class="setting-slider" min="-500" max="500" value="0" oninput="$('syncOffsetVal').innerText = this.value + 'ms'; window.partyMode.manualOffset = parseInt(this.value); localStorage.setItem('sv_party_sync', this.value);">
+                    <p class="set-hint">Nudge it if the other device is a bit early or late.</p>
+                </div>
             </div>
-            
-            <div class="text-center pt-4 pb-4 border-t border-white/5">
-                <span class="text-[10px] text-white/20 font-bold uppercase tracking-widest">Designed by rick_grimesz</span>
+
+            <!-- ===== ADVANCED ===== -->
+            <div class="set-group-title">Advanced</div>
+            <div class="set-group">
+                <details class="set-details">
+                    <summary class="set-row">
+                        <span class="set-icon" style="--c:#334155"><i class="fa-solid fa-microscope"></i></span>
+                        <span class="set-text"><span class="set-label">Auto-Beat Detection</span><span class="set-sub">How beats get picked up</span></span>
+                        <i class="fa-solid fa-chevron-right set-chev"></i>
+                    </summary>
+                    <div class="set-details-body">
+                        <div class="set-row-top"><span class="set-label set-label-sm">Sensitivity</span><span id="dppdSensVal" class="set-value">3.5</span></div>
+                        <input type="range" id="dppdSensSlider" class="setting-slider" min="1.5" max="7.0" step="0.1" value="3.5" oninput="$('dppdSensVal').innerText = this.value; window.updateDPPD();">
+                        <p class="set-hint">Higher ignores more noise. Lower catches quiet hits.</p>
+                        <div class="set-row-top mt-3"><span class="set-label set-label-sm">Min gap between beats</span><span id="dppdGapVal" class="set-value">0.18s</span></div>
+                        <input type="range" id="dppdGapSlider" class="setting-slider" min="0.05" max="0.4" step="0.01" value="0.18" oninput="$('dppdGapVal').innerText = this.value + 's'; window.updateDPPD();">
+                        <p class="set-hint">Stops one hit being counted twice.</p>
+                        <button onclick="window.curveEditor.exportAlgorithmData()" class="set-btn mt-3"><i class="fa-solid fa-file-export"></i> Download Algorithm Data</button>
+                    </div>
+                </details>
             </div>
+
+            <div class="set-credit">Designed by rick_grimesz</div>
         </div>
     </aside>
 
@@ -621,146 +594,130 @@
         </div>
     </div>
 
-    <!-- VISUALIZER TUNING MODAL (Secret Extended) -->
-    <div class="glass-modal" id="vizTunerModal" style="display:none; width: 360px; z-index: 10000; position: absolute; top: 5%; height: 90vh; max-height: 90vh; flex-direction: column; overflow: hidden; left: 50%; transform: translateX(-50%);">
-        
-        <!-- Draggable Header -->
-        <div id="vizTunerHeader" class="p-4 border-b border-white/10 flex justify-between items-center bg-black/40 cursor-move">
-            <h3 class="font-bold text-lg tracking-tight m-0 flex items-center"><i class="fa-solid fa-sliders text-[var(--accent)] mr-2"></i> Liquid Tuner Pro</h3>
-            <button onclick="document.getElementById('vizTunerModal').style.display='none'" class="text-white/50 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+    <!-- LIQUID TUNER PRO -->
+    <div class="tuner-sheet" id="vizTunerModal" style="display:none;">
+        <div id="vizTunerHeader" class="tuner-head">
+            <span class="tuner-grip"></span>
+            <div class="tuner-title"><i class="fa-solid fa-sliders"></i> Liquid Tuner Pro</div>
+            <div class="tuner-actions">
+                <button type="button" class="tuner-icon-btn" onclick="window.uiv3.resetTuner()" title="Back to default"><i class="fa-solid fa-rotate-left"></i></button>
+                <button type="button" class="tuner-icon-btn" onclick="window.uiv3.toggleTuner(false)" title="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
         </div>
-        
-        <!-- Scrollable Content -->
-        <div class="p-4 overflow-y-auto" style="flex: 1;" id="vizTunerContent">
-            
-            <!-- GLOBAL SHAPE -->
-            <h4 class="text-[11px] text-[var(--accent)] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1">Global Shape</h4>
-            
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Horn Base Width</span><span id="tuneWidthVal">0.85</span></div>
-                <input type="range" id="tuneWidthSlider" min="0.50" max="0.99" step="0.01" value="0.85" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Master Height (Sens)</span><span id="tuneSensVal">1.0</span></div>
-                <input type="range" id="tuneSensSlider" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
-            </div>
 
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Main Horn Angle</span><span id="tunePosVal">16</span></div>
-                <input type="range" id="tunePosSlider" min="5" max="24" step="1" value="16" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
-                <p class="text-[9px] text-white/30 mt-1">Lower = Top Center. Higher = Sides.</p>
-            </div>
-            
-            <!-- BACKGROUND LINES -->
-            <h4 class="text-[11px] text-[var(--accent)] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Background Lines</h4>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Outer Edge Gap</span><span id="tuneBgGapVal">10</span></div>
-                <input type="range" id="tuneBgGapSlider" min="0" max="40" step="1" value="10" class="w-full accent-[var(--accent)]" oninput="window.updateVizTuning()">
-            </div>
-            <label class="flex items-center space-x-2 mt-3 cursor-pointer">
-                <input type="checkbox" id="tuneBgLines" class="accent-[var(--accent)]" onchange="window.updateVizTuning()">
-                <span class="text-xs font-bold text-white/80">Enable Mirrored Lines</span>
-            </label>
-            <label class="flex items-center space-x-2 mt-2 cursor-pointer mb-2">
-                <input type="checkbox" id="tuneHideUI" class="accent-[var(--accent)]" onchange="window.updateVizTuning()">
-                <span class="text-xs font-bold text-[#ef4444]">Hide Player UI (Clean View)</span>
-            </label>
-            <label class="flex items-center space-x-2 mt-2 cursor-pointer mb-2 border-b border-white/10 pb-4">
-                <input type="checkbox" id="tuneSparks" class="accent-[var(--accent)]" checked onchange="window.updateVizTuning()">
-                <span class="text-xs font-bold text-[#eab308]">Enable Audio Sparks (Particles)</span>
-            </label>
+        <div class="tuner-body custom-scrollbar" id="vizTunerContent">
+            <p class="tuner-tip">Works on the <b>Liquid</b> style. Changes show live.</p>
 
-            <!-- SUB-BASS CONFIG -->
-            <h4 class="text-[11px] text-[#ef4444] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Sub-Bass (Top Horns)</h4>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Bin Range</span><span id="tuneBassBinVal">0 - 5</span></div>
-                <div class="flex gap-2">
-                    <input type="range" id="tuneBassEndSlider" min="1" max="30" step="1" value="5" class="w-full accent-[#ef4444]" oninput="window.updateVizTuning()">
+            <details class="tuner-sec" open>
+                <summary><span class="tuner-dot"></span>Shape <i class="fa-solid fa-chevron-down"></i></summary>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Horn base width</span><b id="tuneWidthVal">0.85</b></div>
+                    <input type="range" id="tuneWidthSlider" class="setting-slider" min="0.50" max="0.99" step="0.01" value="0.85" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Height (sensitivity)</span><b id="tuneSensVal">1.0</b></div>
+                    <input type="range" id="tuneSensSlider" class="setting-slider" min="0.5" max="3.0" step="0.1" value="1.0" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Main horn angle</span><b id="tunePosVal">16</b></div>
+                    <input type="range" id="tunePosSlider" class="setting-slider" min="5" max="24" step="1" value="16" oninput="window.updateVizTuning()">
+                    <p class="tuner-hint">Lower = top center, higher = sides.</p>
+                </div>
+            </details>
+
+            <details class="tuner-sec">
+                <summary><span class="tuner-dot" style="background:#94a3b8"></span>Extras <i class="fa-solid fa-chevron-down"></i></summary>
+                <label class="tuner-switch-row"><span>Mirrored background lines</span><span class="ios-switch"><input type="checkbox" id="tuneBgLines" onchange="window.updateVizTuning()"><i></i></span></label>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Outer edge gap</span><b id="tuneBgGapVal">10</b></div>
+                    <input type="range" id="tuneBgGapSlider" class="setting-slider" min="0" max="40" step="1" value="10" oninput="window.updateVizTuning()">
+                </div>
+                <label class="tuner-switch-row"><span>Sparks (particles)</span><span class="ios-switch"><input type="checkbox" id="tuneSparks" checked onchange="window.updateVizTuning()"><i></i></span></label>
+                <label class="tuner-switch-row"><span>Hide player (only lines)</span><span class="ios-switch"><input type="checkbox" id="tuneHideUI" onchange="window.updateVizTuning()"><i></i></span></label>
+                <p class="tuner-hint">Press Esc or tap the screen and hit Exit to bring the player back.</p>
+            </details>
+
+            <details class="tuner-sec" style="--accent:#ef4444">
+                <summary><span class="tuner-dot"></span>Sub-Bass <small>top horns</small> <i class="fa-solid fa-chevron-down"></i></summary>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Range</span><b id="tuneBassBinVal">0 - 5</b></div>
+                    <input type="range" id="tuneBassEndSlider" class="setting-slider" min="1" max="30" step="1" value="5" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Gate</span><b id="tuneBassThreshVal">0.50</b></div>
+                    <input type="range" id="tuneBassThreshSlider" class="setting-slider" min="0.1" max="0.9" step="0.05" value="0.50" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Noise squash</span><b id="tuneBassSquashVal">4.0</b></div>
+                    <input type="range" id="tuneBassSquashSlider" class="setting-slider" min="1.0" max="10.0" step="0.5" value="4.0" oninput="window.updateVizTuning()">
+                </div>
+            </details>
+
+            <details class="tuner-sec" style="--accent:#3b82f6">
+                <summary><span class="tuner-dot"></span>Mids <small>bottom hills</small> <i class="fa-solid fa-chevron-down"></i></summary>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Range start / end</span><b id="tuneMidBinVal">15 - 25</b></div>
+                    <input type="range" id="tuneMidStartSlider" class="setting-slider" min="5" max="50" step="1" value="15" oninput="window.updateVizTuning()">
+                    <input type="range" id="tuneMidEndSlider" class="setting-slider mt-3" min="10" max="60" step="1" value="25" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Gate</span><b id="tuneMidThreshVal">0.40</b></div>
+                    <input type="range" id="tuneMidThreshSlider" class="setting-slider" min="0.1" max="0.9" step="0.05" value="0.40" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Noise squash</span><b id="tuneMidSquashVal">3.0</b></div>
+                    <input type="range" id="tuneMidSquashSlider" class="setting-slider" min="1.0" max="10.0" step="0.5" value="3.0" oninput="window.updateVizTuning()">
+                </div>
+                <label class="tuner-switch-row"><span>Pitch sweep alignment</span><span class="ios-switch"><input type="checkbox" id="tuneMidSweep" onchange="window.updateVizTuning()"><i></i></span></label>
+            </details>
+
+            <details class="tuner-sec" style="--accent:#eab308">
+                <summary><span class="tuner-dot"></span>Treble <small>side bumps</small> <i class="fa-solid fa-chevron-down"></i></summary>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Range start / end</span><b id="tuneHighBinVal">35 - 45</b></div>
+                    <input type="range" id="tuneHighStartSlider" class="setting-slider" min="20" max="80" step="1" value="35" oninput="window.updateVizTuning()">
+                    <input type="range" id="tuneHighEndSlider" class="setting-slider mt-3" min="25" max="100" step="1" value="45" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Gate</span><b id="tuneHighThreshVal">0.35</b></div>
+                    <input type="range" id="tuneHighThreshSlider" class="setting-slider" min="0.1" max="0.9" step="0.05" value="0.35" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Noise squash</span><b id="tuneHighSquashVal">2.5</b></div>
+                    <input type="range" id="tuneHighSquashSlider" class="setting-slider" min="1.0" max="10.0" step="0.5" value="2.5" oninput="window.updateVizTuning()">
+                </div>
+            </details>
+
+            <details class="tuner-sec" style="--accent:#a855f7">
+                <summary><span class="tuner-dot"></span>Hi-Hats <small>inner bumps</small> <i class="fa-solid fa-chevron-down"></i></summary>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Range start / end</span><b id="tuneTickBinVal">80 - 120</b></div>
+                    <input type="range" id="tuneTickStartSlider" class="setting-slider" min="60" max="200" step="1" value="80" oninput="window.updateVizTuning()">
+                    <input type="range" id="tuneTickEndSlider" class="setting-slider mt-3" min="80" max="300" step="1" value="120" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Gate</span><b id="tuneTickThreshVal">0.25</b></div>
+                    <input type="range" id="tuneTickThreshSlider" class="setting-slider" min="0.1" max="0.9" step="0.05" value="0.25" oninput="window.updateVizTuning()">
+                </div>
+                <div class="tuner-field">
+                    <div class="tuner-lbl"><span>Noise squash</span><b id="tuneTickSquashVal">2.0</b></div>
+                    <input type="range" id="tuneTickSquashSlider" class="setting-slider" min="1.0" max="10.0" step="0.5" value="2.0" oninput="window.updateVizTuning()">
+                </div>
+            </details>
+
+            <div class="tuner-stats">
+                <div class="tuner-stats-head">
+                    <span>Live levels</span>
+                    <button type="button" onclick="window.copyNerdStats()"><i class="fa-solid fa-copy"></i> Copy</button>
+                    <span id="nerdCopiedMsg" class="tuner-copied">Copied!</span>
+                </div>
+                <div class="tuner-meters">
+                    <div><span style="color:#ef4444">Bass</span><b id="nerdBass">0.00</b></div>
+                    <div><span style="color:#3b82f6">Mids</span><b id="nerdMid">0.00</b></div>
+                    <div><span style="color:#eab308">Treble</span><b id="nerdHigh">0.00</b></div>
+                    <div><span style="color:#a855f7">Hats</span><b id="nerdTick">0.00</b></div>
                 </div>
             </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Gate Threshold</span><span id="tuneBassThreshVal">0.50</span></div>
-                <input type="range" id="tuneBassThreshSlider" min="0.1" max="0.9" step="0.05" value="0.50" class="w-full accent-[#ef4444]" oninput="window.updateVizTuning()">
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneBassSquashVal">4.0</span></div>
-                <input type="range" id="tuneBassSquashSlider" min="1.0" max="10.0" step="0.5" value="4.0" class="w-full accent-[#ef4444]" oninput="window.updateVizTuning()">
-            </div>
-
-            <!-- MIDS CONFIG -->
-            <h4 class="text-[11px] text-[#3b82f6] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Mids (Bottom Hills)</h4>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Bin Range (Start/End)</span><span id="tuneMidBinVal">15 - 25</span></div>
-                <div class="flex gap-1 flex-col">
-                    <input type="range" id="tuneMidStartSlider" min="5" max="50" step="1" value="15" class="w-full accent-[#3b82f6]" oninput="window.updateVizTuning()">
-                    <input type="range" id="tuneMidEndSlider" min="10" max="60" step="1" value="25" class="w-full accent-[#3b82f6]" oninput="window.updateVizTuning()">
-                </div>
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Gate Threshold</span><span id="tuneMidThreshVal">0.40</span></div>
-                <input type="range" id="tuneMidThreshSlider" min="0.1" max="0.9" step="0.05" value="0.40" class="w-full accent-[#3b82f6]" oninput="window.updateVizTuning()">
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneMidSquashVal">3.0</span></div>
-                <input type="range" id="tuneMidSquashSlider" min="1.0" max="10.0" step="0.5" value="3.0" class="w-full accent-[#3b82f6]" oninput="window.updateVizTuning()">
-            </div>
-            <label class="flex justify-between items-center px-1 mb-4 cursor-pointer group">
-                <span class="text-[10px] text-white/50 uppercase font-bold group-hover:text-white transition">Pitch Sweep Alignment</span>
-                <input type="checkbox" id="tuneMidSweep" class="hidden peer" onchange="window.updateVizTuning()">
-                <div class="w-8 h-4 bg-white/10 rounded-full border border-white/10 peer-checked:bg-[#3b82f6] transition-all relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-3 after:w-3 after:bg-white/40 after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
-            </label>
-
-            <!-- TREBLE CONFIG -->
-            <h4 class="text-[11px] text-[#eab308] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Treble (Equator Bumps)</h4>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Bin Range (Start/End)</span><span id="tuneHighBinVal">35 - 45</span></div>
-                <div class="flex gap-1 flex-col">
-                    <input type="range" id="tuneHighStartSlider" min="20" max="80" step="1" value="35" class="w-full accent-[#eab308]" oninput="window.updateVizTuning()">
-                    <input type="range" id="tuneHighEndSlider" min="25" max="100" step="1" value="45" class="w-full accent-[#eab308]" oninput="window.updateVizTuning()">
-                </div>
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Gate Threshold</span><span id="tuneHighThreshVal">0.35</span></div>
-                <input type="range" id="tuneHighThreshSlider" min="0.1" max="0.9" step="0.05" value="0.35" class="w-full accent-[#eab308]" oninput="window.updateVizTuning()">
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneHighSquashVal">2.5</span></div>
-                <input type="range" id="tuneHighSquashSlider" min="1.0" max="10.0" step="0.5" value="2.5" class="w-full accent-[#eab308]" oninput="window.updateVizTuning()">
-            </div>
-
-            <!-- TICKS CONFIG -->
-            <h4 class="text-[11px] text-[#a855f7] uppercase tracking-widest font-black mb-3 border-b border-white/10 pb-1 mt-6">Ticks / Hi-Hats (Inner Bumps)</h4>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Bin Range (Start/End)</span><span id="tuneTickBinVal">80 - 120</span></div>
-                <div class="flex gap-1 flex-col">
-                    <input type="range" id="tuneTickStartSlider" min="60" max="200" step="1" value="80" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
-                    <input type="range" id="tuneTickEndSlider" min="80" max="300" step="1" value="120" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
-                </div>
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Gate Threshold</span><span id="tuneTickThreshVal">0.25</span></div>
-                <input type="range" id="tuneTickThreshSlider" min="0.1" max="0.9" step="0.05" value="0.25" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
-            </div>
-            <div class="mb-3">
-                <div class="flex justify-between text-[10px] text-white/50 uppercase font-bold mb-1"><span>Noise Squash Power</span><span id="tuneTickSquashVal">2.0</span></div>
-                <input type="range" id="tuneTickSquashSlider" min="1.0" max="10.0" step="0.5" value="2.0" class="w-full accent-[#a855f7]" oninput="window.updateVizTuning()">
-            </div>
-
-            <!-- NERD STATS -->
-            <div class="mt-6 mb-2 p-3 bg-black/40 rounded border border-white/5 relative">
-                <div class="text-[10px] text-[var(--accent)] uppercase tracking-widest font-bold mb-2 flex justify-between">
-                    <span>Nerd Stats (Live)</span>
-                    <button onclick="window.copyNerdStats()" class="hover:text-white transition"><i class="fa-solid fa-copy"></i> Copy</button>
-                </div>
-                <div class="text-[9px] font-mono text-white/60 space-y-1">
-                    <div class="flex justify-between"><span>Sub-Bass:</span> <span id="nerdBass">0.00</span></div>
-                    <div class="flex justify-between"><span>Mids:</span> <span id="nerdMid">0.00</span></div>
-                    <div class="flex justify-between"><span>Treble:</span> <span id="nerdHigh">0.00</span></div>
-                    <div class="flex justify-between"><span>Ticks:</span> <span id="nerdTick">0.00</span></div>
-                </div>
-                <div id="nerdCopiedMsg" class="absolute top-2 right-10 text-[9px] text-green-400 font-bold opacity-0 transition">Copied!</div>
-            </div>
-            
         </div>
     </div>
 
@@ -790,15 +747,19 @@
     <!-- QUEUE PANEL -->
     <aside class="side-panel right-panel" id="queuePanel">
         <div class="panel-header">
-            <span>PLAY QUEUE</span>
+            <span>Queue</span>
             <button onclick="window.ui.toggleQueue()" class="action-btn"><i class="fa-solid fa-xmark text-white text-lg"></i></button>
         </div>
         <div class="panel-content custom-scrollbar space-y-2" id="queueList">
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.10.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.11.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.10.0"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.11.0"></script>
+    <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
+    <script type="module" src="assets/js/ui-v3.js?v=2.11.0"></script>
+    <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
+    <script type="module" src="assets/js/song-finder.js?v=2.11.0"></script>
 </body>
 </html>

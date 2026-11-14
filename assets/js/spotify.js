@@ -1,4 +1,4 @@
-import { SPOTIFY_CONFIG } from './spotify-config.js?v=3';
+import { SPOTIFY_CONFIG } from './spotify-config.js?v=4';
 
 // --- Helpers for the secret-free ("PKCE") login ---------------------------
 // The site runs in the browser, so it must NEVER hold a client secret.
@@ -252,6 +252,70 @@ export class SpotifyManager {
             console.warn("Spotify standard fetch blocked/failed. Attempting embed fallback.", e);
             return await this.scrapeEmbedData(playlistId);
         }
+    }
+
+    // ---- v3: used by "Add Songs" -------------------------------------------------
+    // Every page of a Spotify list endpoint. Throws {code:'scope'} when the login is
+    // from before v3 (missing the new permissions) so the UI can ask to reconnect.
+    async _allPages(url, max = 2000) {
+        const token = await this.getValidToken();
+        if (!token) throw Object.assign(new Error('Not connected to Spotify'), { code: 'login' });
+        const out = [];
+        while (url && out.length < max) {
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.status === 401 || res.status === 403) {
+                throw Object.assign(new Error('Spotify needs you to reconnect (new permissions).'), { code: 'scope' });
+            }
+            if (!res.ok) throw new Error('Spotify said ' + res.status);
+            const data = await res.json();
+            out.push(...(data.items || []));
+            url = data.next;
+        }
+        return out;
+    }
+
+    _normTrack(entry) {
+        const t = entry && (entry.track || entry.item || entry);
+        if (!t || !t.name || t.type === 'episode') return null;
+        return {
+            title: t.name,
+            artist: (t.artists || []).map(a => a.name).join(', '),
+            duration: Math.round((t.duration_ms || 0) / 1000),
+            spotify: t.id || '',
+            art: t.album && t.album.images && t.album.images.length ? t.album.images[t.album.images.length > 1 ? 1 : 0].url : ''
+        };
+    }
+
+    async getMyPlaylists() {
+        const items = await this._allPages('https://api.spotify.com/v1/me/playlists?limit=50', 500);
+        return items.filter(Boolean).map(p => ({
+            id: p.id,
+            name: p.name,
+            count: (p.tracks && p.tracks.total) || (p.items && p.items.total) || 0,
+            image: p.images && p.images.length ? p.images[p.images.length - 1].url : ''
+        }));
+    }
+
+    async getLikedSongs() {
+        const items = await this._allPages('https://api.spotify.com/v1/me/tracks?limit=50');
+        return { title: 'Liked Songs', tracks: items.map(e => this._normTrack(e)).filter(Boolean) };
+    }
+
+    async getPlaylistFull(id) {
+        const token = await this.getValidToken();
+        if (!token) throw Object.assign(new Error('Not connected to Spotify'), { code: 'login' });
+        const meta = await fetch(`https://api.spotify.com/v1/playlists/${id}?fields=name,images`, { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+        let items;
+        try {
+            // Spotify renamed /tracks to /items in 2026; try the new one first
+            items = await this._allPages(`https://api.spotify.com/v1/playlists/${id}/items?limit=100`);
+        } catch (e) {
+            if (e.code === 'scope') throw e;
+            items = await this._allPages(`https://api.spotify.com/v1/playlists/${id}/tracks?limit=100`);
+        }
+        const tracks = items.map(e => this._normTrack(e)).filter(Boolean);
+        return { title: meta.name || 'Spotify playlist', image: meta.images && meta.images[0] ? meta.images[0].url : '', tracks };
     }
 
     async scrapeEmbedData(playlistId) {

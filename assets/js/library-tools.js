@@ -442,6 +442,7 @@ function sleepCancel(restoreVolume = true) {
   sleepSay("Off");
   const sel = $("ltSleepSelect");
   if (sel && sel.value !== "0") sel.value = "0";
+  if (sel && sel._iosSync) sel._iosSync(); // v3 dropdown shows the new value
 }
 
 // Fades the volume to nothing, pauses, then puts the volume back for next time.
@@ -488,6 +489,7 @@ function startSleep(value, fadeSeconds = 10) {
     toast("Will pause after this song");
     const sel = $("ltSleepSelect");
     if (sel) sel.value = "song";
+    if (sel && sel._iosSync) sel._iosSync();
     return;
   }
   const minutes = Number(value);
@@ -520,21 +522,18 @@ function setupSleepTimer() {
   if (!liteRow) return;
   liteRow.insertAdjacentHTML(
     "afterend",
-    `<div class="flex justify-between items-center bg-white/5 border border-white/10 p-4 h-[72px] mx-2 mt-4 rounded-xl">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70"><i class="fa-solid fa-moon"></i></div>
-            <div class="flex flex-col">
-                <span class="text-xs font-black text-white/90 tracking-widest uppercase">SLEEP TIMER</span>
-                <span id="ltSleepStatus" class="text-[9px] font-bold text-white/40">Off</span>
-            </div>
-        </div>
-        <select id="ltSleepSelect" style="color-scheme:dark" class="bg-black/60 border border-white/10 rounded-lg text-[11px] font-bold text-white p-2 outline-none cursor-pointer">
+    `<div class="set-row" id="ltSleepRow">
+        <span class="set-icon" style="--c:#4f46e5"><i class="fa-solid fa-moon"></i></span>
+        <span class="set-text"><span class="set-label">Sleep Timer</span><span id="ltSleepStatus" class="set-sub">Off</span></span>
+        <select id="ltSleepSelect" class="ios-native-select">
             <option value="0">Off</option><option value="song">After this song</option>
             <option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option>
             <option value="60">1 hour</option><option value="90">1.5 hours</option>
         </select>
     </div>`,
   );
+  if (window.uiv3 && window.uiv3.enhanceSelect) window.uiv3.enhanceSelect($("ltSleepSelect"));
+  else $("ltSleepSelect").setAttribute("data-ios-select", ""); // ui-v3 picks it up when it loads
   $("ltSleepSelect").addEventListener("change", (e) => {
     if (e.target.value === "0") sleepCancel(true);
     else startSleep(e.target.value);

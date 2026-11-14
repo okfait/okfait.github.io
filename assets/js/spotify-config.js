@@ -9,6 +9,10 @@ export const SPOTIFY_CONFIG = {
         'user-read-playback-state',
         'user-modify-playback-state',
         'user-read-currently-playing',
-        'streaming'
+        'streaming',
+        // v3: lets "Add Songs" show your own playlists (private ones too) and Liked Songs
+        'playlist-read-private',
+        'playlist-read-collaborative',
+        'user-library-read'
     ]
 };
