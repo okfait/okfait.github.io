@@ -1,33 +1,36 @@
-// Liquid V2 - "phonk edit" style visualizer.
+// Liquid V2 - edit style visualizer (v2.13 rework).
 //
-// What those After Effects edits do, rebuilt live:
-//  - the kick drum PUNCHES the whole picture: a very fast zoom-in that springs back with a
-//    tiny overshoot (a damped spring, not a linear ease - that's the "motion graph" feel)
-//  - zoom motion blur: every frame the last frames get pushed outward and fade, so things
-//    leave radial streaks
-//  - the liquid is drawn as a white-hot core with neon outlines that lag behind it
-//  - shockwave rings + speed-line particles flying out of the ball on every hit
-//  - a little camera shake and red/blue color split on the hardest hits
-// Uses the same liquid shape + Liquid Tuner settings as V1. Pick it in Settings > Visualizer.
+// What changed from the first V2 and why:
+//  - the flying "speed lines" + the radial smear trail are gone (they made people dizzy)
+//  - kick detection used to read the same smoothed + boosted numbers as the drawing, and with
+//    heavy bass those numbers sit at the maximum all the time, so most kicks got missed.
+//    Now it has its OWN listener on the clean signal with zero smoothing, and it looks for a
+//    sudden jump in low-end loudness compared to the last ~1 second. Catches way more kicks.
+//  - every kick = the whole picture punches in (springy zoom that overshoots a bit) with a
+//    zoom blur, and the album art blurs with it for a split second
+//  - the liquid itself is a ring of little springs that pull on their neighbours, so a hit
+//    sends real waves around it and it wobbles after, instead of just following the bars
+// Shares the Liquid Tuner "Height (sensitivity)" with V1.
 
 const S = {
   w: 0, h: 0,
-  trailA: null, trailB: null, glow: null, vignette: null,
+  layer: null, lctx: null, glow: null, vignette: null,
   spring: { x: 0, v: 0 },
   shake: 0,
   last: 0,
-  lastKick: 0,
-  prevBass: 0,
-  bassMean: 0.3,
   shocks: [],
-  parts: [],
-  artScale: 1,
-  artEl: null,
+  artScale: 1, artBlur: 0, artEl: null,
   lastFrame: 0,
+  // the liquid ring
+  n: 72,
+  x: null, v: null, // fast springs (the surface)
+  ex: null, ev: null, // slow springs (the echo outline)
+  R: { x: 0, v: 0 }, // whole-ring inflate
+  // kick detector
+  an: null, fbuf: null, hist: [], fluxM: 1, fluxV: 1, lvl: -60, lastKick: 0, probeAt: 0,
+  kickSeq: 0, kickStr: 0, usedSeq: 0,
+  ext: false, // true on the phone remote: kicks come from the PC
 };
-
-const K = 420; // spring stiffness: how fast the punch snaps back
-const C = 22; // spring damping: lower = more wobble after the hit
 
 function makeCanvas(w, h) {
   const c = document.createElement("canvas");
@@ -35,26 +38,77 @@ function makeCanvas(w, h) {
   c.height = Math.max(1, Math.round(h));
   return c;
 }
-
 function setup(w, h) {
   S.w = w;
   S.h = h;
-  // the trail + glow run at lower resolution: they're blurry anyway, and it's 4-16x less work
-  S.trailA = makeCanvas(w / 2, h / 2);
-  S.trailB = makeCanvas(w / 2, h / 2);
+  S.layer = makeCanvas(w, h);
+  S.lctx = S.layer.getContext("2d");
   S.glow = makeCanvas(w / 4, h / 4);
   S.vignette = null;
 }
+function ring() {
+  if (S.x) return;
+  S.x = new Float32Array(S.n);
+  S.v = new Float32Array(S.n);
+  S.ex = new Float32Array(S.n);
+  S.ev = new Float32Array(S.n);
+}
 
-function newPart(fromCenter) {
-  return {
-    ang: Math.random() * Math.PI * 2,
-    dist: fromCenter ? 150 + Math.random() * 40 : 150 + Math.random() * 700,
-    spd: 60 + Math.random() * 160,
-    len: 10 + Math.random() * 30,
-    w: Math.random() < 0.15 ? 2.2 : 1.1,
-    a: 0.35 + Math.random() * 0.65,
-  };
+// ---------------------------------------------------------------- kick detector
+function ensureAnalyser() {
+  if (S.an || S.ext) return S.an;
+  const as = window.audioSys;
+  if (!as || !as.ctx || !as.src) return null;
+  S.an = as.ctx.createAnalyser();
+  S.an.fftSize = 2048;
+  S.an.smoothingTimeConstant = 0; // raw: smoothing smears the punch of a kick
+  as.src.connect(S.an);
+  S.fbuf = new Float32Array(S.an.frequencyBinCount);
+  return S.an;
+}
+// Runs the detector at most once per ~8ms, whoever calls it (drawing or the phone remote sender)
+function probe() {
+  const now = performance.now();
+  if (now - S.probeAt < 8) return;
+  S.probeAt = now;
+  const an = ensureAnalyser();
+  if (!an) return;
+  const a = window.audioSys.audio;
+  if (a.paused) {
+    S.hist.length = 0;
+    return;
+  }
+  an.getFloatFrequencyData(S.fbuf);
+  // ~20-150 Hz, summed as real loudness
+  const hz = an.context.sampleRate / an.fftSize;
+  const lo = Math.max(1, Math.floor(20 / hz)), hi = Math.ceil(150 / hz);
+  let p = 0;
+  for (let i = lo; i <= hi; i++) p += Math.pow(10, S.fbuf[i] / 10);
+  const L = 10 * Math.log10(p + 1e-12);
+  S.hist.push({ t: now, L });
+  while (S.hist.length && now - S.hist[0].t > 90) S.hist.shift();
+  // how much louder than the quietest moment in the last ~70ms (= the hit's attack)
+  let mn = L;
+  for (const e of S.hist) if (now - e.t <= 70) mn = Math.min(mn, e.L);
+  const flux = Math.max(0, L - mn);
+  S.lvl += (L - S.lvl) * 0.01;
+  const thr = Math.max(3, S.fluxM + 2.2 * Math.sqrt(S.fluxV));
+  const isKick = flux > thr && L > S.lvl - 9 && now - S.lastKick > 160;
+  // running average + spread of the jumps (so loud and quiet songs both work)
+  const d = flux - S.fluxM;
+  S.fluxM += d * 0.02;
+  S.fluxV += (d * d - S.fluxV) * 0.02;
+  if (isKick) {
+    S.lastKick = now;
+    S.kickSeq++;
+    S.kickStr = Math.min(1.35, 0.6 + (flux - thr) / 8);
+  }
+}
+// phone remote: the PC tells us when it heard a kick
+function kick(strength) {
+  S.ext = true;
+  S.kickSeq++;
+  S.kickStr = strength || 1;
 }
 
 function colors(viz) {
@@ -70,14 +124,24 @@ function colors(viz) {
   return { line: acc, line2: acc, rim: acc };
 }
 
-// Path of the liquid, scaled around the center (for the outline copies)
-function strokeScaled(ctx, path, cx, cy, s) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(s, s);
-  ctx.translate(-cx, -cy);
-  ctx.stroke(path);
-  ctx.restore();
+// smooth closed blob through the ring points
+function blobPath(cx, cy, base, arr, scale) {
+  const n = S.n;
+  const px = new Array(n), py = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const r = (base + arr[i]) * scale;
+    px[i] = cx + Math.cos(ang) * r;
+    py[i] = cy + Math.sin(ang) * r;
+  }
+  const p = new Path2D();
+  p.moveTo((px[n - 1] + px[0]) / 2, (py[n - 1] + py[0]) / 2);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    p.quadraticCurveTo(px[i], py[i], (px[i] + px[j]) / 2, (py[i] + py[j]) / 2);
+  }
+  p.closePath();
+  return p;
 }
 
 function frame(ctx, w, h, buf, viz) {
@@ -85,211 +149,190 @@ function frame(ctx, w, h, buf, viz) {
   const dt = Math.min(0.05, Math.max(0.001, (now - (S.last || now - 16)) / 1000));
   S.last = now;
   S.lastFrame = now;
-  if (w !== S.w || h !== S.h || !S.trailA) setup(w, h);
+  if (w !== S.w || h !== S.h || !S.layer) setup(w, h);
+  ring();
+  probe();
 
   const cfg = window.vizConfig || {};
   const sens = cfg.sens || window.vizSens || 1;
   const ac = viz.artCenter(w, h);
   const cx = ac.x, cy = ac.y;
+  const sc = window.displayScale || 1;
+  const base = (ac.r || 140) + 6;
+  const paused = window.audioSys.audio.paused;
 
-  // ---------------------------------------------------------------- listen
-  let bass = 0, mids = 0, highs = 0;
+  // ---------------------------------------------------------------- listen (shape)
+  let bass = 0, mids = 0;
   for (let i = 0; i < 6; i++) bass += buf[i];
   for (let i = 12; i < 48; i++) mids += buf[i];
-  for (let i = 60; i < 220; i++) highs += buf[i];
   bass = Math.min(1, (bass / 6 / 255) * sens);
-  mids = (mids / 36) / 255;
-  highs = (highs / 160) / 255;
-  const paused = window.audioSys.audio.paused;
-  S.bassMean += (bass - S.bassMean) * 0.04;
-  const rise = bass - S.prevBass;
-  S.prevBass = bass;
+  mids = mids / 36 / 255;
 
-  // kick = bass jumps up AND is clearly louder than the recent average
-  const kick = !paused && bass > 0.42 && rise > 0.045 && bass > S.bassMean * 1.12 && now - S.lastKick > 150;
-  if (kick) {
-    S.lastKick = now;
-    const strength = Math.min(1.4, 0.55 + (bass - S.bassMean) * 3);
-    S.spring.v += 38 * strength;
-    S.shake = Math.min(1, S.shake + 0.55 * strength);
-    S.shocks.push({ r: 140, a: 0.9 * strength });
-    if (S.shocks.length > 6) S.shocks.shift();
-    // a burst of fresh particles right out of the ball
-    for (let i = 0; i < 18; i++) S.parts.push(newPart(true));
+  // ---------------------------------------------------------------- kicks
+  if (S.kickSeq !== S.usedSeq) {
+    S.usedSeq = S.kickSeq;
+    if (!paused || S.ext) {
+      const k = S.kickStr;
+      S.spring.v += 40 * k;
+      S.shake = Math.min(1, S.shake + 0.45 * k);
+      S.R.v += 520 * k * sc;
+      // splash: the top + bottom of the liquid get kicked outward, waves run around from there
+      for (let i = 0; i < S.n; i++) {
+        const ang = (i / S.n) * Math.PI * 2;
+        S.v[i] += (260 + 200 * Math.abs(Math.cos(ang))) * k * sc;
+      }
+      S.shocks.push({ r: base, a: 0.75 * k });
+      if (S.shocks.length > 4) S.shocks.shift();
+    }
   }
 
-  // ---------------------------------------------------------------- spring (the punch curve)
-  const acc = -K * S.spring.x - C * S.spring.v;
-  S.spring.v += acc * dt;
-  S.spring.x += S.spring.v * dt;
-  const punch = Math.max(-0.25, S.spring.x); // ~0..1 right after a kick
-  const zoom = 1 + punch * 0.075;
-  S.shake *= Math.exp(-dt * 9);
-  const shakeAmt = S.shake * S.shake;
-  const sx = (Math.random() - 0.5) * 18 * shakeAmt;
-  const sy = (Math.random() - 0.5) * 18 * shakeAmt;
-  const rot = (Math.random() - 0.5) * 0.02 * shakeAmt;
+  // ---------------------------------------------------------------- springs
+  const sp = S.spring;
+  sp.v += (-420 * sp.x - 21 * sp.v) * dt;
+  sp.x += sp.v * dt;
+  const punch = Math.max(-0.2, sp.x); // ~0..1 right after a kick
+  const zoom = 1 + punch * 0.11;
+  S.R.v += (-180 * S.R.x - 12 * S.R.v) * dt;
+  S.R.x += S.R.v * dt;
 
-  // the ball (album art) punches with the picture
+  // the ring: each point chases its frequency, pulls on its neighbours, and overshoots
+  const n = S.n, half = n / 2;
+  const amp = 115 * sc * sens;
+  const steps = 2, h2 = dt / steps;
+  for (let s = 0; s < steps; s++) {
+    for (let i = 0; i < n; i++) {
+      // mirror left/right; top = deep bass, bottom = highs
+      const m = i <= half ? i : n - i;
+      const f = m / half;
+      const bin = Math.floor(2 + Math.pow(f, 1.6) * 180);
+      let lv = (buf[bin] + buf[bin + 1]) / 510;
+      lv = Math.max(0, lv - 0.18) / 0.82;
+      const target = paused && !S.ext ? 0 : Math.pow(lv, 1.7) * amp * (1.15 - f * 0.45);
+      const l = S.x[(i - 1 + n) % n], r = S.x[(i + 1) % n];
+      const acc = 300 * (target - S.x[i]) + 900 * (l + r - 2 * S.x[i]) - 13 * S.v[i];
+      S.v[i] += acc * h2;
+    }
+    for (let i = 0; i < n; i++) {
+      S.x[i] += S.v[i] * h2;
+      if (S.x[i] < -20 * sc) {
+        S.x[i] = -20 * sc;
+        S.v[i] *= -0.3;
+      }
+      // the echo outline follows lazily
+      S.ev[i] += (60 * (S.x[i] - S.ex[i]) - 7 * S.ev[i]) * h2;
+      S.ex[i] += S.ev[i] * h2;
+    }
+  }
+
+  // ---------------------------------------------------------------- album art punches + blurs
+  S.shake *= Math.exp(-dt * 9);
+  const blurAmt = Math.max(0, punch - 0.06);
   const art = S.artEl || (S.artEl = document.getElementById("artContainer"));
   const as = Math.round(zoom * 1000) / 1000;
-  if (art && as !== S.artScale) {
-    art.style.transform = `scale(${as})`;
+  const ab = Math.round(blurAmt * 10) / 2; // px, steps of .5
+  if (art && (as !== S.artScale || ab !== S.artBlur)) {
+    art.style.transform = as !== 1 ? `scale(${as})` : "";
+    art.style.filter = ab > 0 ? `blur(${ab}px)` : "";
     S.artScale = as;
+    S.artBlur = ab;
   }
 
+  // ---------------------------------------------------------------- draw into the layer
+  const L = S.lctx;
+  L.setTransform(1, 0, 0, 1, 0, 0);
+  L.clearRect(0, 0, w, h);
   const col = colors(viz);
   const hideShape = document.body.classList.contains("clean-lines-mode");
-  const pts = viz.getSymmetricPoints(cx, cy, viz.history.getDelayedFrame(0));
-  const core = viz.buildSmoothPath(pts);
-  const lag1 = viz.buildSmoothPath(viz.getSymmetricPoints(cx, cy, viz.history.getDelayedFrame(4)));
-  const lag2 = viz.buildSmoothPath(viz.getSymmetricPoints(cx, cy, viz.history.getDelayedFrame(9)));
+  const baseR = base + S.R.x;
+  const core = blobPath(cx, cy, baseR, S.x, 1);
 
-  // ---------------------------------------------------------------- zoom-blur trail (half res)
-  {
-    const A = S.trailA, B = S.trailB;
-    const bc = B.getContext("2d");
-    const tw = B.width, th = B.height;
-    bc.globalCompositeOperation = "copy";
-    const grow = 1.018 + punch * 0.05 + bass * 0.01; // last frames get pushed outward = radial streaks
-    const hx = cx / 2, hy = cy / 2;
-    bc.globalAlpha = paused ? 0.7 : 0.8;
-    bc.setTransform(grow, 0, 0, grow, hx - hx * grow, hy - hy * grow);
-    bc.drawImage(A, 0, 0);
-    bc.setTransform(1, 0, 0, 1, 0, 0);
-    bc.globalAlpha = 1;
-    bc.globalCompositeOperation = "lighter";
-    if (!hideShape) {
-      bc.save();
-      bc.scale(0.5, 0.5);
-      bc.lineWidth = 6;
-      bc.strokeStyle = col.line;
-      bc.globalAlpha = 0.45 + bass * 0.4;
-      bc.stroke(core);
-      bc.restore();
-    }
-    S.trailA = B;
-    S.trailB = A;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalCompositeOperation = "lighter";
-    ctx.globalAlpha = 0.9;
-    ctx.drawImage(S.trailA, 0, 0, w, h);
-    ctx.restore();
-  }
-
-  // ---------------------------------------------------------------- particles (speed lines)
-  if (cfg.sparks !== false) {
-    const maxR = Math.hypot(w, h) * 0.6;
-    while (S.parts.length < 140) S.parts.push(newPart(false));
-    if (S.parts.length > 220) S.parts.splice(0, S.parts.length - 220);
-    const boost = 1 + bass * 3 + punch * 9 + highs * 2;
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#fff";
-    for (let i = S.parts.length - 1; i >= 0; i--) {
-      const p = S.parts[i];
-      p.dist += p.spd * boost * dt;
-      if (p.dist > maxR) {
-        if (S.parts.length > 140) S.parts.splice(i, 1);
-        else Object.assign(p, newPart(true));
-        continue;
-      }
-      const L = p.len * (0.6 + boost * 0.7);
-      const c = Math.cos(p.ang), s = Math.sin(p.ang);
-      const fade = Math.min(1, (p.dist - 140) / 120) * p.a;
-      if (fade <= 0.02) continue;
-      ctx.globalAlpha = fade;
-      ctx.lineWidth = p.w;
-      ctx.beginPath();
-      ctx.moveTo(cx + c * p.dist, cy + s * p.dist);
-      ctx.lineTo(cx + c * Math.max(140, p.dist - L), cy + s * Math.max(140, p.dist - L));
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // ---------------------------------------------------------------- camera
-  ctx.save();
-  ctx.translate(cx + sx, cy + sy);
-  ctx.scale(zoom, zoom);
-  ctx.rotate(rot);
-  ctx.translate(-cx, -cy);
-
-  // shockwave rings
+  // shockwave rings (one soft ring per kick)
   for (let i = S.shocks.length - 1; i >= 0; i--) {
     const r = S.shocks[i];
-    r.r += 900 * dt;
-    r.a -= 1.5 * dt;
+    r.r += 700 * dt * sc;
+    r.a -= 1.6 * dt;
     if (r.a <= 0) {
       S.shocks.splice(i, 1);
       continue;
     }
-    ctx.globalAlpha = r.a * 0.8;
-    ctx.strokeStyle = col.line;
-    ctx.lineWidth = 2 + r.a * 5;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r.r, 0, Math.PI * 2);
-    ctx.stroke();
+    L.globalAlpha = r.a * 0.6;
+    L.strokeStyle = col.line;
+    L.lineWidth = 1.5 + r.a * 4;
+    L.beginPath();
+    L.arc(cx, cy, r.r, 0, Math.PI * 2);
+    L.stroke();
   }
-  ctx.globalAlpha = 1;
+  L.globalAlpha = 1;
 
   if (!hideShape) {
+    const echo = blobPath(cx, cy, baseR, S.ex, 1.07 + bass * 0.03);
     // soft glow: drawn tiny and blurred, then stretched up = cheap big bloom
     const g = S.glow.getContext("2d");
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, S.glow.width, S.glow.height);
     g.scale(0.25, 0.25);
-    if ("filter" in g) g.filter = "blur(5px)";
+    if ("filter" in g) g.filter = "blur(6px)";
     g.fillStyle = col.rim;
-    g.globalAlpha = 0.55 + bass * 0.45;
+    g.globalAlpha = 0.5 + bass * 0.5;
     g.fill(core);
-    g.lineWidth = 30;
+    g.lineWidth = 34;
     g.strokeStyle = col.line;
-    g.stroke(lag1);
+    g.stroke(echo);
     if ("filter" in g) g.filter = "none";
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.drawImage(S.glow, 0, 0, w, h);
-    ctx.restore();
+    L.save();
+    L.globalCompositeOperation = "lighter";
+    L.drawImage(S.glow, 0, 0, w, h);
+    L.restore();
 
-    // neon outlines that lag behind the core (the "flow")
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = col.line2;
-    ctx.globalAlpha = 0.35 + mids * 0.4;
-    ctx.lineWidth = 2;
-    strokeScaled(ctx, lag2, cx, cy, 1.1 + bass * 0.04);
-    ctx.strokeStyle = col.line;
-    ctx.globalAlpha = 0.7 + mids * 0.3;
-    ctx.lineWidth = 3 + bass * 3;
-    strokeScaled(ctx, lag1, cx, cy, 1.045 + bass * 0.02);
-    ctx.globalAlpha = 1;
+    // the echo outline (lags behind = the flowing look)
+    L.lineJoin = "round";
+    L.strokeStyle = col.line2;
+    L.globalAlpha = 0.45 + mids * 0.45;
+    L.lineWidth = 2.5 + bass * 2;
+    L.stroke(echo);
+    L.globalAlpha = 1;
 
     // red / blue split on hard hits
-    if (punch > 0.18) {
-      const o = punch * 9;
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = Math.min(0.6, punch * 0.7);
-      ctx.translate(-o, 0);
-      ctx.fillStyle = "rgb(255,30,90)";
-      ctx.fill(core);
-      ctx.translate(o * 2, 0);
-      ctx.fillStyle = "rgb(30,170,255)";
-      ctx.fill(core);
-      ctx.restore();
+    if (punch > 0.2) {
+      const o = punch * 10 * sc;
+      L.save();
+      L.globalCompositeOperation = "lighter";
+      L.globalAlpha = Math.min(0.55, punch * 0.6);
+      L.translate(-o, 0);
+      L.fillStyle = "rgb(255,30,90)";
+      L.fill(core);
+      L.translate(o * 2, 0);
+      L.fillStyle = "rgb(30,170,255)";
+      L.fill(core);
+      L.restore();
     }
 
     // white-hot core with a colored rim
-    const rg = ctx.createRadialGradient(cx, cy, 120, cx, cy, 320);
+    const rg = L.createRadialGradient(cx, cy, baseR * 0.85, cx, cy, baseR + amp);
     rg.addColorStop(0, "#ffffff");
-    rg.addColorStop(0.45, "#ffffff");
+    rg.addColorStop(0.35, "#ffffff");
     rg.addColorStop(1, col.rim);
-    ctx.fillStyle = col.ring && window.artRing ? viz.artConic(ctx, cx, cy) : rg;
-    ctx.fill(core);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "rgba(255,255,255,0.9)";
-    ctx.stroke(core);
+    L.fillStyle = col.ring && window.artRing ? viz.artConic(L, cx, cy) : rg;
+    L.fill(core);
+    L.lineWidth = 1.5;
+    L.strokeStyle = "rgba(255,255,255,0.9)";
+    L.stroke(core);
+  }
+
+  // ---------------------------------------------------------------- camera: punch zoom + zoom blur
+  const sh = S.shake * S.shake;
+  const sx = (Math.random() - 0.5) * 14 * sh * sc;
+  const sy = (Math.random() - 0.5) * 14 * sh * sc;
+  const put = (z, alpha) => {
+    ctx.globalAlpha = alpha;
+    ctx.setTransform(z, 0, 0, z, cx - cx * z + sx, cy - cy * z + sy);
+    ctx.drawImage(S.layer, 0, 0);
+  };
+  ctx.save();
+  put(zoom, 1);
+  if (blurAmt > 0.01) {
+    // a few bigger, fainter copies = the "zoom blur" streak, only during the punch
+    for (let k = 1; k <= 4; k++) put(zoom * (1 + blurAmt * 0.05 * k), (0.32 * (5 - k)) / 4);
   }
   ctx.restore();
 
@@ -297,7 +340,7 @@ function frame(ctx, w, h, buf, viz) {
   if (!S.vignette) {
     const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.hypot(w, h) * 0.6);
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.55)");
+    vg.addColorStop(1, "rgba(0,0,0,0.5)");
     S.vignette = vg;
   }
   ctx.save();
@@ -308,22 +351,33 @@ function frame(ctx, w, h, buf, viz) {
 }
 
 function active() {
+  if (window.__liquidVerOverride) return window.__liquidVerOverride === "v2";
   return (localStorage.getItem("okmusic_liquid_ver") || "v1") === "v2";
 }
 
 function reset() {
   S.spring.x = S.spring.v = 0;
+  S.R.x = S.R.v = 0;
   S.shake = 0;
   S.shocks.length = 0;
-  if (S.trailA) S.trailA.getContext("2d").clearRect(0, 0, S.trailA.width, S.trailA.height);
+  if (S.x) {
+    S.x.fill(0);
+    S.v.fill(0);
+    S.ex.fill(0);
+    S.ev.fill(0);
+  }
   const art = S.artEl || document.getElementById("artContainer");
-  if (art) art.style.transform = "";
+  if (art) {
+    art.style.transform = "";
+    art.style.filter = "";
+  }
   S.artScale = 1;
+  S.artBlur = 0;
 }
 
-// if V2 stops being drawn (switched to V1, ring, bars...), put the album art back to normal size
+// if V2 stops being drawn (switched to V1, ring, bars, tab in background...), put the album art back
 setInterval(() => {
-  if (S.artScale !== 1 && performance.now() - S.lastFrame > 300) reset();
+  if ((S.artScale !== 1 || S.artBlur) && performance.now() - S.lastFrame > 300) reset();
 }, 500);
 
-window.liquidV2 = { frame, active, reset };
+window.liquidV2 = { frame, active, reset, probe, kick, get kickSeq() { return S.kickSeq; }, get kickStr() { return S.kickStr; } };

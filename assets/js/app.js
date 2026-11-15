@@ -1467,6 +1467,8 @@ class Visualizer {
     return this._artC || { x: w / 2, y: h / 2 - 40, r: 140 };
   }
   start() {
+    if (this._started) return;
+    this._started = true;
     this.draw();
   }
   toggleMode() {
@@ -1532,7 +1534,7 @@ class Visualizer {
 
     // Save CPU/RAM: don't draw when the tab is hidden or minimized,
     // and only draw at ~10fps while the music is paused (music itself is not affected)
-    if (document.hidden) return;
+    if (document.hidden || window.okAway) return;
     // Paused: keep full speed while the shapes are still settling down (before, this ran
     // at 10fps and the liquid settled in slow motion). Once everything is still, draw at
     // half rate - only the slow drifting sparks are left by then.
@@ -5213,18 +5215,7 @@ class Player {
     this.setAudioSource(s.blob);
     window.audioSys.audio.preservesPitch = false;
 
-    if (
-      window.partyMode &&
-      window.partyMode.active &&
-      window.partyMode.isHost
-    ) {
-      window.ui.showSyncPopup("Loading sounds...", "0%");
-      const finalStatus = window.$("syncStatus");
-      if (finalStatus) finalStatus.innerText = `Waiting for Client...`;
-      window.audioSys.audio.pause();
-    } else {
-      window.audioSys.audio.play();
-    }
+    window.audioSys.audio.play();
 
     window.ui.setTrack(s);
     window.ui.updatePlayBtn(true);
@@ -5239,10 +5230,6 @@ class Player {
       setTimeout(() => window.ui.updateActiveIndicator(), 0);
     }
 
-    // Party Mode P2P Sync Trigger
-    if (window.partyMode && window.partyMode.active) {
-      window.partyMode.broadcastInChunks(s);
-    }
   }
 
   playFromData(id, name, base64) {
@@ -5505,452 +5492,7 @@ class Player {
   }
 }
 
-class PartyMode {
-  constructor() {
-    this.active = false;
-    this.sessionId = null;
-    this.listeners = [];
-    this.manualOffset = parseInt(localStorage.getItem("sv_party_sync")) || 0;
-    this.peers = {};
-    this.dataChannels = {};
-    this.hostId = null;
-  }
-  toggleSetup() {
-    const el = window.$("partySetupModal");
-    if (el.style.display === "none") {
-      el.style.display = "block";
-      this.updateUI();
-    } else el.style.display = "none";
-  }
-  updateUI() {
-    if (this.active) {
-      window.$("partySetupInitial").style.display = "none";
-      window.$("partySetupActive").style.display = "block";
-      window.$("activePartyCode").innerText = this.sessionId;
-      window.$("syncLibraryBtn").style.display = "block";
-    } else {
-      window.$("partySetupInitial").style.display = "block";
-      window.$("partySetupActive").style.display = "none";
-      window.$("joinCodeInput").value = "";
-    }
-  }
-  hostParty() {
-    this.sessionId = Math.random().toString(36).substring(2, 6).toUpperCase();
-    this.isHost = true;
-    this.connect();
-  }
-  joinParty() {
-    const code = window.$("joinCodeInput").value.trim().toUpperCase();
-    if (!code) return alert("Please enter a party code.");
-    this.sessionId = code;
-    this.isHost = false;
-    this.connect();
-  }
-  connect() {
-    if (this.active) this.leave();
-    this.active = true;
-    if (!window.player.myId) window.player.myId = crypto.randomUUID();
-
-    window.$("partyBtn").classList.add("active");
-    window.$("syncStatus").innerText = `Party: ${this.sessionId}`;
-    window.$("syncStatus").style.display = "inline-block";
-    window.$("partyBtn").style.color = "#fbbf24";
-
-    try {
-      const sessionRef = window.dbRef(window.db, "sessions/" + this.sessionId);
-      const unsubscribe = window.onDbValue(sessionRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data && data.sender !== window.player.myId) {
-          if (data.target && data.target !== window.player.myId) return;
-          this.handleMessage(data);
-        }
-      });
-      this.listeners.push(unsubscribe);
-
-      if (this.isHost) {
-        this.pingInterval = setInterval(() => {
-          if (
-            this.active &&
-            window.audioSys &&
-            window.audioSys.audio &&
-            !window.audioSys.audio.paused
-          ) {
-            this.broadcast({
-              type: "STATUS",
-              playing: true,
-              time: window.audioSys.audio.currentTime,
-            });
-          }
-        }, 3000);
-      }
-
-      setTimeout(() => {
-        this.broadcast({ type: "JOIN" });
-        window.ui.showToast("Joined session!");
-      }, 1000);
-    } catch (e) {
-      window.ui.showToast("Connection Error");
-      console.error("Party Mode error", e);
-    }
-
-    this.updateUI();
-  }
-  leave() {
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    this.broadcast({ type: "LEAVE" });
-    this.active = false;
-    this.listeners.forEach((unsub) => unsub());
-    this.listeners = [];
-    Object.values(this.peers).forEach((pc) => pc.close());
-    this.peers = {};
-    this.dataChannels = {};
-    window.$("partyBtn").classList.remove("active");
-    window.$("partyBtn").style = "";
-    window.$("syncStatus").style.display = "none";
-    this.updateUI();
-    window.ui.showToast("Left Session");
-  }
-  broadcast(data) {
-    if (!this.active || !window.db) return;
-    const serverTime = Date.now() + (window.serverTimeOffset || 0);
-    window.setDb(window.dbRef(window.db, "sessions/" + this.sessionId), {
-      ...data,
-      timestamp: serverTime,
-      sender: window.player.myId,
-    });
-  }
-  updateCardProgress(id, pct) {
-    const card = document.querySelector(`.lib-card[data-id="${id}"]`);
-    if (card) {
-      let prog = card.querySelector(".sync-prog");
-      if (!prog) {
-        card.style.position = "relative";
-        card.style.overflow = "hidden";
-        prog = document.createElement("div");
-        prog.className = "sync-prog";
-        prog.style =
-          "position:absolute; left:0; top:0; width:0%; height:100%; background:var(--accent); opacity:0.15; pointer-events:none; transition:width 0.1s linear, opacity 0.3s; z-index:0; border-radius:inherit;";
-        card.insertBefore(prog, card.firstChild);
-      }
-      prog.style.width = pct + "%";
-      prog.style.opacity = "0.2";
-      if (pct >= 100) {
-        setTimeout(() => {
-          if (prog) prog.style.opacity = "0";
-        }, 800);
-      }
-    }
-  }
-
-  initWebRTC(targetId) {
-    if (this.peers[targetId]) return;
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
-    this.peers[targetId] = pc;
-
-    const dc = pc.createDataChannel("sync", { negotiated: true, id: 0 });
-    dc.binaryType = "arraybuffer";
-    this.dataChannels[targetId] = dc;
-
-    let incomingChunks = [];
-    let incomingMeta = null;
-
-    dc.onmessage = async (e) => {
-      if (typeof e.data === "string") {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "META") {
-          incomingMeta = msg;
-          incomingChunks = [];
-          window.$("syncStatus").innerText = "Downloading P2P...";
-        } else if (msg.type === "DONE") {
-          const blob = new Blob(incomingChunks);
-          blob.name = incomingMeta.name + ".mp3";
-          this.updateCardProgress(incomingMeta.id, 100);
-
-          await window.player.db.add(blob, {
-            beatSignals: incomingMeta.beatSignals,
-            speedPoints: incomingMeta.speedPoints,
-          });
-          await window.player.loadLib();
-
-          incomingChunks = [];
-
-          if (incomingMeta.playImmediately) {
-            window.player.play(incomingMeta.id, null, false);
-            this.broadcast({
-              type: "READY",
-              id: incomingMeta.id,
-              target: this.hostId,
-            });
-          }
-
-          incomingMeta = null;
-          const status = window.$("syncStatus");
-          status.innerText = `Party: ${this.sessionId}`;
-        } else if (msg.type === "SYNC_ALL_DONE") {
-          window.ui.showToast("Library Sync Complete!");
-          window.$("syncStatus").innerText = `Party: ${this.sessionId}`;
-        } else if (msg.type === "NO_SYNC_NEEDED") {
-          window.ui.showToast("All tracks already synced!");
-        }
-      } else {
-        incomingChunks.push(e.data);
-        if (incomingMeta) {
-          const pct = Math.round(
-            (incomingChunks.length / incomingMeta.totalChunks) * 100,
-          );
-          window.$("syncStatus").innerText = `Receiving: ${pct}%`;
-          this.updateCardProgress(incomingMeta.id, pct);
-        }
-      }
-    };
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate)
-        this.broadcast({
-          type: "ICE",
-          target: targetId,
-          candidate: JSON.stringify(e.candidate),
-        });
-    };
-
-    if (this.isHost) {
-      pc.createOffer()
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => {
-          this.broadcast({
-            type: "OFFER",
-            target: targetId,
-            sdp: JSON.stringify(pc.localDescription),
-          });
-        });
-    }
-  }
-
-  async streamFileToDC(dc, s, playImmediately = false) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const buffer = e.target.result;
-        const chunkSize = 64 * 1024; // 64KB chunks for reliable WebRTC routing
-        const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
-
-        dc.send(
-          JSON.stringify({
-            type: "META",
-            id: s.id,
-            name: s.name,
-            totalChunks,
-            beatSignals: s.beatSignals || [],
-            speedPoints: s.speedPoints || [],
-            playImmediately,
-          }),
-        );
-
-        for (let i = 0; i < totalChunks; i++) {
-          const start = i * chunkSize;
-          const end = Math.min(start + chunkSize, buffer.byteLength);
-          const chunk = buffer.slice(start, end);
-
-          // WebRTC backpressure handling
-          while (dc.bufferedAmount > 1024 * 1024) {
-            await new Promise((r) => setTimeout(r, 10)); // throttle to 1MB buffer limit
-          }
-          dc.send(chunk);
-
-          const pct = Math.round(((i + 1) / totalChunks) * 100);
-          window.$("syncStatus").innerText = `Sending: ${pct}%`;
-          this.updateCardProgress(s.id, pct);
-        }
-
-        dc.send(JSON.stringify({ type: "DONE", id: s.id }));
-        window.$("syncStatus").innerText = `Party: ${this.sessionId}`;
-        resolve();
-      };
-      reader.readAsArrayBuffer(s.blob);
-    });
-  }
-
-  syncLibrary() {
-    if (!this.active) return;
-    if (this.isHost) {
-      const manifest = window.player.songs.map((s) => s.id);
-      this.broadcast({ type: "MANIFEST", ids: manifest });
-      window.ui.showToast("Broadcasted Library to Clients...");
-    } else {
-      this.broadcast({ type: "REQ_MANIFEST" });
-      window.ui.showToast("Requested full sync from Host...");
-    }
-  }
-
-  async broadcastInChunks(song) {
-    if (!window.db || !this.sessionId || !this.isHost) return;
-    this.broadcast({
-      type: "PLAY",
-      id: song.id,
-      name: song.name,
-      beatSignals: song.beatSignals || [],
-      speedPoints: song.speedPoints || [],
-    });
-
-    for (const [targetId, dc] of Object.entries(this.dataChannels)) {
-      if (dc.readyState === "open") {
-        this.streamFileToDC(dc, song, true);
-      }
-    }
-  }
-
-  handleMessage(data) {
-    if (data.type === "JOIN" && this.isHost) {
-      window.ui.showToast("User Connected via WebRTC!");
-      this.initWebRTC(data.sender);
-    }
-    if (data.type === "LEAVE") {
-      window.ui.showToast("User Disconnected");
-      if (this.peers[data.sender]) {
-        this.peers[data.sender].close();
-        delete this.peers[data.sender];
-        delete this.dataChannels[data.sender];
-      }
-    }
-
-    if (data.type === "OFFER" && !this.isHost) {
-      this.hostId = data.sender;
-      this.initWebRTC(data.sender);
-      const pc = this.peers[data.sender];
-      pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data.sdp)))
-        .then(() => pc.createAnswer())
-        .then((answer) => pc.setLocalDescription(answer))
-        .then(() =>
-          this.broadcast({
-            type: "ANSWER",
-            target: data.sender,
-            sdp: JSON.stringify(pc.localDescription),
-          }),
-        );
-    }
-    if (data.type === "ANSWER" && this.isHost) {
-      const pc = this.peers[data.sender];
-      if (pc)
-        pc.setRemoteDescription(
-          new RTCSessionDescription(JSON.parse(data.sdp)),
-        );
-    }
-    if (data.type === "ICE") {
-      const pc = this.peers[data.sender];
-      if (pc)
-        pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data.candidate)));
-    }
-
-    if (data.type === "REQ_MANIFEST" && this.isHost) {
-      const manifest = window.player.songs.map((s) => s.id);
-      this.broadcast({ type: "MANIFEST", target: data.sender, ids: manifest });
-    }
-    if (data.type === "MANIFEST" && !this.isHost) {
-      const missing = data.ids.filter(
-        (id) => !window.player.songs.some((s) => s.id === id),
-      );
-      this.broadcast({ type: "WANT_LIST", target: data.sender, missing });
-    }
-    if (data.type === "WANT_LIST" && this.isHost) {
-      const dc = this.dataChannels[data.sender];
-      if (dc && dc.readyState === "open") {
-        if (data.missing.length === 0) {
-          dc.send(JSON.stringify({ type: "NO_SYNC_NEEDED" }));
-          return;
-        }
-        window.ui.showToast(
-          "Syncing " + data.missing.length + " missing tracks to Client!",
-        );
-        const pushSeq = async () => {
-          for (const id of data.missing) {
-            const s = window.player.songs.find((x) => x.id === id);
-            if (s) await this.streamFileToDC(dc, s, false);
-          }
-          dc.send(JSON.stringify({ type: "SYNC_ALL_DONE" }));
-        };
-        pushSeq();
-      } else {
-        window.ui.showToast("P2P Tunnel not ready yet! Try again in 5 sec.");
-      }
-    }
-
-    if (data.type === "PLAY") {
-      this.lastCommandId = data.id;
-      let song = window.player.songs.find(
-        (s) =>
-          s.id === data.id ||
-          s.name === data.name ||
-          (s.name &&
-            s.name.replace(".mp3", "") === data.name.replace(".mp3", "")),
-      );
-      if (song) {
-        if (window.player.currId !== song.id) {
-          window.ui.showToast("Switching: " + song.name);
-          if (data.beatSignals) song.beatSignals = data.beatSignals;
-          if (data.speedPoints) song.speedPoints = data.speedPoints;
-          window.player.play(song.id, null, false);
-          this.broadcast({ type: "READY", id: data.id, target: data.sender });
-        }
-      } else if (!this.isHost) {
-        window.ui.showToast("Buffering track via P2P...");
-      }
-    } else if (
-      data.type === "READY" &&
-      this.isHost &&
-      data.id === this.lastCommandId
-    ) {
-      window.ui.hideSyncPopup();
-      window.audioSys.audio.play();
-      window.ui.updatePlayBtn(true);
-      const finalStatus = window.$("syncStatus");
-      if (finalStatus) finalStatus.innerText = `Party: ${this.sessionId}`;
-    } else if (data.type === "STATUS") {
-      if (data.playing && window.audioSys.audio.paused)
-        window.player.togglePlay();
-      else if (!data.playing && !window.audioSys.audio.paused)
-        window.player.togglePlay();
-
-      if (data.time && data.timestamp) {
-        const localServerTime = Date.now() + (window.serverTimeOffset || 0);
-        const latency = Math.max(0, (localServerTime - data.timestamp) / 1000);
-        const expectedTime = data.time + latency + this.manualOffset / 1000;
-        const drift = expectedTime - window.audioSys.audio.currentTime;
-
-        if (Math.abs(drift) > 0.3) {
-          window.audioSys.audio.currentTime = expectedTime;
-          window.audioSys.audio.playbackRate = window.audioSys.baseSpeed || 1.0;
-        } else if (Math.abs(drift) > 0.02) {
-          const slewRate = drift > 0 ? 1.05 : 0.95;
-          window.audioSys.audio.playbackRate =
-            (window.audioSys.baseSpeed || 1.0) * slewRate;
-        } else {
-          window.audioSys.audio.playbackRate = window.audioSys.baseSpeed || 1.0;
-        }
-      }
-    } else if (data.type === "FX_SYNC" && !this.isHost) {
-      const sl = [null, window.$("bassSlider"), window.$("reverbSlider"), window.$("warpSlider")];
-      if (data.bass !== undefined) {
-        sl[1].value = data.bass;
-        window.audioSys.setBass(data.bass);
-      }
-      if (data.reverb !== undefined) {
-        sl[2].value = data.reverb;
-        window.audioSys.setReverb(data.reverb);
-      }
-      if (data.speed !== undefined) {
-        sl[3].value = data.speed;
-        window.audioSys.setBaseSpeed(data.speed);
-      }
-      if (data.xtreme !== undefined) {
-        window.$("xtremeToggle").checked = data.xtreme;
-        window.audioSys.toggleXtreme();
-      }
-      window.ui.showToast("Host adjusted audio FX");
-    }
-  }
-}
+// Party mode (Jam) lives in party.js now.
 
 class VoiceCommander {
   constructor() {
@@ -6019,7 +5561,6 @@ window.player = new Player();
 window.curveEditor = new CurveEditor();
 window.voiceControl = new VoiceCommander();
 window.exporter = new AudioExporter();
-window.partyMode = new PartyMode();
 window.spotify = new SpotifyManager();
 
 // Handle Spotify Callback
@@ -6033,7 +5574,7 @@ if (window.location.search.includes("code=")) {
 } else {
   // Try to load profile if already connected
   if (window.spotify.isConnected()) {
-    window.spotify.fetchProfile().then(() => {
+    window.spotify.fetchProfile().catch((e) => { window.spotify.lastError = e.message; }).then(() => {
         window.ui.updateSpotifyUI();
     });
   }
@@ -6072,36 +5613,40 @@ setInterval(() => {
     }
 }, 100);
 
-// LITE MODE: turns off glass blur + the big spinning background to save GPU/RAM.
-// On = the Lite Mode toggle in settings, OR automatically while the window is
-// in the background / minimized (so the music keeps playing but your PC works less).
+// LITE MODE: turns off glass blur + the big spinning background to save GPU/RAM (setting only).
+//
+// AWAY MODE (automatic): when the okMUSIC window isn't the one you're using (you clicked
+// another window/game, or it's minimized), everything visual stops dead: visualizer, lyrics
+// scrolling, background spin, beat flash. Only the music + bass keep going. Nothing gets torn
+// down, it's just frozen, so clicking back in is instant.
 (function setupLiteMode() {
-  const state = {
-    user: localStorage.getItem("sv_lite") === "true",
-    away: document.hidden || !document.hasFocus(),
-  };
-  const apply = () =>
-    document.body.classList.toggle("lite-mode", state.user || state.away);
+  const state = { user: localStorage.getItem("sv_lite") === "true" };
+  const apply = () => document.body.classList.toggle("lite-mode", state.user);
   window.setLiteMode = (on) => {
     state.user = !!on;
     localStorage.setItem("sv_lite", String(state.user));
     apply();
   };
-  window.addEventListener("blur", () => {
-    state.away = true;
-    apply();
-  });
-  window.addEventListener("focus", () => {
-    state.away = false;
-    apply();
-  });
-  document.addEventListener("visibilitychange", () => {
-    state.away = document.hidden || !document.hasFocus();
-    apply();
-  });
+  const setAway = () => {
+    const away = document.hidden || !document.hasFocus();
+    if (away === window.okAway) return;
+    window.okAway = away;
+    document.body.classList.toggle("away", away);
+    if (away) {
+      const f = document.getElementById("beat-flash");
+      if (f) f.style.opacity = 0;
+      if (window.viz) window.viz._flashOp = 0;
+    }
+  };
+  window.addEventListener("blur", setAway);
+  window.addEventListener("focus", setAway);
+  document.addEventListener("visibilitychange", setAway);
+  // some browsers skip the focus event when you click back in
+  document.addEventListener("pointerdown", setAway, true);
   const toggle = document.getElementById("liteToggle");
   if (toggle) toggle.checked = state.user;
   apply();
+  setAway();
 })();
 
 // DPPD Setup

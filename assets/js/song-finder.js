@@ -416,6 +416,16 @@ async function doSearch(q) {
 }
 
 // ------------------------------------------------------------------ playlist tab
+// turns Spotify's "no" into plain words + what to do about it
+function spotifyWhy(e) {
+  const m = String((e && (e.why || e.message)) || "");
+  if (/not.*registered|user may not be|developer\.spotify|dashboard/i.test(m))
+    return "Spotify blocked it: your account isn't on this app's allowed list. Fix: developer.spotify.com/dashboard → okMUSIC app → User Management → add your Spotify name + email, then try again.";
+  if (/premium/i.test(m)) return "Spotify blocked it: the Spotify app needs its owner to have Premium (" + m + ").";
+  if (e && e.status === 403) return "Spotify said no (" + m + "). Reconnecting won't fix this one.";
+  return "Couldn't load your playlists (" + m + ").";
+}
+
 async function showMyPlaylists() {
   $("finderFoot").hidden = true;
   const body = $("finderBody");
@@ -442,7 +452,7 @@ async function showMyPlaylists() {
     body.innerHTML =
       e.code === "scope"
         ? `<div class="finder-empty"><i class="fa-brands fa-spotify" style="color:#1db954"></i>Spotify needs one more OK to show your playlists.<br><button type="button" class="set-btn set-btn-spotify" style="margin-top:12px" onclick="window.spotify.login()">Reconnect Spotify</button><br><span style="opacity:.7">Or just paste a playlist link above.</span></div>`
-        : `<div class="finder-empty">Couldn't load your playlists (${esc(e.message)}). Paste a link above instead.</div>`;
+        : `<div class="finder-empty"><i class="fa-brands fa-spotify" style="color:#1db954"></i>${esc(spotifyWhy(e))}<br><span style="opacity:.7">Pasting a playlist link above still works.</span></div>`;
   }
 }
 

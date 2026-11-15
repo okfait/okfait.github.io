@@ -253,7 +253,7 @@ function loop() {
   cancelAnimationFrame(st.raf);
   const step = () => {
     if (!st.open) return;
-    if (!document.hidden) tick(false);
+    if (!document.hidden && !window.okAway) tick(false);
     st.raf = requestAnimationFrame(step);
   };
   st.raf = requestAnimationFrame(step);

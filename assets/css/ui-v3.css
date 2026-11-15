@@ -624,7 +624,7 @@ body.lite-mode #partySetupModal { background: rgba(16, 16, 20, 0.94) !important;
 }
 
 /* ---------- menus that open upward / left, info lines */
-.ios-menu-up { top: auto; bottom: calc(100% + 6px); transform-origin: bottom left; }
+.ios-menu-up { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; transform-origin: bottom left; }
 .ios-menu-left { left: 0; right: auto; transform-origin: top left; }
 .ios-menu-up.ios-menu-right { right: 0; left: auto; transform-origin: bottom right; }
 .ios-menu .menu-info { padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.45); line-height: 1.4; white-space: normal; }
@@ -745,3 +745,99 @@ body.lyrics-open #lyricsPane { opacity: 1; transform: none; pointer-events: auto
   #lyricsPane { width: 100%; bottom: 140px; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(16px) brightness(0.6); -webkit-backdrop-filter: blur(16px) brightness(0.6); }
 }
 body.display-mode #lyricsPane, body.clean-lines-mode #lyricsPane { display: none; }
+
+/* ---------- v2.13: lyrics open = the whole "stage" (glow, beat flash, ripple, controls) follows the player */
+#bg-layer { transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), background 0.8s ease-out; }
+#beat-flash, .controls, .bass-ripple { transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.1s ease-out; }
+@media (min-width: 900px) {
+  body.lyrics-open #bg-layer { left: calc(-50% + 14vw); }
+  body.lyrics-open #beat-flash,
+  body.lyrics-open .controls,
+  body.lyrics-open .bass-ripple { left: 64%; }
+}
+
+/* ---------- v2.13: away mode (window not focused) = everything visual frozen, only music runs */
+body.away *, body.away *::before, body.away *::after { animation-play-state: paused !important; }
+body.away #beat-flash { opacity: 0 !important; }
+body.away .bass-ripple { display: none; }
+
+/* ---------- v2.13: Jam + Phone remote sheets */
+.jam-sheet {
+  position: fixed; inset: 0; z-index: 10050;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s;
+}
+.jam-sheet.open { opacity: 1; pointer-events: auto; }
+.jam-card {
+  width: 100%; max-width: 440px; max-height: calc(100dvh - 32px); overflow-y: auto;
+  padding: 18px 18px 20px;
+  background: rgba(22, 22, 26, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 26px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  transform: translateY(14px) scale(0.98);
+  transition: transform 0.25s var(--ease);
+}
+.jam-sheet.open .jam-card { transform: none; }
+.jam-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.jam-title { font-size: 20px; font-weight: 800; color: #fff; display: flex; gap: 10px; align-items: center; }
+.jam-title i { color: var(--accent); }
+.jam-hint { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.5); line-height: 1.45; margin: 4px 2px 14px; }
+.jam-wait { padding: 30px 0; text-align: center; font-weight: 700; color: rgba(255, 255, 255, 0.7); }
+.jam-or { display: flex; align-items: center; gap: 10px; margin: 16px 0; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.3); }
+.jam-or::before, .jam-or::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1); }
+.jam-join { display: flex; gap: 8px; }
+.jam-join input {
+  flex: 1; min-width: 0;
+  padding: 12px 14px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 0.25em; text-align: center; text-transform: uppercase;
+  outline: none;
+}
+.jam-join input:focus { border-color: var(--accent); }
+.jam-join .set-btn { width: auto; padding: 0 20px; margin: 0; }
+.jam-code-wrap { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; }
+.jam-qr { width: 150px; height: 150px; flex-shrink: 0; background: #fff; border-radius: 16px; padding: 6px; }
+.jam-qr svg { width: 100%; height: 100%; display: block; }
+.jam-code-side { min-width: 0; }
+.jam-code-side small { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); }
+.jam-code { font-size: 34px; font-weight: 900; letter-spacing: 0.12em; color: var(--accent); line-height: 1.1; margin: 2px 0 6px; }
+.jam-code-side p { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.5); line-height: 1.4; margin-bottom: 10px; }
+.jam-code-side .set-btn { padding: 8px 12px; font-size: 12px; }
+.jam-people { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 10px; }
+.jam-people i { color: var(--accent); }
+.jam-status { font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.6); margin: 0 2px 12px; }
+.jam-nudge { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); margin-bottom: 12px; }
+.jam-nudge p { font-size: 11px; color: rgba(255, 255, 255, 0.4); font-weight: 600; margin-top: 8px; }
+.jam-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.7); margin-bottom: 8px; }
+.jam-leave { background: rgba(239, 68, 68, 0.14) !important; color: #f87171 !important; }
+#remoteBtn.active, #partyBtn.active { color: #fbbf24; }
+@media (max-width: 480px) {
+  .jam-code-wrap { flex-direction: column; text-align: center; }
+  .jam-qr { width: 180px; height: 180px; }
+}
+
+/* ---------- v2.13: phone remote mode (this phone controls the PC) */
+.remote-only { display: none !important; }
+body.remote-mode .remote-only { display: flex !important; }
+body.remote-mode .remote-hide,
+body.remote-mode .top-actions > button:not(.lyrics-btn):not(.remote-pill),
+body.remote-mode .more-wrap,
+body.remote-mode #exitCleanBtn,
+body.remote-mode .side-panel,
+body.remote-mode .vol-container,
+body.remote-mode .controls .btn-editor { display: none !important; }
+body.remote-mode .controls { gap: 14px; }
+.remote-pill { display: none; }
+body.remote-mode .remote-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.8);
+  font-size: 11px; font-weight: 800; cursor: pointer;
+}
+@media (max-width: 600px) {
+  body.remote-mode .controls { width: calc(100% - 24px); max-width: 420px; justify-content: space-between; padding: 10px 14px; }
+}

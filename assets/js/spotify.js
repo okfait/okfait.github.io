@@ -84,7 +84,7 @@ export class SpotifyManager {
 
             localStorage.removeItem('spotify_code_verifier');
             this.saveTokens(data);
-            await this.fetchProfile();
+            await this.fetchProfile().catch((e) => { this.lastError = e.message; });
             return true;
         } catch (e) {
             console.error('Spotify Auth Error:', e);
@@ -102,6 +102,27 @@ export class SpotifyManager {
 
         localStorage.setItem('spotify_access_token', this.accessToken);
         if (this.refreshToken) localStorage.setItem('spotify_refresh_token', this.refreshToken);
+        // remember which permissions Spotify actually gave us, so we only ask to
+        // reconnect when one is really missing (not on every "no" from Spotify)
+        if (data.scope) localStorage.setItem('spotify_scope', data.scope);
+    }
+
+    // true / false when we know, null when this login is from before we saved it
+    hasScope(name) {
+        const s = localStorage.getItem('spotify_scope');
+        if (!s) return null;
+        return s.split(' ').includes(name);
+    }
+
+    // a fetch that refreshes the login once if Spotify says the token is old
+    async _get(url) {
+        let token = await this.getValidToken();
+        if (!token) throw Object.assign(new Error('Not connected to Spotify'), { code: 'login' });
+        let res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.status === 401 && await this.refreshAccessToken()) {
+            res = await fetch(url, { headers: { 'Authorization': `Bearer ${this.accessToken}` } });
+        }
+        return res;
     }
 
     async refreshAccessToken() {
@@ -141,6 +162,7 @@ export class SpotifyManager {
             });
 
             const text = await res.text();
+            if (!res.ok) throw new Error('Spotify profile said ' + res.status + ': ' + text.slice(0, 120));
             try {
                 this.profile = JSON.parse(text);
             } catch (e) {
@@ -166,6 +188,7 @@ export class SpotifyManager {
         localStorage.removeItem('spotify_expires_at');
         localStorage.removeItem('spotify_profile');
         localStorage.removeItem('spotify_code_verifier');
+        localStorage.removeItem('spotify_scope');
         this.accessToken = null;
         this.refreshToken = null;
         this.expiresAt = null;
@@ -257,15 +280,20 @@ export class SpotifyManager {
     // ---- v3: used by "Add Songs" -------------------------------------------------
     // Every page of a Spotify list endpoint. Throws {code:'scope'} when the login is
     // from before v3 (missing the new permissions) so the UI can ask to reconnect.
-    async _allPages(url, max = 2000) {
-        const token = await this.getValidToken();
-        if (!token) throw Object.assign(new Error('Not connected to Spotify'), { code: 'login' });
+    async _allPages(url, max = 2000, needScope = 'playlist-read-private') {
         const out = [];
         while (url && out.length < max) {
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await this._get(url);
             if (res.status === 401 || res.status === 403) {
-                throw Object.assign(new Error('Spotify needs you to reconnect (new permissions).'), { code: 'scope' });
+                let why = '';
+                try { const j = await res.json(); why = (j.error && (j.error.message || j.error)) || ''; } catch (e) {}
+                console.warn('Spotify said', res.status, why);
+                const missing = this.hasScope(needScope) === false || /scope/i.test(why);
+                // only a missing permission can be fixed by connecting again
+                if (missing) throw Object.assign(new Error('Spotify needs you to reconnect (new permissions).'), { code: 'scope' });
+                throw Object.assign(new Error(why || ('Spotify said ' + res.status)), { code: 'denied', status: res.status, why });
             }
+            if (res.status === 429) throw new Error('Spotify says slow down, try again in a minute');
             if (!res.ok) throw new Error('Spotify said ' + res.status);
             const data = await res.json();
             out.push(...(data.items || []));
@@ -297,7 +325,7 @@ export class SpotifyManager {
     }
 
     async getLikedSongs() {
-        const items = await this._allPages('https://api.spotify.com/v1/me/tracks?limit=50');
+        const items = await this._allPages('https://api.spotify.com/v1/me/tracks?limit=50', 2000, 'user-library-read');
         return { title: 'Liked Songs', tracks: items.map(e => this._normTrack(e)).filter(Boolean) };
     }
 

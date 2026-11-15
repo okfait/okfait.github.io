@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.12.0</title>
+    <title>okMUSIC v2.13.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -23,9 +23,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.12.0">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.13.0">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.12.0">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.13.0">
 </head>
 <body>
 
@@ -39,8 +39,9 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.12.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.13.0</span></div>
         <div class="top-actions">
+            <button onclick="window.remote.stop()" class="remote-pill" title="Stop being a remote"><i class="fa-solid fa-mobile-screen-button"></i> Remote · Exit</button>
             <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
             <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
             <button onclick="window.ui.toggleQueue()" class="top-icon" title="Queue"><i class="fa-solid fa-list-ul"></i></button>
@@ -50,7 +51,8 @@
                 <div id="moreMenu" class="ios-menu ios-menu-right">
                     <button onclick="window.uiv3.closeMenus(); window.finder.open()"><i class="fa-solid fa-cloud-arrow-down"></i> Add songs</button>
                     <button onclick="window.uiv3.closeMenus(); window.toggleDisplayMode()" id="displayModeBtn"><i class="fa-solid fa-expand"></i> Clean display <small>Esc to exit</small></button>
-                    <button onclick="window.uiv3.closeMenus(); window.partyMode.toggleSetup()" id="partyBtn"><i class="fa-solid fa-satellite-dish"></i> Party mode</button>
+                    <button onclick="window.uiv3.closeMenus(); window.partyMode.toggleSetup()" id="partyBtn"><i class="fa-solid fa-satellite-dish"></i> Jam <small>listen together</small></button>
+                    <button onclick="window.uiv3.closeMenus(); window.remote.toggle()" id="remoteBtn"><i class="fa-solid fa-mobile-screen-button"></i> Phone remote</button>
                     <button onclick="window.uiv3.closeMenus(); window.voiceControl.toggle()" id="micBtn"><i class="fa-solid fa-microphone"></i> Voice control <small>beta</small></button>
                 </div>
             </div>
@@ -88,7 +90,8 @@
     <!-- CONTROLS -->
     <div class="controls glass-panel">
         <button class="btn" onclick="window.player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
-        <button class="btn" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
+        <button class="btn btn-editor" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
+        <button class="btn remote-only" onclick="window.remote.cmd('stop')" title="Stop"><i class="fa-solid fa-stop"></i></button>
         
         <button class="btn" onclick="window.player.prev()"><i class="fa-solid fa-backward-step"></i></button>
         <button class="btn main" onclick="window.player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
@@ -341,7 +344,7 @@
                 </div>
                 <div class="set-row" id="liquidVerRow">
                     <span class="set-icon" style="--c:#8b5cf6"><i class="fa-solid fa-fire"></i></span>
-                    <span class="set-text"><span class="set-label">Liquid version</span><span class="set-sub">V2 = phonk edit style</span></span>
+                    <span class="set-text"><span class="set-label">Liquid version</span></span>
                     <div class="seg" id="liquidVerSeg">
                         <button data-ver="v1" onclick="window.uiv3.setLiquidVer('v1')">V1</button>
                         <button data-ver="v2" onclick="window.uiv3.setLiquidVer('v2')">V2</button>
@@ -391,11 +394,11 @@
             </div>
 
             <!-- ===== PARTY ===== -->
-            <div class="set-group-title">Party Mode</div>
+            <div class="set-group-title">Jam (listen together)</div>
             <div class="set-group grp-party">
                 <label class="set-row">
                     <span class="set-icon" style="--c:#f97316"><i class="fa-solid fa-satellite-dish"></i></span>
-                    <span class="set-text"><span class="set-label">Host controls FX</span><span class="set-sub">Guests hear the host's bass/speed</span></span>
+                    <span class="set-text"><span class="set-label">Host controls FX</span><span class="set-sub">Guests hear the host's bass/reverb</span></span>
                     <span class="ios-switch"><input type="checkbox" id="hostFxToggle" onchange="window.partyMode.hostFxOverride=this.checked; localStorage.setItem('sv_host_fx', this.checked);" checked><i></i></span>
                 </label>
                 <div class="set-row set-row-col">
@@ -583,45 +586,6 @@
         </div>
     </div>
 
-    <!-- PARTY MODE SETUP MODAL -->
-    <div class="glass-modal" id="partySetupModal" style="display:none;">
-        <h3 class="font-bold mb-2 text-xl tracking-tight"><i class="fa-solid fa-satellite-dish text-[var(--accent)] mr-2"></i> Party Mode</h3>
-        <p class="text-xs text-white/50 mb-6 font-semibold">Join or create a synchronized session.</p>
-        
-        <div id="partySetupInitial">
-            <button onclick="window.partyMode.hostParty()" class="w-full bg-[var(--accent)] text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition mb-4"><i class="fa-solid fa-tower-broadcast mr-2"></i> Host Party</button>
-            <div class="flex items-center gap-2 mb-4">
-                <hr class="flex-grow border-white/10">
-                <span class="text-[10px] text-white/30 font-bold uppercase tracking-widest">OR JOIN</span>
-                <hr class="flex-grow border-white/10">
-            </div>
-            <input type="text" id="joinCodeInput" placeholder="Enter Party Code" class="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-2 text-center text-sm font-bold tracking-widest text-white outline-none focus:border-[var(--accent)] transition">
-            <button onclick="window.partyMode.joinParty()" class="w-full bg-white/10 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-white/20 transition mb-3">Join Session</button>
-        </div>
-
-        <div id="partySetupActive" style="display:none;">
-            <div class="bg-white/5 border border-white/10 rounded-xl py-6 mb-4">
-                <p class="text-[10px] uppercase text-white/50 font-bold tracking-widest mb-1">Session Code</p>
-                <p id="activePartyCode" class="text-4xl font-black tracking-widest text-[var(--accent)] filter drop-shadow-[0_0_15px_var(--accent-glow)]"></p>
-            </div>
-            
-            <div id="partySyncProgress" class="bg-white/5 border border-black/20 rounded-xl p-4 mb-4 text-center" style="display:none;">
-                <i id="partySyncIcon" class="fa-solid fa-cloud-arrow-down text-3xl text-[var(--accent)] mb-2 animate-bounce"></i>
-                <div id="partySyncTitle" class="text-xs font-bold text-white/70 mb-1">Downloading...</div>
-                <div id="partySyncPercent" class="text-xl font-black text-[var(--accent)]">0%</div>
-            </div>
-
-            <button onclick="window.partyMode.syncLibrary()" id="syncLibraryBtn" class="w-full bg-[var(--accent)] text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition mb-2" style="display:none;"><i class="fa-solid fa-cloud-arrow-down mr-2"></i> Sync Playlist</button>
-            <div id="syncTrackLabel" class="text-xs font-bold text-white/50 text-center uppercase tracking-widest mb-3" style="display:none;"></div>
-            
-            <button onclick="window.partyMode.leave()" class="w-full bg-red-500/20 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/40 transition">Leave Party</button>
-        </div>
-        
-        <div class="mt-4 pt-4 border-t border-white/10">
-            <button onclick="window.partyMode.toggleSetup()" class="text-xs text-white/50 hover:text-white font-bold transition">Close</button>
-        </div>
-    </div>
-
     <!-- LIQUID TUNER PRO -->
     <div class="tuner-sheet" id="vizTunerModal" style="display:none;">
         <div id="vizTunerHeader" class="tuner-head">
@@ -782,15 +746,18 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.13.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.13.0"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.13.0"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.13.0"></script>
     <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
-    <script type="module" src="assets/js/lyrics.js?v=2.12.0"></script>
-    <script type="module" src="assets/js/liquid-v2.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/lyrics.js?v=2.13.0"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.13.0"></script>
+    <!-- v2.13: Jam (listen together, device to device) + Phone remote -->
+    <script type="module" src="assets/js/party.js?v=2.13.0"></script>
+    <script type="module" src="assets/js/remote.js?v=2.13.0"></script>
 </body>
 </html>
