@@ -10,7 +10,7 @@
 //   lines up to within ~10-20ms. A big jump (seek, lag spike) gets fixed by jumping too.
 // Replaces the old Firebase party mode (that database is locked, so it never connected).
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.13.0";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.13.1";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -224,6 +224,14 @@ function loadHostSong() {
   setStatus("In sync");
 }
 
+// Sets the speed only when it actually changes: phones glitch (tiny dropout) on EVERY speed
+// change, and the old version changed it ~7 times a second = constant stutter.
+function setRate(r) {
+  const a = A();
+  r = Math.round(r * 10000) / 10000;
+  if (Math.abs(a.playbackRate - r) > 0.00005) a.playbackRate = r;
+}
+const drifts = [];
 function guestSync() {
   const h = J.hs;
   const a = A();
@@ -244,44 +252,66 @@ function guestSync() {
     return;
   }
   target = Math.max(0, target);
+  const now = performance.now();
 
   if (!h.playing) {
     if (!a.paused) a.pause();
-    a.playbackRate = h.rate;
+    J.fixUntil = 0;
+    setRate(h.rate);
     if (Math.abs(a.currentTime - target) > 0.04) a.currentTime = target;
     window.ui.updatePlayBtn(false);
+    drifts.length = 0;
     return;
   }
-  const now = performance.now();
   if (a.paused) {
-    a.playbackRate = h.rate;
+    setRate(h.rate);
     a.currentTime = target + J.seekFix;
     J.lastSeek = now;
     J.checkSeek = 1;
+    J.fixUntil = 0;
+    drifts.length = 0;
     a.play().catch(() => setStatus("Tap anywhere to start the sound"));
     window.ui.updatePlayBtn(true);
     return;
   }
-  const drift = target - a.currentTime; // + = we're behind
+  // phones report the play position in rough steps, so look at the middle of the last
+  // few measurements instead of reacting to every jumpy one
+  drifts.push(target - a.currentTime);
+  if (drifts.length > 9) drifts.shift();
+  const drift = [...drifts].sort((x, y) => x - y)[drifts.length >> 1]; // + = we're behind
   J.drift = drift;
-  if (J.checkSeek && now - J.lastSeek > 250) {
+  if (J.checkSeek && now - J.lastSeek > 600 && drifts.length >= 3) {
     // learn how long jumps really take on this device, so the next one lands right
-    J.seekFix = Math.max(0, Math.min(0.35, J.seekFix + drift * 0.6));
+    J.seekFix = Math.max(0, Math.min(0.35, J.seekFix + drift * 0.7));
     J.checkSeek = 0;
   }
-  if (Math.abs(drift) > 0.12 && now - J.lastSeek > 900) {
+  // a correction is running: hold the speed, then go back to normal exactly once
+  if (J.fixUntil) {
+    if (now < J.fixUntil) return;
+    J.fixUntil = 0;
+    J.lastFix = now;
+    setRate(h.rate);
+    drifts.length = 0;
+    return;
+  }
+  if (drifts.length < 5 || now - J.lastSeek < 1500 || now - (J.lastFix || 0) < 1500) {
+    setRate(h.rate);
+  } else if (Math.abs(drift) > 0.2) {
+    // way off (lag spike, seek): jump
     a.currentTime = target + J.seekFix;
     J.lastSeek = now;
     J.checkSeek = 1;
-    a.playbackRate = h.rate;
-  } else if (Math.abs(drift) > 0.006) {
-    // tiny speed nudge (max 1.5%, you can't hear it) until we line up
-    const k = Math.max(-0.015, Math.min(0.015, drift * 0.7));
-    a.playbackRate = h.rate * (1 + k);
-  } else a.playbackRate = h.rate;
+    setRate(h.rate);
+    drifts.length = 0;
+  } else if (Math.abs(drift) > 0.02) {
+    // a bit off: play 1% faster/slower for just long enough to catch up (one change, one change back)
+    const k = drift > 0 ? 0.01 : -0.01;
+    setRate(h.rate * (1 + k));
+    J.fixUntil = now + Math.min(4000, (Math.abs(drift) / 0.01) * 1000);
+  } else setRate(h.rate);
   const ms = Math.round(Math.abs(drift) * 1000);
   const el = $("jamDrift");
-  if (el) el.textContent = ms < 25 ? `in sync (${ms}ms)` : `syncing... ${ms}ms off`;
+  if (el) el.textContent = ms < 30 ? `in sync (${ms}ms)` : `syncing... ${ms}ms off`;
 }
 
 function applyFx(m) {
@@ -376,7 +406,7 @@ async function startGuest(code) {
     });
     J.role = "guest";
     J.code = code;
-    J.syncTimer = setInterval(guestSync, 150);
+    J.syncTimer = setInterval(guestSync, 200);
     toast("Joined the jam 🎶");
     setBadge();
   } catch (e) {

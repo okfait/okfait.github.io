@@ -967,6 +967,16 @@ class AudioSystem {
     this.bass.connect(this.gain);
     this.gain.connect(this.ctx.destination);
 
+    // the sliders already hold your saved bass / reverb / xtreme (loaded before this existed),
+    // so apply them now - before, a refresh + play started at +0 bass until you touched a slider
+    this.revGain.gain.value = (parseFloat(this.reverbVal) || 0) / 50;
+    if (this.xtremeOn) {
+      this.bass.type = "peaking";
+      this.bass.frequency.value = 60;
+      this.bass.Q.value = 1.5;
+    }
+    this.updateDynamicBass();
+
     this.learningController = new okMUSICLearningController();
     window.learningController = this.learningController;
     console.log("Advanced Native AnalyserNode Bass Detection initialized.");
@@ -1396,11 +1406,12 @@ class Visualizer {
 
     // Load Persisted Mode
     const savedMode = localStorage.getItem("okmusic_viz_mode");
-    this.mode = savedMode || "ring";
+    this.mode = savedMode || "liquid";
 
-    this.smooth = true;
-    this.flash = true;
-    this.rippleEffect = true;
+    // defaults for new users: liquid lines off, beat flash + ripple on (your choice is remembered)
+    this.smooth = localStorage.getItem("sv_liquid_lines") === "true";
+    this.flash = localStorage.getItem("sv_beat_flash") !== "false";
+    this.rippleEffect = localStorage.getItem("sv_ripple") !== "false";
 
     // Load Persisted Config
     const savedConfig = localStorage.getItem("okmusic_viz_config");
@@ -1427,7 +1438,8 @@ class Visualizer {
 
     // Initialize 200 background particles
     this.particles = [];
-    for (let i = 0; i < 200; i++) {
+    // phones get fewer sparks (same look, they're tiny and spread out anyway)
+    for (let i = 0; i < (this._isMobile ? 80 : 200); i++) {
         this.particles.push(new VisualizerParticle(window.innerWidth, window.innerHeight));
     }
 
@@ -1440,6 +1452,7 @@ class Visualizer {
     }, 500);
   }
   resize() {
+    if (this.cv.width === window.innerWidth && Math.abs(this.cv.height - window.innerHeight) < 120 && this._isMobile) return;
     this.cv.width = window.innerWidth;
     this.cv.height = window.innerHeight;
     this._isMobile =
@@ -5027,7 +5040,7 @@ class Player {
     this.songs = [];
     this.currId = null;
     this.loop = 0;
-    this.autoDj = false;
+    this.autoDj = localStorage.getItem("sv_auto_dj") !== "false"; // on unless you turned it off
     this.playlist = [];
     this.shuffle = false;
     this.shuffleHistory = [];
@@ -5067,6 +5080,15 @@ class Player {
         console.log("Restoring song:", song.name);
         this.currId = song.id;
         this.currentTrack = song;
+        if (!window.audioSys.globalAudio) {
+          const as = window.audioSys;
+          if (song.bassVal !== undefined) { window.$("bassSlider").value = song.bassVal; as.bassVal = song.bassVal; window.$("bassVal").innerText = `+${song.bassVal}dB`; }
+          if (song.reverbVal !== undefined) { window.$("reverbSlider").value = song.reverbVal; as.reverbVal = song.reverbVal; window.$("reverbVal").innerText = song.reverbVal + "%"; }
+          if (song.baseSpeed !== undefined) { window.$("warpSlider").value = song.baseSpeed; as.baseSpeed = parseFloat(song.baseSpeed); window.$("pitchVal").innerText = song.baseSpeed + "x"; }
+          if (song.xtremeOn !== undefined) { window.$("xtremeToggle").checked = song.xtremeOn; as.xtremeOn = song.xtremeOn; }
+          as.updateDynamicBass();
+          if (window.ui.updateMetaTags) window.ui.updateMetaTags();
+        }
         window.ui.setTrack(song);
         
         // AUTO-EXPAND folders to show the song
@@ -5430,6 +5452,8 @@ class Player {
     window.$("btnLoop").style.color = this.loop ? "var(--accent)" : "inherit";
   }
   loadSettings() {
+    const glob0 = localStorage.getItem("sv_global_audio") !== "false";
+    window.audioSys.globalAudio = glob0;
     const vol = localStorage.getItem("okmusic_volume");
     if (vol && window.$("volSlider")) {
         window.ui.updateVolume(parseFloat(vol));
@@ -5479,7 +5503,7 @@ class Player {
     const xtr = localStorage.getItem("sv_xtreme") === "true";
     window.$("xtremeToggle").checked = xtr;
     window.audioSys.toggleXtreme();
-    const glob = localStorage.getItem("sv_global_audio") === "true";
+    const glob = localStorage.getItem("sv_global_audio") !== "false";
     window.$("globalAudioToggle").checked = glob;
     window.audioSys.globalAudio = glob;
     const sync = localStorage.getItem("sv_party_sync");
@@ -5562,6 +5586,16 @@ window.curveEditor = new CurveEditor();
 window.voiceControl = new VoiceCommander();
 window.exporter = new AudioExporter();
 window.spotify = new SpotifyManager();
+
+// switches show what's actually saved (the page itself starts with the new-user defaults)
+(function syncSwitches() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+  set("autoDjToggle", window.player.autoDj);
+  set("liquidLinesToggle", window.viz.smooth);
+  set("beatFlashToggle", window.viz.flash);
+  set("rippleToggle", window.viz.rippleEffect);
+  set("globalAudioToggle", window.audioSys.globalAudio);
+})();
 
 // Handle Spotify Callback
 if (window.location.search.includes("code=")) {
