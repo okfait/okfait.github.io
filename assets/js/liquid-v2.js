@@ -188,7 +188,7 @@ function buildBg(w, h, color) {
   const tint = true; // background is always in your color
   // 1. tiny copy of the middle of the cover
   const iw = img.naturalWidth, ih = img.naturalHeight;
-  const side = Math.min(iw, ih) * 0.82;
+  const side = Math.min(iw, ih);
   const tw = 120, th = 120;
   const tiny = makeCanvas(tw, th);
   const t = tiny.getContext("2d");
@@ -226,9 +226,12 @@ function buildBg(w, h, color) {
   const g = c.getContext("2d");
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = "high";
+  // black first, so the space around the cover is dark (not the gray the "multiply" step below would leave)
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, bw, bh);
   if ("filter" in g) g.filter = `blur(${Math.max(2, Math.round(bw / 70))}px) saturate(1.2)`;
-  // the cover as a big square in the middle (bigger than the player, so you can see it around it)
-  const sq = Math.min(bw, bh) * 1.6;
+  // v2.15.3: the WHOLE cover as a square in the middle, as tall as the screen (was 1.6x = way too zoomed in)
+  const sq = Math.min(bw, bh) * 1.05;
   g.drawImage(tiny, (bw - sq) / 2, (bh - sq) / 2, sq, sq);
   if ("filter" in g) g.filter = "none";
   // dark like the edits: only the bright parts glow through
@@ -237,7 +240,7 @@ function buildBg(w, h, color) {
   g.fillRect(0, 0, bw, bh);
   // soft round fade at the edges = melts into the dark, no square "picture stuck on" edges
   g.globalCompositeOperation = "destination-in";
-  const fade = g.createRadialGradient(bw / 2, bh / 2, sq * 0.2, bw / 2, bh / 2, sq * 0.5);
+  const fade = g.createRadialGradient(bw / 2, bh / 2, sq * 0.3, bw / 2, bh / 2, sq * 0.72); // wide enough to keep the corners
   fade.addColorStop(0, "rgba(0,0,0,1)");
   fade.addColorStop(0.6, "rgba(0,0,0,0.8)");
   fade.addColorStop(1, "rgba(0,0,0,0)");
@@ -329,7 +332,8 @@ function frame(ctx, w, h, buf, viz) {
   const rot = S.tilt + Math.sin(T * 0.23) * 0.01;
   if (S.bg) {
     // big enough that the tilt + shake never show an edge, even on a tall phone screen
-    const z = 1.1 + Math.abs(rot) * (h / w + w / h) + punch * 0.07 + bass * 0.02;
+    // (edges are faded out already, so no extra zoom needed to hide them)
+    const z = 1 + punch * 0.05 + bass * 0.015;
     ctx.save();
     ctx.setTransform(D, 0, 0, D, 0, 0);
     ctx.translate(w / 2 + sx * 0.5, h / 2 + sy * 0.5);
