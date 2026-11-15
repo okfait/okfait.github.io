@@ -226,24 +226,41 @@ function buildBg(w, h, color) {
   const g = c.getContext("2d");
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = "high";
-  // black first, so the space around the cover is dark (not the gray the "multiply" step below would leave)
+  // v2.15.5: the WHOLE cover in the middle (as tall as the screen), with MIRRORED copies next to it
+  // (left one flipped left-right, right one too, same up/down on phones) = the picture keeps going
+  // across the whole screen with no cut edges, like a reflection
+  const sq = Math.min(bw, bh) * 1.05;
+  const tiles = makeCanvas(bw, bh);
+  const tg = tiles.getContext("2d");
+  tg.imageSmoothingEnabled = true;
+  tg.imageSmoothingQuality = "high";
+  const x0 = (bw - sq) / 2, y0 = (bh - sq) / 2;
+  const nx = Math.ceil(x0 / sq), ny = Math.ceil(y0 / sq);
+  for (let i = -nx; i <= nx; i++) {
+    for (let j = -ny; j <= ny; j++) {
+      const fx = i % 2 !== 0, fy = j % 2 !== 0; // every other copy is flipped = seamless joins
+      tg.save();
+      tg.translate(x0 + i * sq + (fx ? sq : 0), y0 + j * sq + (fy ? sq : 0));
+      tg.scale(fx ? -1 : 1, fy ? -1 : 1);
+      tg.drawImage(tiny, 0, 0, sq, sq);
+      tg.restore();
+    }
+  }
   g.fillStyle = "#000";
   g.fillRect(0, 0, bw, bh);
-  if ("filter" in g) g.filter = `blur(${Math.max(1, Math.round(bw / 320))}px) saturate(1.2)`; // just a little soft (was ~28px on screen)
-  // v2.15.3: the WHOLE cover as a square in the middle, as tall as the screen (was 1.6x = way too zoomed in)
-  const sq = Math.min(bw, bh) * 1.05;
-  g.drawImage(tiny, (bw - sq) / 2, (bh - sq) / 2, sq, sq);
+  // blur all of it in one go (blurring each copy on its own would leave dark lines where they meet)
+  if ("filter" in g) g.filter = `blur(${Math.max(1, Math.round(bw / 320))}px) saturate(1.2)`; // just a little soft
+  g.drawImage(tiles, 0, 0);
   if ("filter" in g) g.filter = "none";
   // dark like the edits: only the bright parts glow through
   g.globalCompositeOperation = "multiply";
   g.fillStyle = "rgb(150,150,150)";
   g.fillRect(0, 0, bw, bh);
-  // soft round fade at the edges = melts into the dark, no square "picture stuck on" edges
+  // gentle darkening toward the screen edges so the middle (the real cover) stands out
   g.globalCompositeOperation = "destination-in";
-  const fade = g.createRadialGradient(bw / 2, bh / 2, sq * 0.3, bw / 2, bh / 2, sq * 0.72); // wide enough to keep the corners
+  const fade = g.createRadialGradient(bw / 2, bh / 2, sq * 0.35, bw / 2, bh / 2, Math.hypot(bw, bh) / 2);
   fade.addColorStop(0, "rgba(0,0,0,1)");
-  fade.addColorStop(0.6, "rgba(0,0,0,0.8)");
-  fade.addColorStop(1, "rgba(0,0,0,0)");
+  fade.addColorStop(1, "rgba(0,0,0,0.35)");
   g.fillStyle = fade;
   g.fillRect(0, 0, bw, bh);
   g.globalCompositeOperation = "source-over";
@@ -332,8 +349,8 @@ function frame(ctx, w, h, buf, viz) {
   const rot = S.tilt + Math.sin(T * 0.23) * 0.01;
   if (S.bg) {
     // big enough that the tilt + shake never show an edge, even on a tall phone screen
-    // (edges are faded out already, so no extra zoom needed to hide them)
-    const z = 1 + punch * 0.05 + bass * 0.015;
+    // the background fills the screen now, so zoom in just enough that the tilt never shows an empty corner
+    const z = 1.02 + Math.abs(rot * 0.6) * (h / w + w / h) + punch * 0.05 + bass * 0.015;
     ctx.save();
     ctx.setTransform(D, 0, 0, D, 0, 0);
     ctx.translate(w / 2 + sx * 0.5, h / 2 + sy * 0.5);
