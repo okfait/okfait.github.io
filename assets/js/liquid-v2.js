@@ -189,7 +189,7 @@ function buildBg(w, h, color) {
   // 1. tiny copy of the middle of the cover
   const iw = img.naturalWidth, ih = img.naturalHeight;
   const side = Math.min(iw, ih);
-  const tw = 120, th = 120;
+  const tw = 320, th = 320; // v2.15.4: was 120 = mush, now you can actually see the picture
   const tiny = makeCanvas(tw, th);
   const t = tiny.getContext("2d");
   // the whole middle square of the cover (not zoomed into a strip any more)
@@ -221,7 +221,7 @@ function buildBg(w, h, color) {
   }
   S.bgGain = Math.max(0.5, Math.min(1.8, 0.2 / Math.max(0.04, lum)));
   // 3. blow it up with a big blur = color clouds
-  const bw = Math.round(Math.min(480, w / 3)), bh = Math.max(8, Math.round((bw * h) / w));
+  const bw = Math.round(Math.min(960, w / 2)), bh = Math.max(8, Math.round((bw * h) / w));
   const c = makeCanvas(bw, bh);
   const g = c.getContext("2d");
   g.imageSmoothingEnabled = true;
@@ -229,7 +229,7 @@ function buildBg(w, h, color) {
   // black first, so the space around the cover is dark (not the gray the "multiply" step below would leave)
   g.fillStyle = "#000";
   g.fillRect(0, 0, bw, bh);
-  if ("filter" in g) g.filter = `blur(${Math.max(2, Math.round(bw / 70))}px) saturate(1.2)`;
+  if ("filter" in g) g.filter = `blur(${Math.max(1, Math.round(bw / 320))}px) saturate(1.2)`; // just a little soft (was ~28px on screen)
   // v2.15.3: the WHOLE cover as a square in the middle, as tall as the screen (was 1.6x = way too zoomed in)
   const sq = Math.min(bw, bh) * 1.05;
   g.drawImage(tiny, (bw - sq) / 2, (bh - sq) / 2, sq, sq);
