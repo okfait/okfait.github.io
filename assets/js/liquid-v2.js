@@ -1,7 +1,7 @@
-// Liquid V2 (v2.14.0): the V1 liquid shape, with the phonk-edit EFFECTS on top.
+// Liquid V2 (v2.14.0, default since v2.15.0): the V1 liquid shape, with the phonk-edit EFFECTS on top.
 //
 // What's on screen, back to front:
-//  - the album art blown up as the background, turned 2-tone (black -> your color -> white),
+//  - a soft glow made from the cover's colors (2-tone in your color if Album Color Tint is on),
 //    dark, and it moves with the "camera"
 //  - the normal V1 liquid (same shape, same settings), with a soft bloom around it
 //  - a ring of little teeth spinning around the cover (faster on bass) + shockwave rings on kicks
@@ -159,6 +159,11 @@ function coverSrc() {
   const t = window.player && window.player.currentTrack;
   return t && typeof t.art === "string" ? t.art : "";
 }
+// The background is a GLOW made from the cover's colors, never a picture you can recognize:
+//  - only the middle of the cover is used (YouTube thumbnails have black bars baked in on the
+//    sides - those showed up as dark stripes)
+//  - it's shrunk to a few dozen pixels first, then blown up with a big blur = soft color clouds
+//  - bright covers are dimmed and dark ones lifted, so every song glows about the same amount
 function buildBg(w, h, color) {
   const src = coverSrc();
   if (!src) {
@@ -178,22 +183,54 @@ function buildBg(w, h, color) {
   }
   const img = S.bgImg;
   if (!img || !img.complete || !img.naturalWidth) return;
-  // small on purpose: it's dark + soft, and it gets stretched (cheap to draw every frame)
-  const bw = Math.round(Math.min(640, w / 2)), bh = Math.round((bw * h) / w);
+  const tint = !window.vizOpts || window.vizOpts.tint;
+  // 1. tiny copy of the middle of the cover
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const side = Math.min(iw, ih) * 0.82;
+  const tw = 28, th = Math.max(8, Math.round((tw * h) / w));
+  const tiny = makeCanvas(tw, th);
+  const t = tiny.getContext("2d");
+  // always a square from the middle (stretched to the screen shape - it's a blur, nobody can tell)
+  t.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, tw, th);
+  if (tint) {
+    // black -> your color: light parts of the cover glow in your color, dark parts stay dark
+    if ("filter" in t) {
+      const c2 = makeCanvas(tw, th);
+      const g2 = c2.getContext("2d");
+      g2.filter = "grayscale(1) contrast(1.4)";
+      g2.drawImage(tiny, 0, 0);
+      t.clearRect(0, 0, tw, th);
+      t.drawImage(c2, 0, 0);
+    }
+    t.globalCompositeOperation = "multiply";
+    t.fillStyle = color;
+    t.fillRect(0, 0, tw, th);
+    t.globalCompositeOperation = "source-over";
+  }
+  // 2. how bright is it? (so a white cover doesn't flood the screen)
+  let lum = 0.3;
+  try {
+    const d = t.getImageData(0, 0, tw, th).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    lum = sum / (d.length / 4) / 255;
+  } catch (e) {
+    /* cover from another site: can't read it, use a safe guess */
+  }
+  S.bgGain = Math.max(0.45, Math.min(1.6, 0.22 / Math.max(0.05, lum)));
+  // 3. blow it up with a big blur = color clouds
+  const bw = Math.round(Math.min(480, w / 3)), bh = Math.max(8, Math.round((bw * h) / w));
   const c = makeCanvas(bw, bh);
   const g = c.getContext("2d");
-  const sc = Math.max(bw / img.naturalWidth, bh / img.naturalHeight) * 1.15;
-  const iw = img.naturalWidth * sc, ih = img.naturalHeight * sc;
-  if ("filter" in g) g.filter = "grayscale(1) contrast(1.7) brightness(0.5) blur(1.5px)";
-  g.drawImage(img, (bw - iw) / 2, (bh - ih) / 2, iw, ih);
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = "high";
+  if ("filter" in g) g.filter = `blur(${Math.round(bw / 14)}px) saturate(1.2)`;
+  const pad = bw / 6; // bigger than the canvas so the blur doesn't fade at the edges
+  g.drawImage(tiny, -pad, -pad * (bh / bw), bw + pad * 2, bh + pad * 2 * (bh / bw));
   if ("filter" in g) g.filter = "none";
-  // black -> color -> white: keep the light/dark, paint everything in your color
-  g.globalCompositeOperation = "color";
-  g.fillStyle = color;
-  g.fillRect(0, 0, bw, bh);
-  // dark like the edits: only the bright parts of the cover glow through
+  // dark like the edits: only the bright parts glow through
   g.globalCompositeOperation = "multiply";
-  g.fillStyle = "rgb(120,120,120)";
+  g.fillStyle = "rgb(150,150,150)";
   g.fillRect(0, 0, bw, bh);
   g.globalCompositeOperation = "source-over";
   S.bg = c;
@@ -230,7 +267,8 @@ function frame(ctx, w, h, buf, viz) {
   // ---------------------------------------------------------------- kicks
   if (S.kickSeq !== S.usedSeq) {
     S.usedSeq = S.kickSeq;
-    if (!paused) {
+    // Settings > Visualizer > Beat Effects (on by default)
+    if (!paused && (!window.vizOpts || window.vizOpts.beatFx)) {
       const k = S.kickStr;
       S.spring.v += 42 * k;
       S.shake = Math.min(1, S.shake + 0.5 * k);
@@ -269,7 +307,7 @@ function frame(ctx, w, h, buf, viz) {
   const hideShape = document.body.classList.contains("clean-lines-mode");
 
   // ---------------------------------------------------------------- background (camera moves it, a bit less than the front = depth)
-  const key = coverSrc() + "|" + col.line + "|" + w + "x" + h;
+  const key = coverSrc() + "|" + col.line + "|" + w + "x" + h + "|" + (!window.vizOpts || window.vizOpts.tint);
   if (S.bgKey !== key && S.bgKey !== "loading") {
     buildBg(w, h, col.line);
     if (S.bgKey !== "loading") S.bgKey = key;
@@ -286,8 +324,15 @@ function frame(ctx, w, h, buf, viz) {
     ctx.translate(w / 2 + sx * 0.5, h / 2 + sy * 0.5);
     ctx.rotate(rot * 0.6);
     ctx.scale(z, z);
-    ctx.globalAlpha = Math.min(0.6, 0.28 + bass * 0.12 + punch * 0.2);
+    ctx.globalAlpha = Math.min(0.75, (0.3 + bass * 0.12 + punch * 0.2) * (S.bgGain || 1));
     ctx.drawImage(S.bg, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  // floating sparks (Settings > Visualizer > Particles), on top of the background
+  if ((window.vizConfig || {}).sparks !== false && viz.drawSparks) {
+    ctx.save();
+    ctx.setTransform(D, 0, 0, D, 0, 0);
+    viz.drawSparks(ctx, w, h, viz._avgVol || 0);
     ctx.restore();
   }
 
@@ -430,7 +475,7 @@ function frame(ctx, w, h, buf, viz) {
 
 function active() {
   if (window.__liquidVerOverride) return window.__liquidVerOverride === "v2";
-  return (localStorage.getItem("okmusic_liquid_ver") || "v1") === "v2";
+  return (localStorage.getItem("okmusic_liquid_ver") || "v2") === "v2"; // V2 is the default since v2.15.0
 }
 
 function reset() {

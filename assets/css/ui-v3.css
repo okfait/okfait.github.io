@@ -590,38 +590,90 @@ body.lite-mode .finder-sheet,
 body.lite-mode .glass-modal,
 body.lite-mode #partySetupModal { background: rgba(16, 16, 20, 0.94) !important; }
 
-/* ---------- settings icons: each section has its own look */
-.set-icon { position: relative; overflow: hidden; }
-/* Sound: warm glossy gradient squircles */
-.grp-sound .set-icon {
-  background: linear-gradient(145deg, #ff6a5a, #e8245a);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 10px rgba(232, 36, 90, 0.35);
+/* ---------- settings (v2.15.0): plain icons (no tiles), and every section's CARD has its own look
+   that matches what it does. Icons take the section's colors. */
+.set-icon {
+  width: 22px; height: 22px; border-radius: 0;
+  background: none !important; border: none !important; box-shadow: none !important;
+  font-size: 16px; color: var(--ic, rgba(255, 255, 255, 0.8));
+  position: relative; overflow: visible;
 }
-/* Look: frosted circles tinted with your accent color */
-.grp-look .set-icon {
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.06));
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  color: color-mix(in srgb, var(--accent) 60%, #fff);
-  box-shadow: none;
+.set-icon i {
+  background: var(--ic-grad, none);
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 6px var(--ic-glow, transparent));
 }
-/* Visualizer: deep neon gradient */
-.grp-viz .set-icon {
-  background: linear-gradient(145deg, #5b5cf0, #b23cf0 60%, #ff4fd8);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 3px 12px rgba(178, 60, 240, 0.4);
+.set-icon i[class] { color: var(--ic-text, inherit); }
+.set-group > .set-row + .set-row::before,
+.set-group > .set-row + .set-details::before,
+.set-group > .set-details + .set-row::before,
+.set-group > .set-details + .set-details::before { left: 48px; }
+.set-group[class*="grp-"] {
+  position: relative; isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background-clip: padding-box;
 }
-/* Party: sunset */
-.grp-party .set-icon {
-  background: linear-gradient(145deg, #ffb340, #ff6b2c);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+/* the decoration lives in its own layer behind the rows (rounded, clipped), so menus can still stick out */
+.set-group[class*="grp-"]::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1;
+  pointer-events: none; overflow: hidden;
 }
-/* Advanced: plain outline, nerdy */
-.grp-adv .set-icon {
-  background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
-  color: rgba(255, 255, 255, 0.75);
-  box-shadow: none;
+
+/* SOUND: warm speaker-cone glow + a faint sound wave along the bottom */
+.grp-sound { --ic-grad: linear-gradient(160deg, #ffb36b, #ff4d6d); --ic-text: transparent; --ic-glow: rgba(255, 77, 109, 0.45); }
+.grp-sound::after {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='40' viewBox='0 0 240 40'%3E%3Cpath d='M0 20 Q15 2 30 20 T60 20 T90 20 T120 20 T150 20 T180 20 T210 20 T240 20' fill='none' stroke='%23ff6a5a' stroke-opacity='.16' stroke-width='2'/%3E%3Cpath d='M0 20 Q15 32 30 20 T60 20 T90 20 T120 20 T150 20 T180 20 T210 20 T240 20' fill='none' stroke='%23ffb36b' stroke-opacity='.09' stroke-width='1.5'/%3E%3C/svg%3E") repeat-x left bottom 6px / 240px 40px,
+    radial-gradient(120% 70% at 100% 0%, rgba(255, 77, 109, 0.16), transparent 60%),
+    radial-gradient(90% 60% at 0% 100%, rgba(255, 160, 80, 0.10), transparent 60%),
+    rgba(255, 255, 255, 0.05);
 }
+
+/* LOOK: a soft aurora in YOUR color, with a rainbow sheen on the top edge */
+.grp-look { --ic: color-mix(in srgb, var(--accent) 70%, #fff); --ic-glow: color-mix(in srgb, var(--accent) 50%, transparent); }
+.grp-look::after {
+  background:
+    linear-gradient(90deg, #ff5f6d, #ffc371, #4ade80, #60a5fa, #c084fc) top / 100% 2px no-repeat,
+    radial-gradient(80% 60% at 15% 0%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%),
+    radial-gradient(70% 50% at 100% 100%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    rgba(255, 255, 255, 0.05);
+}
+
+/* VISUALIZER: dark neon stage - a liquid-ring glow in the corner + spectrum bars rising at the bottom */
+.grp-viz { --ic-grad: linear-gradient(160deg, #7c7dff, #c45cff 55%, #ff5fd8); --ic-text: transparent; --ic-glow: rgba(196, 92, 255, 0.5); }
+.grp-viz::after {
+  background:
+    radial-gradient(circle at 104% -4%, transparent 26px, rgba(196, 92, 255, 0.35) 27px, rgba(196, 92, 255, 0.35) 29px, transparent 30px),
+    radial-gradient(circle at 104% -4%, transparent 46px, rgba(255, 95, 216, 0.16) 47px, rgba(255, 95, 216, 0.16) 48px, transparent 49px),
+    radial-gradient(circle at 104% -4%, rgba(124, 125, 255, 0.28), transparent 120px),
+    repeating-linear-gradient(90deg, rgba(196, 92, 255, 0.13) 0 6px, transparent 6px 11px) left bottom / 100% 34px no-repeat,
+    linear-gradient(0deg, rgba(10, 6, 30, 0.6), transparent 45%),
+    linear-gradient(160deg, rgba(40, 20, 90, 0.35), rgba(255, 255, 255, 0.04));
+  -webkit-mask: linear-gradient(#000, #000);
+}
+
+/* SPOTIFY: green */
+#spotifyDisconnected, #spotifyConnected { --ic: #1DB954; border: 1px solid rgba(29, 185, 84, 0.18);
+  background: radial-gradient(100% 80% at 100% 0%, rgba(29, 185, 84, 0.16), transparent 65%), rgba(255, 255, 255, 0.05) !important; }
+
+/* JAM: sunset - two overlapping circles = two people listening together */
+.grp-party { --ic-grad: linear-gradient(160deg, #ffd166, #ff6b2c); --ic-text: transparent; --ic-glow: rgba(255, 140, 50, 0.45); }
+.grp-party::after {
+  background:
+    radial-gradient(circle at 88% 50%, rgba(255, 140, 50, 0.20) 0 26px, transparent 27px),
+    radial-gradient(circle at 80% 50%, rgba(255, 209, 102, 0.16) 0 26px, transparent 27px),
+    linear-gradient(120deg, rgba(255, 107, 44, 0.12), rgba(255, 255, 255, 0.04) 60%);
+}
+
+/* ADVANCED: blueprint grid, nerdy mono */
+.grp-adv { --ic: #7dd3fc; --ic-glow: rgba(125, 211, 252, 0.35); }
+.grp-adv::after {
+  background:
+    linear-gradient(rgba(125, 211, 252, 0.06) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(90deg, rgba(125, 211, 252, 0.06) 1px, transparent 1px) 0 0 / 16px 16px,
+    rgba(14, 30, 48, 0.45);
+}
+.grp-sound, .grp-look, .grp-viz, .grp-party, .grp-adv { background: transparent !important; }
 
 /* ---------- menus that open upward / left, info lines */
 .ios-menu-up { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; transform-origin: bottom left; }
@@ -867,55 +919,167 @@ body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .controls .btn.main { width: 54px; }
 }
 
-/* ---------- v2.13.1: PT (pulsating tutorial) */
+/* ---------- PT (pulsating tutorial), v2.15.0 look:
+   a spotlight (its giant shadow dims the page) glides between steps, rings ripple out of it,
+   a finger taps, the label pops in with an arrow, dots show progress, "all set" burst at the end */
 .pt-block {
   position: fixed; left: 0; top: 0; z-index: 30000;
-  background: rgba(0, 0, 0, 0.74);
-  display: none;
+  background: transparent; display: none;
 }
-.pt-hole {
+.pt-spot {
   position: fixed; left: 0; top: 0; z-index: 30001;
-  pointer-events: none; display: none;
+  pointer-events: none; opacity: 0;
   border-radius: 16px;
-  box-shadow: 0 0 0 2px var(--accent), 0 0 24px 4px var(--accent-glow, rgba(96, 165, 250, 0.5));
-  animation: pt-pulse 1.3s ease-in-out infinite;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 85%, #fff),
+    0 0 26px 6px var(--accent-glow, rgba(96, 165, 250, 0.5)),
+    0 0 0 200vmax rgba(4, 4, 8, 0.74);
+  transition: opacity 0.35s, border-radius 0.3s, box-shadow 0.5s;
+  animation: pt-breathe 1.6s ease-in-out infinite;
 }
-@keyframes pt-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 18px 2px var(--accent-glow, rgba(96, 165, 250, 0.45)); }
-  50% { box-shadow: 0 0 0 5px var(--accent), 0 0 42px 12px var(--accent-glow, rgba(96, 165, 250, 0.7)); }
+body:not(.pt-on) .pt-spot { box-shadow: 0 0 0 2px transparent, 0 0 0 0 transparent, 0 0 0 200vmax rgba(4, 4, 8, 0); }
+@keyframes pt-breathe {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35); }
+}
+.pt-ripple {
+  position: absolute; inset: -2px; border-radius: inherit;
+  border: 2px solid color-mix(in srgb, var(--accent) 80%, #fff);
+  animation: pt-ripple 1.8s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.pt-ripple2 { animation-delay: 0.9s; }
+@keyframes pt-ripple {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+.pt-spot.pt-out { animation: pt-spot-out 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes pt-spot-out { to { transform: scale(3); opacity: 0; } }
+.pt-finger {
+  position: fixed; left: 0; top: 0; z-index: 30003;
+  pointer-events: none; opacity: 0;
+  font-size: 26px; color: #fff;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6));
+  transition: opacity 0.3s;
+}
+.pt-finger i { display: block; transform-origin: 30% 10%; animation: pt-tap 1.4s ease-in-out infinite; }
+@keyframes pt-tap {
+  0%, 100% { transform: translate(6px, 8px) rotate(-12deg) scale(1); }
+  40% { transform: translate(0, 0) rotate(-12deg) scale(0.9); }
+  50% { transform: translate(0, 0) rotate(-12deg) scale(0.82); }
+  65% { transform: translate(3px, 4px) rotate(-12deg) scale(0.95); }
 }
 .pt-label {
   position: fixed; left: 0; top: 0; z-index: 30002;
-  pointer-events: none; display: none;
-  padding: 9px 14px; border-radius: 14px;
-  background: var(--accent); color: #000;
+  pointer-events: none; opacity: 0;
+  padding: 10px 15px; border-radius: 16px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 92%, #fff), var(--accent));
+  color: #000;
   font-size: 14px; font-weight: 800; line-height: 1.3;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  animation: pt-bob 1.3s ease-in-out infinite;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 30px var(--accent-glow, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: opacity 0.25s;
+}
+.pt-label::before {
+  content: ""; position: absolute; top: -6px; left: var(--ax, 50%);
+  width: 12px; height: 12px; margin-left: -6px;
+  background: color-mix(in srgb, var(--accent) 92%, #fff);
+  transform: rotate(45deg); border-radius: 2px;
+}
+.pt-label.pt-above::before { top: auto; bottom: -6px; background: var(--accent); }
+.pt-label.pt-pop { animation: pt-label-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both, pt-bob 1.6s ease-in-out 0.5s infinite; }
+@keyframes pt-label-in {
+  from { opacity: 0; filter: blur(6px); margin-top: 12px; }
+  to { opacity: 1; filter: blur(0); margin-top: 0; }
+}
+@keyframes pt-pop {
+  from { opacity: 0; filter: blur(6px); margin-top: 10px; scale: 0.85; }
+  to { opacity: 1; filter: blur(0); margin-top: 0; scale: 1; }
 }
 @keyframes pt-bob { 50% { margin-top: -4px; } }
+.pt-dots {
+  position: fixed; left: 50%; bottom: 22px; z-index: 30003;
+  transform: translateX(-50%);
+  display: flex; gap: 6px; padding: 8px 12px; border-radius: 99px;
+  background: rgba(20, 20, 24, 0.7);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: pt-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pt-dots i {
+  width: 7px; height: 7px; border-radius: 99px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1), background 0.3s;
+}
+.pt-dots i.past { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.pt-dots i.on { width: 22px; background: var(--accent); box-shadow: 0 0 10px var(--accent-glow, transparent); }
+@keyframes pt-in-up { from { opacity: 0; transform: translate(-50%, 14px); } }
 .pt-ring {
   position: fixed; left: 0; top: 0; z-index: 30001;
   pointer-events: none;
-  border-radius: 8px;
-  border: 2px solid var(--accent);
-  animation: pt-pulse 1.3s ease-in-out infinite;
+  border-radius: 9px;
+  border: 2px dashed color-mix(in srgb, var(--accent) 85%, #fff);
+  box-shadow: 0 0 14px var(--accent-glow, transparent);
+  animation: pt-ring-pulse 1.3s ease-in-out infinite;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
-.pt-ring.done { border-color: #22c55e; animation: none; box-shadow: 0 0 12px rgba(34, 197, 94, 0.6); }
+@keyframes pt-ring-pulse { 50% { transform: scale(1.06); } }
+.pt-ring.done { border: 2px solid #22c55e; animation: pt-ring-done 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 14px rgba(34, 197, 94, 0.6); }
+@keyframes pt-ring-done { from { transform: scale(1.25); } }
 .pt-ring.done::after {
   content: "\f00c"; font-family: "Font Awesome 6 Free"; font-weight: 900;
   position: absolute; right: -10px; top: -10px;
   width: 18px; height: 18px; border-radius: 50%;
   background: #22c55e; color: #000; font-size: 10px;
   display: flex; align-items: center; justify-content: center;
+  animation: pt-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .pt-skip {
-  position: fixed; right: 16px; bottom: 16px; z-index: 30003;
-  padding: 7px 14px; border-radius: 99px;
-  background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.75);
+  position: fixed; right: 16px; bottom: 18px; z-index: 30003;
+  padding: 8px 16px; border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 12px; font-weight: 800; cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+  animation: pt-fade-in 0.6s 0.3s both;
 }
-.pt-skip:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.pt-skip:hover { background: rgba(255, 255, 255, 0.2); color: #fff; transform: scale(1.05); }
+@keyframes pt-fade-in { from { opacity: 0; } }
+.pt-fade { opacity: 0 !important; transition: opacity 0.4s !important; }
+.pt-done {
+  position: fixed; left: 50%; top: 50%; z-index: 30004;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 22px 30px; border-radius: 24px;
+  background: rgba(20, 20, 24, 0.8);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff; font-size: 16px; font-weight: 800;
+  pointer-events: none;
+  animation: pt-done-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: opacity 0.5s;
+}
+@keyframes pt-done-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); filter: blur(8px); } }
+.pt-done-check {
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent); color: #000; font-size: 24px;
+  box-shadow: 0 0 30px var(--accent-glow, transparent);
+  animation: pt-pop 0.5s 0.15s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.pt-spark {
+  position: absolute; left: 50%; top: 38%;
+  width: 6px; height: 6px; margin: -3px; border-radius: 50%;
+  background: var(--accent);
+  animation: pt-spark 0.9s 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pt-spark:nth-child(odd) { background: #fff; }
+@keyframes pt-spark {
+  from { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 1; }
+  to { transform: rotate(var(--a)) translateY(calc(-1 * var(--d))) scale(0.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-spot, .pt-ripple, .pt-finger i, .pt-label.pt-pop, .pt-ring { animation: none !important; }
+}
 
 /* ---------- v2.13.2: Liquid V2 cover = 2 colors (your color + white on black) with a shine sweeping over it */
 body.lv2 #albumArt { overflow: hidden; border-color: rgba(255, 255, 255, 0.85); box-shadow: 0 0 22px var(--accent-glow), inset 0 0 30px rgba(0, 0, 0, 0.6); }
@@ -1079,3 +1243,18 @@ html.ios .btn.main { box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.15), 0 6px 20p
   from { transform: translateY(0); opacity: 1; filter: blur(0); }
   to { transform: translateY(0.75em); opacity: 0; filter: blur(3px); }
 }
+
+/* ---------- v2.15.0: Album Color Tint off = the V2 cover keeps its real colors */
+body.lv2.no-tint #albumArt::after { display: none; }
+
+/* ---------- v2.15.0: Spin Cover (only the cover turns, like a record; stops when paused).
+   The shine counter-spins so its streak stays the same direction. */
+@keyframes cover-spin { to { transform: rotate(360deg); } }
+body.spin-cover #albumArt.circle { animation: cover-spin 16s linear infinite; animation-play-state: paused; }
+body.spin-cover.is-playing #albumArt.circle { animation-play-state: running; }
+body.spin-cover.lv2 #albumArt.circle::before {
+  animation: lv2-shine 3.2s cubic-bezier(0.6, 0, 0.3, 1) infinite, cover-spin 16s linear infinite reverse;
+  animation-play-state: running, paused;
+}
+body.spin-cover.lv2.is-playing #albumArt.circle::before { animation-play-state: running, running; }
+body.away #albumArt { animation-play-state: paused !important; }

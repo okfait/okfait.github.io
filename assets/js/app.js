@@ -1537,6 +1537,15 @@ class Visualizer {
       }
     }
   }
+  drawSparks(ctx, w, h, avgVolume) {
+    ctx.save();
+    ctx.translate(w / 2, h / 2); // Center 0,0 without the shake
+    for (let i = 0; i < this.particles.length; i++) {
+      this.particles[i].update(avgVolume);
+      this.particles[i].draw(ctx);
+    }
+    ctx.restore();
+  }
   clearFlash() {
     window.$("beat-flash").style.opacity = 0;
   }
@@ -1640,17 +1649,9 @@ class Visualizer {
     const useV2 = this.mode === "liquid" && window.liquidV2 && window.liquidV2.active();
     // Draw Particles behind everything else (AND independent of camera shake)
     const cfg = window.vizConfig || { sparks: true };
-    if (cfg.sparks !== false && !useV2) {
-        ctx.save();
-        ctx.translate(w / 2, h / 2); // Center 0,0 without the shake
-        
-        for (let i = 0; i < this.particles.length; i++) {
-            this.particles[i].update(avgVolume);
-            this.particles[i].draw(ctx);
-        }
-        
-        ctx.restore();
-    }
+    // (V2 draws them itself, on top of its own background)
+    this._avgVol = avgVolume;
+    if (cfg.sparks !== false && !useV2) this.drawSparks(ctx, w, h, avgVolume);
 
     ctx.save();
     ctx.translate(w / 2, h / 2);
@@ -1707,7 +1708,8 @@ class Visualizer {
     // when the song has been scanned, the ripple goes off on REAL kicks only (not voices / notes)
     const km = window.kickMap && window.kickMap.current();
     let rippleNow;
-    if (km && window.liquidV2) {
+    if (useV2) rippleNow = false; // V2 has Beat Effects instead of the ripple
+    else if (km && window.liquidV2) {
       window.liquidV2.probe();
       const seq = window.liquidV2.kickSeq;
       rippleNow = seq !== this._rippleSeq && window.liquidV2.kickStr >= 0.85;

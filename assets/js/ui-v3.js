@@ -535,7 +535,7 @@ function updateConnect() {
 
 // ------------------------------------------------------------ Liquid V1 / V2
 function markLiquidVer() {
-  const v = localStorage.getItem("okmusic_liquid_ver") || "v1";
+  const v = localStorage.getItem("okmusic_liquid_ver") || "v2"; // V2 is the default since v2.15.0
   document.querySelectorAll("#liquidVerSeg button").forEach((b) => b.classList.toggle("active", b.dataset.ver === v));
 }
 function setLiquidVer(v) {
