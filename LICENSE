@@ -1,0 +1,26 @@
+okMUSIC
+Copyright (c) 2025-2026 rick_grimesz (GitHub: okfait). All rights reserved.
+
+This software and everything in this repository (source code, design, graphics,
+text and the "okMUSIC" name and logo) is the property of the copyright holder.
+
+The code is publicly visible only so the website can run (GitHub Pages).
+Being able to SEE it does not give you permission to USE it.
+
+Without written permission from the copyright holder you may NOT:
+  - copy, reproduce or redistribute this software or any substantial part of it
+  - modify it or make derivative works from it
+  - host, publish or run it (or a modified copy) as your own website or app
+  - sell, sublicense or otherwise use it commercially
+  - remove or change this notice or the in-app credits
+
+You MAY use the official website (https://okfait.github.io) for personal use.
+
+Requests for permission: open an issue on https://github.com/okfait/okfait.github.io
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM THE USE OF THE SOFTWARE.
+
+Third-party libraries used by the site (e.g. PeerJS, Dexie, Font Awesome, Tailwind,
+qrcode-generator, lz-string) keep their own licenses.

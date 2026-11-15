@@ -163,7 +163,7 @@ function coverSrc() {
 //  - only the middle square of the cover is used (YouTube thumbnails have black bars baked in
 //    on the sides - those showed up as dark stripes)
 //  - shrunk to ~120 px first, then blown up with a blur = you see the cover's shapes moving
-//    behind everything, but not a sharp photo
+//    behind everything, but not a sharp photo; edges fade out in a soft circle (no hard borders)
 //  - bright covers are dimmed and dark ones lifted, so every song glows about the same amount
 // (Album Color Tint only changes the cover in the circle, not this.)
 function buildBg(w, h, color) {
@@ -189,12 +189,11 @@ function buildBg(w, h, color) {
   // 1. tiny copy of the middle of the cover
   const iw = img.naturalWidth, ih = img.naturalHeight;
   const side = Math.min(iw, ih) * 0.82;
-  const tw = 120, th = Math.max(8, Math.round((tw * h) / w));
+  const tw = 120, th = 120;
   const tiny = makeCanvas(tw, th);
   const t = tiny.getContext("2d");
-  // the screen-shaped part from the middle square (not stretched)
-  const cw = w >= h ? side : (side * w) / h, ch = w >= h ? (side * h) / w : side;
-  t.drawImage(img, (iw - cw) / 2, (ih - ch) / 2, cw, ch, 0, 0, tw, th);
+  // the whole middle square of the cover (not zoomed into a strip any more)
+  t.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, tw, th);
   if (tint) {
     // black -> your color: light parts of the cover glow in your color, dark parts stay dark
     if ("filter" in t) {
@@ -228,12 +227,21 @@ function buildBg(w, h, color) {
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = "high";
   if ("filter" in g) g.filter = `blur(${Math.max(2, Math.round(bw / 70))}px) saturate(1.2)`;
-  const pad = bw / 6; // bigger than the canvas so the blur doesn't fade at the edges
-  g.drawImage(tiny, -pad, -pad * (bh / bw), bw + pad * 2, bh + pad * 2 * (bh / bw));
+  // the cover as a big square in the middle (bigger than the player, so you can see it around it)
+  const sq = Math.min(bw, bh) * 1.6;
+  g.drawImage(tiny, (bw - sq) / 2, (bh - sq) / 2, sq, sq);
   if ("filter" in g) g.filter = "none";
   // dark like the edits: only the bright parts glow through
   g.globalCompositeOperation = "multiply";
   g.fillStyle = "rgb(150,150,150)";
+  g.fillRect(0, 0, bw, bh);
+  // soft round fade at the edges = melts into the dark, no square "picture stuck on" edges
+  g.globalCompositeOperation = "destination-in";
+  const fade = g.createRadialGradient(bw / 2, bh / 2, sq * 0.2, bw / 2, bh / 2, sq * 0.5);
+  fade.addColorStop(0, "rgba(0,0,0,1)");
+  fade.addColorStop(0.6, "rgba(0,0,0,0.8)");
+  fade.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = fade;
   g.fillRect(0, 0, bw, bh);
   g.globalCompositeOperation = "source-over";
   S.bg = c;

@@ -2055,7 +2055,17 @@ class Visualizer {
     };
     
     // 1. Calculate overall bass energy for the drop (With Bleed)
-    let bassAvg = getBleedingEnergy(0, cfg.bEnd); 
+    // v2.15.2: the HORNS move on deep bass only (~25-90 Hz, no bleeding in from neighbor bins).
+    // Before, they read up to ~260 Hz (bins 0-5 + 6 bins of bleed) = voices and claps moved them.
+    const as = window.audioSys;
+    const hz = ((as && as.ctx && as.ctx.sampleRate) || 44100) / ((as && as.analyser && as.analyser.fftSize) || 2048);
+    const sb0 = Math.max(1, Math.round(28 / hz));
+    const sb1 = Math.max(sb0, Math.min(cfg.bEnd, Math.floor(90 / hz)));
+    let subSum = 0;
+    for (let i = sb0; i <= sb1; i++) subSum += frameData[i] || 0;
+    // same size as before, but it can only be as high as the deep bass allows:
+    // voice / claps raise the old wide reading but not the sub = horns stay still
+    let bassAvg = Math.min(getBleedingEnergy(0, cfg.bEnd), subSum / ((sb1 - sb0 + 1) * 255));
     
     // 2. Stateless Exponential Gate
     let bassSpike = 0;
@@ -5340,6 +5350,7 @@ class Player {
         });
     } else {
       window.audioSys.audio.pause();
+      if (this.fading) this.stopFade(); // pausing mid Auto DJ fade stops the old song too
       window.ui.updatePlayBtn(false);
       if (window.partyMode && window.partyMode.active)
         window.partyMode.broadcast({
@@ -5416,65 +5427,118 @@ class Player {
       // seconds left in REAL time (a 0.9x warp makes the song take longer)
       const rate = window.audioSys.audio.playbackRate || 1;
       const left = (window.audioSys.audio.duration - window.audioSys.audio.currentTime) / rate;
-      if (this.autoDj && !this.loop && !this.fading && window.audioSys.audio.duration > 20 && left < Player.FADE + 0.3 && left > 0.4) {
-        this.crossfade(Math.min(Player.FADE, left));
-      }
+      const djOn = this.autoDj && !this.loop && !this.fading && window.audioSys.audio.duration > 20;
+      if (djOn && left < Player.FADE + 4 && left > Player.FADE + 0.5 && this._preSrc !== window.audioSys.audio.src) this.preloadFade();
+      if (djOn && left < Player.FADE + 0.3 && left > 0.4) this.crossfade(Math.min(Player.FADE, left));
     }
   }
-  // Auto DJ (v2.15.1): the song that's ending moves to a second "deck" and fades out while the
+  // Auto DJ (v2.15.2): the song that's ending moves to a second "deck" and fades out while the
   // next song fades in (equal-power curves = no dip in the middle, no jump at the end).
-  // Both stay at YOUR volume: before, the next song was faded up to 100% no matter what your
-  // volume was, and the old song was routed through the same knob that got set to 0 = it just cut off.
+  // Both stay at YOUR volume.
+  //  - no gap: the second deck loads the song a few seconds early, and the swap only happens once
+  //    it's actually PLAYING (before, the old song went silent for a moment while it loaded)
+  //  - pause / stop during a fade also stops the fading song (before, it kept playing)
+  ensureFadeDeck() {
+    const as = window.audioSys;
+    if (window.fadeAudio || !as.ctx) return;
+    window.fadeAudio = new Audio();
+    // same rule for the crossfade deck so the fading song keeps its pitch shift
+    window.fadeAudio.preservesPitch = false;
+    window.fadeAudio.mozPreservesPitch = false;
+    window.fadeAudio.webkitPreservesPitch = false;
+    window.fadeAudio.preload = "auto";
+    const src = as.ctx.createMediaElementSource(window.fadeAudio);
+    window.fadeBass = as.ctx.createBiquadFilter(); // the fading song keeps its bass boost
+    window.fadeGain = as.ctx.createGain();
+    window.fadeGain.gain.value = 0;
+    src.connect(window.fadeBass);
+    window.fadeBass.connect(window.fadeGain);
+    window.fadeGain.connect(as.gain); // -> your volume -> speakers
+    // paused / stopped by anything (button, keyboard, phone remote, media keys) = fade stops too
+    as.audio.addEventListener("pause", () => {
+      setTimeout(() => {
+        if (as.audio.paused && this.fading && performance.now() - (this._swapAt || 0) > 1200) this.stopFade();
+      }, 250);
+    });
+  }
+  // a few seconds before the end: load the same song into the second deck (silent, paused)
+  preloadFade() {
+    const as = window.audioSys;
+    this.ensureFadeDeck();
+    const fa = window.fadeAudio;
+    if (!fa) return;
+    this._preSrc = as.audio.src;
+    fa.src = as.audio.src;
+    fa.load();
+    fa.addEventListener("loadedmetadata", () => {
+      if (!this.fading) fa.currentTime = Math.max(0, as.audio.currentTime);
+    }, { once: true });
+  }
   crossfade(dur) {
     const as = window.audioSys;
     const ctx = as.ctx;
     if (!ctx || !as.deck) return this.next();
+    this.ensureFadeDeck();
     this.fading = true;
-    if (!window.fadeAudio) {
-      window.fadeAudio = new Audio();
-      // same rule for the crossfade deck so the fading song keeps its pitch shift
-      window.fadeAudio.preservesPitch = false;
-      window.fadeAudio.mozPreservesPitch = false;
-      window.fadeAudio.webkitPreservesPitch = false;
-      const src = ctx.createMediaElementSource(window.fadeAudio);
-      window.fadeBass = ctx.createBiquadFilter(); // the fading song keeps its bass boost
-      window.fadeGain = ctx.createGain();
-      src.connect(window.fadeBass);
-      window.fadeBass.connect(window.fadeGain);
-      window.fadeGain.connect(as.gain); // -> your volume -> speakers
-    }
+    this._swapAt = 0;
     const fa = window.fadeAudio;
     window.fadeBass.type = as.bass.type;
     window.fadeBass.frequency.value = as.bass.frequency.value;
     window.fadeBass.gain.value = as.bass.gain.value;
-    fa.src = as.audio.src;
-    fa.currentTime = as.audio.currentTime;
-    fa.playbackRate = as.audio.playbackRate;
-    fa.play().catch((e) => console.log("Fader unallowed", e));
-
-    const now = ctx.currentTime;
-    const n = 64, outC = new Float32Array(n), inC = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = i / (n - 1);
-      outC[i] = Math.cos((x * Math.PI) / 2);
-      inC[i] = Math.sin((x * Math.PI) / 2);
+    if (this._preSrc !== as.audio.src) {
+      this._preSrc = as.audio.src;
+      fa.src = as.audio.src;
     }
     const g = window.fadeGain.gain, d = as.deck.gain;
-    g.cancelScheduledValues(now);
-    d.cancelScheduledValues(now);
-    g.setValueCurveAtTime(outC, now, dur);
-    d.setValueCurveAtTime(inC, now, dur);
-    this.next(); // new song starts in the main deck (silent at first, then rising)
+    g.cancelScheduledValues(ctx.currentTime);
+    g.value = 0; // silent until the swap
+    fa.playbackRate = as.audio.playbackRate;
+    fa.currentTime = as.audio.currentTime + 0.03;
+    let swapped = false;
+    const swap = () => {
+      if (swapped || !this.fading) return;
+      swapped = true;
+      clearTimeout(fallback);
+      this._swapAt = performance.now();
+      const now = ctx.currentTime;
+      const n = 64, outC = new Float32Array(n), inC = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const x = i / (n - 1);
+        outC[i] = Math.cos((x * Math.PI) / 2);
+        inC[i] = Math.sin((x * Math.PI) / 2);
+      }
+      d.cancelScheduledValues(now);
+      g.setValueCurveAtTime(outC, now, dur);
+      d.setValueCurveAtTime(inC, now, dur);
+      this.next(); // new song starts in the main deck (silent at first, then rising)
+      clearTimeout(this._fadeEnd);
+      this._fadeEnd = setTimeout(() => this.stopFade(), dur * 1000 + 150);
+    };
+    // swap only once the second deck is really making sound
+    fa.addEventListener("playing", swap, { once: true });
+    const fallback = setTimeout(swap, 900);
+    fa.play().catch(() => swap());
+  }
+  stopFade() {
     clearTimeout(this._fadeEnd);
-    this._fadeEnd = setTimeout(() => {
-      d.cancelScheduledValues(ctx.currentTime);
-      d.value = 1;
+    const as = window.audioSys;
+    const fa = window.fadeAudio;
+    if (window.fadeGain && as.ctx) {
+      window.fadeGain.gain.cancelScheduledValues(as.ctx.currentTime);
+      window.fadeGain.gain.value = 0;
+    }
+    if (as.deck && as.ctx) {
+      as.deck.gain.cancelScheduledValues(as.ctx.currentTime);
+      as.deck.gain.value = 1;
+    }
+    if (fa) {
       fa.pause();
       // let go of the old song held by the fade deck
       fa.removeAttribute("src");
       fa.load();
-      this.fading = false;
-    }, dur * 1000 + 150);
+    }
+    this._preSrc = null;
+    this.fading = false;
   }
   onEnd() {
     if (this.fading) return; // the crossfade already started the next song
