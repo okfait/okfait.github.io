@@ -1451,10 +1451,16 @@ class Visualizer {
         window.$("albumArt").className = `album-art glass-panel ${this.mode === "ring" || this.mode === "liquid" ? "circle" : ""}`;
     }, 500);
   }
+  // The drawing surface must be EXACTLY the size the canvas shows at, or everything gets
+  // stretched (that's the "liquid off to the side / too high" bug on iPhone after rotating or
+  // when the address bar moves: the window size Safari reports lags behind the real one).
   resize() {
-    if (this.cv.width === window.innerWidth && Math.abs(this.cv.height - window.innerHeight) < 120 && this._isMobile) return;
-    this.cv.width = window.innerWidth;
-    this.cv.height = window.innerHeight;
+    const r = this.cv.getBoundingClientRect();
+    const W = Math.round(r.width) || window.innerWidth;
+    const H = Math.round(r.height) || window.innerHeight;
+    if (this.cv.width === W && this.cv.height === H) return;
+    this.cv.width = W;
+    this.cv.height = H;
     this._isMobile =
       window.innerWidth < 800 ||
       window.innerHeight < 600 ||
@@ -1474,7 +1480,12 @@ class Visualizer {
     const art = this._artEl || (this._artEl = document.getElementById("albumArt"));
     if (!art) return (this._artC = null);
     const r = art.getBoundingClientRect();
-    this._artC = { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 };
+    // canvas position + real size, checked every frame (cheap: layout was just measured anyway)
+    const c = this.cv.getBoundingClientRect();
+    if (Math.round(c.width) !== this.cv.width || Math.round(c.height) !== this.cv.height) this.resize();
+    // the art can be scaled by the V2 punch: use its layout size, not the punched size
+    const size = art.offsetWidth || r.width;
+    this._artC = { x: r.left + r.width / 2 - c.left, y: r.top + r.height / 2 - c.top, r: size / 2 };
   }
   artCenter(w, h) {
     return this._artC || { x: w / 2, y: h / 2 - 40, r: 140 };
@@ -1979,8 +1990,10 @@ class Visualizer {
     const points = [];
     this.liquidBinCount = 48; // Higher resolution for smooth curves
     const totalPoints = this.liquidBinCount * 2 - 2;
-    const baseRadius = 130; // Shrink inside the art circle
-    const maxBump = 160; // Max bass protrusion
+    // sized to the cover (it's 240px on most screens; smaller on a sideways phone)
+    const artK = this._artC && this._artC.r ? Math.max(0.5, Math.min(1.5, this._artC.r / 120)) : 1;
+    const baseRadius = 130 * artK; // Shrink inside the art circle
+    const maxBump = 160 * artK; // Max bass protrusion
     
     const cfg = window.vizConfig || {
         width: 0.85, sens: window.vizSens || 1.0, pos: 16, sparks: true,

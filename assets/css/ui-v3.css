@@ -932,3 +932,51 @@ body.lv2 #albumArt::before {
   animation: lv2-shine 3.2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
 }
 @keyframes lv2-shine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+
+/* ---------- v2.13.3: phone sideways = player on the left, buttons on the right */
+@media (orientation: landscape) and (max-height: 520px) {
+  .player-wrapper { top: 54% !important; left: 33% !important; max-width: 46vw; }
+  .art-container { width: 168px; height: 168px; margin-bottom: 10px; }
+  .album-art.circle { width: 148px; height: 148px; }
+  .track-info { padding: 0 8px; }
+  .track-title { font-size: 1.1rem; }
+  #metaTags { margin-bottom: 4px !important; transform: scale(0.85); }
+  .scrubber { margin-top: 6px; }
+  .controls, body.remote-mode .controls {
+    left: 77% !important; top: 56%; bottom: auto !important;
+    transform: translate(-50%, -50%);
+    width: auto !important; max-width: 48vw;
+    flex-wrap: nowrap; justify-content: center;
+    gap: 6px !important; padding: 10px 12px !important;
+  }
+  .controls .btn { width: 40px !important; height: 40px !important; }
+  .controls .btn.main { width: 52px !important; height: 52px !important;
+  }
+  .controls.glass-panel:active { transform: translate(-50%, -50%) scale(0.995); }
+  #lyricsPane { bottom: 12px; }
+}
+
+/* ---------- v2.13.3: iPhone / iPad "liquid glass" (see-through frosted glass with a shiny rim) */
+html.ios .controls.glass-panel,
+html.ios .top-icon,
+html.ios .remote-pill,
+html.ios .controls .btn:not(.main) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
+  backdrop-filter: blur(20px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 1px rgba(255, 255, 255, 0.12), 0 10px 28px rgba(0, 0, 0, 0.3) !important;
+}
+html.ios .controls .btn:not(.main) { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4) !important; }
+html.ios .side-panel,
+html.ios .jam-card,
+html.ios .finder-sheet,
+html.ios .tuner-sheet,
+html.ios .ios-menu {
+  background: linear-gradient(180deg, rgba(40, 40, 46, 0.62), rgba(20, 20, 24, 0.7)) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 24px 60px rgba(0, 0, 0, 0.45) !important;
+}
+html.ios .btn.main { box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.15), 0 6px 20px rgba(255, 255, 255, 0.25); }

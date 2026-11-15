@@ -1,4 +1,4 @@
-const CACHE_NAME = 'okmusic-v2.13.2';
+const CACHE_NAME = 'okmusic-v2.13.3';
 const ASSETS = [
     './index.html',
     './manifest.json',
@@ -28,16 +28,23 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
+// The page itself: always try the internet first (so updates show up on the FIRST refresh,
+// before this served an old saved copy until a second refresh), saved copy only when offline.
 self.addEventListener('fetch', event => {
+    const req = event.request;
+    if (req.mode === 'navigate') {
+        event.respondWith(
+            fetch(req)
+            .then(res => {
+                const copy = res.clone();
+                caches.open(CACHE_NAME).then(c => c.put('./index.html', copy)).catch(() => {});
+                return res;
+            })
+            .catch(() => caches.match('./index.html'))
+        );
+        return;
+    }
     event.respondWith(
-        caches.match(event.request)
-        .then(response => {
-            return response || fetch(event.request).catch(() => {
-                // If network fails (offline) and not in cache, try index.html
-                if (event.request.mode === 'navigate') {
-                    return caches.match('./index.html');
-                }
-            });
-        })
+        caches.match(req).then(response => response || fetch(req))
     );
 });
