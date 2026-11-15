@@ -10,7 +10,7 @@
 //   lines up to within ~10-20ms. A big jump (seek, lag spike) gets fixed by jumping too.
 // Replaces the old Firebase party mode (that database is locked, so it never connected).
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.13.1";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.13.2";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -62,6 +62,7 @@ function stateMsg() {
     rate: a.playbackRate || 1,
     lat: outLat(),
     dur: isFinite(a.duration) ? a.duration : 0,
+    ev: J.ev, // goes up only when someone actually DOES something (play/pause/seek/skip)
   };
 }
 function fxMsg() {
@@ -90,9 +91,16 @@ function hostState() {
     }
   });
 }
-for (const ev of ["play", "pause", "seeked", "ratechange", "loadedmetadata", "playing", "ended"]) {
-  A().addEventListener(ev, () => J.role === "host" && hostState());
+J.ev = 1;
+for (const ev of ["play", "pause", "seeked", "loadedmetadata", "ended"]) {
+  A().addEventListener(ev, () => {
+    if (J.role !== "host") return;
+    J.ev++;
+    hostState();
+  });
 }
+// speed changes (speed curve) just pass the new speed along, no re-sync
+A().addEventListener("ratechange", () => J.role === "host" && hostState());
 
 function findSong(id, name) {
   const list = P.songs || [];
@@ -170,7 +178,7 @@ async function startHost() {
     J.role = "host";
     J.code = J.room.code;
     // steady heartbeat so guests never drift far, even with nothing happening
-    J.hostTimer = setInterval(() => !A().paused && hostState(), 1000);
+    J.hostTimer = setInterval(() => !A().paused && hostState(), 3000);
     setBadge();
   } catch (e) {
     toast("Couldn't start the jam: " + (e.message || e));
@@ -224,14 +232,23 @@ function loadHostSong() {
   setStatus("In sync");
 }
 
-// Sets the speed only when it actually changes: phones glitch (tiny dropout) on EVERY speed
-// change, and the old version changed it ~7 times a second = constant stutter.
+// Guest playback: the song just plays on its own, like you picked it yourself. It only lines
+// up with the host ONCE when someone does something (play, pause, skip, seek, new song),
+// plus one small touch-up a second later if that jump landed off. No constant nudging
+// (that's what made it play 2s, glitch, play 2s on phones).
 function setRate(r) {
   const a = A();
   r = Math.round(r * 10000) / 10000;
   if (Math.abs(a.playbackRate - r) > 0.00005) a.playbackRate = r;
 }
-const drifts = [];
+function hostTarget() {
+  const h = J.hs;
+  const hostNow = performance.now() + J.room.link.offset;
+  let t = h.pos + (h.playing ? ((hostNow - h.at) / 1000) * h.rate : 0);
+  // line up what comes out of the SPEAKERS (bluetooth etc), not just the song position
+  t += (outLat() - (h.lat || 0)) * h.rate - J.nudge / 1000;
+  return Math.max(0, t);
+}
 function guestSync() {
   const h = J.hs;
   const a = A();
@@ -241,77 +258,41 @@ function guestSync() {
     return;
   }
   if (J.curId !== h.id || a.readyState < 1) return;
-  const L = J.room.link;
-  const hostNow = performance.now() + L.offset;
-  let target = h.pos + (h.playing ? ((hostNow - h.at) / 1000) * h.rate : 0);
-  // line up what comes out of the SPEAKERS, not just the song position
-  target += (outLat() - (h.lat || 0)) * h.rate - J.nudge / 1000;
-  const dur = a.duration || h.dur || 0;
-  if (dur && target >= dur - 0.05) {
-    if (!a.paused) a.pause();
-    return;
-  }
-  target = Math.max(0, target);
+  setRate(h.rate);
   const now = performance.now();
-
-  if (!h.playing) {
-    if (!a.paused) a.pause();
-    J.fixUntil = 0;
-    setRate(h.rate);
-    if (Math.abs(a.currentTime - target) > 0.04) a.currentTime = target;
-    window.ui.updatePlayBtn(false);
-    drifts.length = 0;
+  const fresh = J.syncedEv !== h.ev || J.syncedId !== h.id;
+  if (fresh) {
+    J.syncedEv = h.ev;
+    J.syncedId = h.id;
+    const target = hostTarget();
+    if (!h.playing) {
+      if (!a.paused) a.pause();
+      a.currentTime = target;
+      window.ui.updatePlayBtn(false);
+      J.touchUpAt = 0;
+    } else {
+      a.currentTime = target + J.seekFix;
+      if (a.paused) a.play().catch(() => setStatus("Tap anywhere to start the sound"));
+      window.ui.updatePlayBtn(true);
+      J.touchUpAt = now + 1200;
+    }
     return;
   }
-  if (a.paused) {
-    setRate(h.rate);
-    a.currentTime = target + J.seekFix;
-    J.lastSeek = now;
-    J.checkSeek = 1;
-    J.fixUntil = 0;
-    drifts.length = 0;
-    a.play().catch(() => setStatus("Tap anywhere to start the sound"));
-    window.ui.updatePlayBtn(true);
-    return;
-  }
-  // phones report the play position in rough steps, so look at the middle of the last
-  // few measurements instead of reacting to every jumpy one
-  drifts.push(target - a.currentTime);
-  if (drifts.length > 9) drifts.shift();
-  const drift = [...drifts].sort((x, y) => x - y)[drifts.length >> 1]; // + = we're behind
-  J.drift = drift;
-  if (J.checkSeek && now - J.lastSeek > 600 && drifts.length >= 3) {
-    // learn how long jumps really take on this device, so the next one lands right
+  // one touch-up after the jump settled (and learn how slow jumps are on this device)
+  if (J.touchUpAt && now > J.touchUpAt && h.playing && !a.paused) {
+    J.touchUpAt = 0;
+    const drift = hostTarget() - a.currentTime; // + = we're behind
     J.seekFix = Math.max(0, Math.min(0.35, J.seekFix + drift * 0.7));
-    J.checkSeek = 0;
+    if (Math.abs(drift) > 0.08) a.currentTime = hostTarget() + J.seekFix;
+    const ms = Math.round(Math.abs(drift) * 1000);
+    const el = $("jamDrift");
+    if (el) el.textContent = ms < 80 ? "in sync" : `fixed ${ms}ms`;
   }
-  // a correction is running: hold the speed, then go back to normal exactly once
-  if (J.fixUntil) {
-    if (now < J.fixUntil) return;
-    J.fixUntil = 0;
-    J.lastFix = now;
-    setRate(h.rate);
-    drifts.length = 0;
-    return;
+  // the host's song is playing but ours stopped (phone paused it, call came in...): catch up once
+  if (h.playing && a.paused && !J.touchUpAt && a.readyState >= 2 && now - (J.retryAt || 0) > 3000) {
+    J.retryAt = now;
+    J.syncedEv = -1;
   }
-  if (drifts.length < 5 || now - J.lastSeek < 1500 || now - (J.lastFix || 0) < 1500) {
-    setRate(h.rate);
-  } else if (Math.abs(drift) > 0.2) {
-    // way off (lag spike, seek): jump
-    a.currentTime = target + J.seekFix;
-    J.lastSeek = now;
-    J.checkSeek = 1;
-    setRate(h.rate);
-    drifts.length = 0;
-  } else if (Math.abs(drift) > 0.02) {
-    // a bit off: play 1% faster/slower for just long enough to catch up (one change, one change back)
-    const k = drift > 0 ? 0.01 : -0.01;
-    setRate(h.rate * (1 + k));
-    J.fixUntil = now + Math.min(4000, (Math.abs(drift) / 0.01) * 1000);
-  } else setRate(h.rate);
-  const ms = Math.round(Math.abs(drift) * 1000);
-  const el = $("jamDrift");
-  if (el) el.textContent = ms < 30 ? `in sync (${ms}ms)` : `syncing... ${ms}ms off`;
 }
 
 function applyFx(m) {
@@ -406,7 +387,7 @@ async function startGuest(code) {
     });
     J.role = "guest";
     J.code = code;
-    J.syncTimer = setInterval(guestSync, 200);
+    J.syncTimer = setInterval(guestSync, 300);
     toast("Joined the jam 🎶");
     setBadge();
   } catch (e) {
@@ -426,6 +407,8 @@ function leave(dropped) {
   J.hs = null;
   J.curId = null;
   J.wanted = null;
+  J.syncedEv = J.syncedId = null;
+  J.touchUpAt = 0;
   if (wasGuest) {
     const a = A();
     a.pause();

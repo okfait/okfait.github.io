@@ -916,3 +916,19 @@ body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   font-size: 12px; font-weight: 800; cursor: pointer;
 }
 .pt-skip:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+
+/* ---------- v2.13.2: Liquid V2 cover = 2 colors (your color + white on black) with a shine sweeping over it */
+body.lv2 #albumArt { overflow: hidden; border-color: rgba(255, 255, 255, 0.85); box-shadow: 0 0 22px var(--accent-glow), inset 0 0 30px rgba(0, 0, 0, 0.6); }
+body.lv2 #albumArt::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: var(--accent);
+  mix-blend-mode: color;
+}
+body.lv2 #albumArt::before {
+  content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 1;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.55) 48%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0.55) 52%, transparent 62%);
+  mix-blend-mode: overlay;
+  transform: translateX(-120%);
+  animation: lv2-shine 3.2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+}
+@keyframes lv2-shine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
