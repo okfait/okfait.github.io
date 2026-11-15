@@ -45,6 +45,7 @@ async function helperFetch(path, { timeout = 0, raw = false } = {}) {
 async function pingHelper() {
   try {
     const j = await helperFetch("/ping", { timeout: 2000 });
+    state.helperOld = !j.version || j.version < "1.1.0";
     setHelper(!!j.ok);
   } catch (e) {
     setHelper(false);
@@ -60,7 +61,7 @@ function setHelper(ok) {
   st.className = "finder-status " + (ok ? "ok" : "bad");
   if (ok) $("finderSetup").hidden = true;
   if (!ok && was === null) $("finderSetup").hidden = false; // first look: show the steps
-  st.querySelector("span.txt").textContent = ok ? "PC helper connected" : "PC helper isn't running";
+  st.querySelector("span.txt").textContent = ok ? (state.helperOld ? "Helper connected (old version: re-download it for previews)" : "PC helper connected") : "PC helper isn't running";
   st.querySelector("button").textContent = ok ? "" : $("finderSetup").hidden ? "How to start it" : "Hide steps";
   st.querySelector("button").style.display = ok ? "none" : "";
   if (ok && was === false) toast("Helper connected 🎉");
@@ -129,7 +130,7 @@ async function toDataUrl(url) {
 }
 
 // Downloads one song through the helper and saves it. Returns the new song id.
-async function grab({ id, query, dur, name, art, folder }) {
+async function grab({ id, query, dur, name, art, folder, meta }) {
   const qs = id
     ? `id=${encodeURIComponent(id)}&title=${encodeURIComponent(name || "")}`
     : `q=${encodeURIComponent(query)}&dur=${dur || ""}&title=${encodeURIComponent(name || query)}`;
@@ -149,8 +150,72 @@ async function grab({ id, query, dur, name, art, folder }) {
     window.libraryMgr.save();
   }
   refreshLibrarySoon();
+  // look for lyrics right away so the lyrics button is ready when you play it
+  if (window.lyrics && window.lyrics.prefetch) window.lyrics.prefetch(songId, meta || { name: title, duration: dur }).catch(() => {});
   if (window.ltStorage) window.ltStorage.afterAdd && window.ltStorage.afterAdd();
   return songId;
+}
+
+// ------------------------------------------------------------------ previews
+const pv = { audio: null, key: null, btn: null, row: null };
+function setPvBtn(btn, mode) {
+  if (!btn) return;
+  btn.classList.toggle("on", mode !== "idle");
+  btn.innerHTML = mode === "load" ? `<i class="fa-solid fa-spinner fa-spin"></i>` : mode === "play" ? `<i class="fa-solid fa-pause"></i>` : `<i class="fa-solid fa-play"></i>`;
+}
+function stopPreview() {
+  if (pv.audio) {
+    pv.audio.pause();
+    pv.audio.removeAttribute("src");
+    pv.audio.load();
+  }
+  setPvBtn(pv.btn, "idle");
+  if (pv.row) pv.row.classList.remove("previewing");
+  pv.audio = pv.key = pv.btn = pv.row = null;
+}
+// getId: () => Promise<youtube id>
+async function togglePreview(key, getId, btn) {
+  if (pv.key === key) return stopPreview();
+  stopPreview();
+  if (!state.helperOk && !(await pingHelper())) return needHelper();
+  if (state.helperOld) return toast("Previews need the new helper: download it again (steps at the top)");
+  pv.key = key;
+  pv.btn = btn;
+  pv.row = btn.closest(".f-item");
+  if (pv.row) pv.row.classList.add("previewing");
+  setPvBtn(btn, "load");
+  try {
+    const id = await getId();
+    if (pv.key !== key) return; // something else got clicked meanwhile
+    // pause the main player so they don't play on top of each other
+    const main = window.audioSys && window.audioSys.audio;
+    if (main && !main.paused) {
+      main.pause();
+      window.ui.updatePlayBtn && window.ui.updatePlayBtn(false);
+    }
+    const a = new Audio(`${HELPER}/preview?id=${encodeURIComponent(id)}`);
+    const g = window.audioSys && window.audioSys.gain;
+    a.volume = g ? Math.min(1, g.gain.value) : 0.8;
+    pv.audio = a;
+    a.addEventListener("loadedmetadata", () => {
+      // skip the intro: start around the first chorus-ish part
+      if (a.duration > 90) a.currentTime = Math.min(45, a.duration * 0.28);
+    }, { once: true });
+    a.addEventListener("playing", () => pv.audio === a && setPvBtn(btn, "play"));
+    a.addEventListener("waiting", () => pv.audio === a && setPvBtn(btn, "load"));
+    a.addEventListener("ended", () => pv.audio === a && stopPreview());
+    a.addEventListener("error", () => {
+      if (pv.audio !== a) return;
+      stopPreview();
+      toast("Couldn't play that preview");
+    });
+    await a.play();
+  } catch (e) {
+    if (pv.key === key) {
+      stopPreview();
+      toast("Preview failed: " + e.message);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ UI
@@ -232,6 +297,7 @@ function fillFolders() {
 }
 
 function setTab(tab) {
+  stopPreview();
   state.tab = tab;
   document.querySelectorAll("#finderTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   const input = $("finderInput");
@@ -265,6 +331,7 @@ function close() {
   $("finderBackdrop").classList.remove("open");
   $("finderSheet").classList.remove("open");
   clearInterval(state.pollTimer);
+  stopPreview();
 }
 
 function needHelper() {
@@ -292,6 +359,7 @@ async function doSearch(q) {
     $("finderInput").value = q;
     return loadList(q);
   }
+  stopPreview();
   body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-spinner fa-spin"></i>Searching...</div>`;
   try {
     let results;
@@ -311,10 +379,17 @@ async function doSearch(q) {
       <div class="f-item">
         <img class="f-thumb" src="${esc(r.thumb)}" alt="" loading="lazy">
         <div class="f-meta"><div class="f-title">${esc(r.title)}</div><div class="f-sub">${esc(r.channel)}${r.duration ? " · " + fmtDur(r.duration) : ""}</div></div>
+        <button type="button" class="f-play" data-i="${i}" title="Listen first"><i class="fa-solid fa-play"></i></button>
         <button type="button" class="f-act" data-i="${i}" title="Add to library"><i class="fa-solid fa-plus"></i></button>
       </div>`,
       )
       .join("");
+    body.querySelectorAll(".f-play").forEach((b) =>
+      b.addEventListener("click", () => {
+        const r = results[+b.dataset.i];
+        togglePreview("s:" + r.id, async () => r.id, b);
+      }),
+    );
     body.querySelectorAll(".f-act").forEach((b) =>
       b.addEventListener("click", async () => {
         if (b.classList.contains("busy") || b.classList.contains("done")) return;
@@ -428,11 +503,21 @@ function renderList() {
       <div class="f-item" id="fr${i}">
         <span class="f-num">${i + 1}</span>
         <div class="f-meta"><div class="f-title">${esc(t.title)}</div><div class="f-sub">${esc(t.artist)}${t.duration ? " · " + fmtDur(t.duration) : ""}</div></div>
+        <button type="button" class="f-play" data-i="${i}" title="Listen first"><i class="fa-solid fa-play"></i></button>
         <span class="f-state ${t.st}">${ICON[t.st]}</span>
       </div>`,
       )
       .join("")}</div>`;
   updateCount();
+  $("finderRows").querySelectorAll(".f-play").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = l.tracks[+b.dataset.i];
+      togglePreview("p:" + b.dataset.i + ":" + songName(t), async () => {
+        if (!t.youtube) t.youtube = (await helperFetch(`/resolve?q=${encodeURIComponent(songName(t))}&dur=${t.duration || ""}`)).id;
+        return t.youtube;
+      }, b);
+    }),
+  );
   const foot = $("finderFoot");
   foot.hidden = false;
   foot.innerHTML = `
@@ -512,6 +597,7 @@ async function downloadAll() {
           name: songName(t),
           art: t.art,
           folder,
+          meta: { artist: firstArtist(t.artist), title: t.title, duration: t.duration },
         });
         setRow(i, "done");
         failsInRow = 0;

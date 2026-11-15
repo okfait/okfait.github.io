@@ -550,3 +550,198 @@ body.display-mode .tuner-sheet { display: none !important; }
   display: grid; place-items: center; font-size: 20px; color: #fff;
   background: linear-gradient(135deg, #450af5, #8e8ee5 60%, #c4efd9);
 }
+
+/* =====================================================================
+   v2.12 additions
+   ===================================================================== */
+
+/* ---------- one glass material for EVERY panel / popup (iOS thin material):
+   very see-through, light blur, and it dims what is behind so text stays readable */
+:root {
+  --glass: rgba(24, 24, 28, 0.36);
+  --glass-filter: blur(18px) saturate(170%) brightness(0.6);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+}
+.side-panel,
+.tuner-sheet,
+.finder-sheet,
+.glass-modal,
+#partySetupModal,
+#contextMenu {
+  background: var(--glass) !important;
+  backdrop-filter: var(--glass-filter) !important;
+  -webkit-backdrop-filter: var(--glass-filter) !important;
+  border: 1px solid var(--glass-edge) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+#partySetupModal { border-radius: 26px; }
+/* menus sit on top of other controls, and blur can't stack inside a blurred panel,
+   so they stay nearly solid to be readable */
+.ios-menu {
+  background: rgba(32, 32, 36, 0.97);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.top-bar .ios-menu { background: rgba(32, 32, 36, 0.8); backdrop-filter: blur(24px) saturate(170%); -webkit-backdrop-filter: blur(24px) saturate(170%); }
+.set-group, .tuner-sec { background: rgba(255, 255, 255, 0.07); }
+body.lite-mode .side-panel,
+body.lite-mode .tuner-sheet,
+body.lite-mode .finder-sheet,
+body.lite-mode .glass-modal,
+body.lite-mode #partySetupModal { background: rgba(16, 16, 20, 0.94) !important; }
+
+/* ---------- settings icons: each section has its own look */
+.set-icon { position: relative; overflow: hidden; }
+/* Sound: warm glossy gradient squircles */
+.grp-sound .set-icon {
+  background: linear-gradient(145deg, #ff6a5a, #e8245a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 10px rgba(232, 36, 90, 0.35);
+}
+/* Look: frosted circles tinted with your accent color */
+.grp-look .set-icon {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.06));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: color-mix(in srgb, var(--accent) 60%, #fff);
+  box-shadow: none;
+}
+/* Visualizer: deep neon gradient */
+.grp-viz .set-icon {
+  background: linear-gradient(145deg, #5b5cf0, #b23cf0 60%, #ff4fd8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 3px 12px rgba(178, 60, 240, 0.4);
+}
+/* Party: sunset */
+.grp-party .set-icon {
+  background: linear-gradient(145deg, #ffb340, #ff6b2c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+/* Advanced: plain outline, nerdy */
+.grp-adv .set-icon {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.75);
+  box-shadow: none;
+}
+
+/* ---------- menus that open upward / left, info lines */
+.ios-menu-up { top: auto; bottom: calc(100% + 6px); transform-origin: bottom left; }
+.ios-menu-left { left: 0; right: auto; transform-origin: top left; }
+.ios-menu-up.ios-menu-right { right: 0; left: auto; transform-origin: bottom right; }
+.ios-menu .menu-info { padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.45); line-height: 1.4; white-space: normal; }
+.q-menu-wrap { display: block; }
+.q-menu-wrap .ios-menu { min-width: 210px; }
+
+/* ---------- library panel */
+.lib-add-btn { position: relative; }
+.lib-add-srcs { margin-left: auto; display: flex !important; flex-direction: row !important; gap: 8px; font-size: 18px; }
+#ltToolRow { display: none !important; } /* its buttons live in the + menu now */
+.lib-bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lib-menu-wrap { width: 100%; }
+.lib-menu-wrap .ios-menu { min-width: 240px; }
+.lib-pill {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 12px 10px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px; font-weight: 800; color: #fff;
+  cursor: pointer; transition: filter 0.15s, transform 0.12s;
+  white-space: nowrap;
+}
+.lib-pill:hover { filter: brightness(1.2); }
+.lib-pill:active { transform: scale(0.98); }
+.lib-pill-chev { font-size: 9px; opacity: 0.5; }
+.lib-pill-connect {
+  background: linear-gradient(110deg, #1db954 0%, #17a34a 30%, #c81d4a 70%, #ff2a2a 100%);
+  background-size: 160% 100%;
+  border: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  animation: connect-flow 6s ease-in-out infinite alternate;
+}
+.lib-pill-connect.connected { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+@keyframes connect-flow { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+
+/* ---------- queue: art + drag to reorder */
+.q-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px 7px 6px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.15s, transform 0.18s var(--ease), box-shadow 0.18s;
+}
+.q-row + .q-row { margin-top: 6px; }
+.q-row.dragging { background: rgba(255, 255, 255, 0.16); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); z-index: 5; position: relative; transition: background 0.15s, box-shadow 0.18s; }
+.q-grip { width: 22px; display: grid; place-items: center; color: rgba(255, 255, 255, 0.3); cursor: grab; touch-action: none; font-size: 13px; flex-shrink: 0; padding: 8px 0; }
+.q-grip:active { cursor: grabbing; }
+.q-art { width: 42px; height: 42px; border-radius: 9px; flex-shrink: 0; background-size: cover; background-position: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.q-art.ph { display: grid; place-items: center; color: rgba(255, 255, 255, 0.85); font-size: 14px; }
+.q-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-x { width: 30px; height: 30px; border-radius: 50%; color: rgba(255, 255, 255, 0.45); cursor: pointer; flex-shrink: 0; }
+.q-x:hover { color: #ff6b6b; background: rgba(255, 69, 58, 0.15); }
+.q-empty { text-align: center; color: rgba(255, 255, 255, 0.35); font-size: 12px; font-weight: 700; padding: 30px 10px; }
+
+/* ---------- Add Songs: preview play buttons */
+.f-play {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  color: rgba(255, 255, 255, 0.8); font-size: 11px;
+  background: transparent; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.f-play:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.f-play.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.f-item.previewing { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* ---------- lyrics */
+.lyrics-btn { transition: opacity 0.2s, color 0.2s, background 0.2s; }
+.lyrics-btn.none { opacity: 0.35; }
+.lyrics-btn.open { background: #fff; color: #000; }
+.lyrics-btn.loading i { animation: pulse-red 1.2s infinite; }
+#lyricsPane {
+  position: fixed;
+  left: 0; top: var(--top-h); bottom: 120px;
+  width: min(44vw, 560px);
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0; transform: translateX(-30px);
+  transition: opacity 0.45s var(--ease), transform 0.55s var(--ease);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 70%, transparent 100%);
+}
+body.lyrics-open #lyricsPane { opacity: 1; transform: none; pointer-events: auto; }
+#lyricsTrack {
+  padding: 0 6vw 0 clamp(20px, 4vw, 64px);
+  will-change: transform;
+  transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#lyricsPane.plain { overflow-y: auto; scrollbar-width: none; }
+#lyricsPane.plain::-webkit-scrollbar { display: none; }
+#lyricsPane.plain #lyricsTrack { transition: none; padding-top: 18vh; padding-bottom: 30vh; }
+.ly-line {
+  font-size: clamp(24px, 2.7vw, 38px);
+  font-weight: 800;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  padding: 10px 0;
+  color: #fff;
+  opacity: 0.28;
+  filter: blur(var(--b, 0px));
+  transform-origin: left center;
+  transform: scale(0.96);
+  cursor: pointer;
+  transition: opacity 0.6s var(--ease), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s var(--ease), text-shadow 0.6s;
+}
+.ly-line:hover { opacity: 0.55; }
+.ly-line.on { opacity: 1; transform: scale(1); filter: none; text-shadow: 0 0 24px rgba(255, 255, 255, 0.25); }
+.ly-line.gap { letter-spacing: 0.3em; }
+#lyricsPane.plain .ly-line { opacity: 0.85; transform: none; filter: none; cursor: default; font-size: clamp(18px, 2vw, 26px); }
+.ly-credit { font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.3); padding: 30px 0 0; }
+/* the player slides right a bit so lyrics and the ball don't fight */
+.player-wrapper { transition: transform 0.05s, left 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+@media (min-width: 900px) {
+  body.lyrics-open .player-wrapper { left: 64% !important; }
+}
+@media (max-width: 899px) {
+  #lyricsPane { width: 100%; bottom: 140px; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(16px) brightness(0.6); -webkit-backdrop-filter: blur(16px) brightness(0.6); }
+}
+body.display-mode #lyricsPane, body.clean-lines-mode #lyricsPane { display: none; }

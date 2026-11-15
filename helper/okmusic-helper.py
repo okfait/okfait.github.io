@@ -20,11 +20,13 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PORT = 47823
 ALLOWED_ORIGINS = re.compile(
     r"^(https://okfait\.github\.io|https?://(localhost|127\.0\.0\.1)(:\d+)?)$"
@@ -218,6 +220,22 @@ def youtube_list(url):
 # ---------------------------------------------------------------- download
 
 
+_stream_cache = {}  # video id -> (direct audio url, time found)
+
+
+def stream_url(video_id):
+    """Direct link to the song's audio on YouTube, for quick previews (no full download)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,20}", video_id or ""):
+        raise RuntimeError("bad video id")
+    hit = _stream_cache.get(video_id)
+    if hit and time.time() - hit[1] < 3 * 3600:
+        return hit[0]
+    out = run_ytdlp(["-g", "-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", f"https://www.youtube.com/watch?v={video_id}"], timeout=60)
+    url = out.strip().splitlines()[0]
+    _stream_cache[video_id] = (url, time.time())
+    return url
+
+
 def download(video_id):
     if not re.fullmatch(r"[A-Za-z0-9_-]{6,20}", video_id or ""):
         raise RuntimeError("bad video id")
@@ -321,6 +339,40 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 print(f"  done ({len(data) // 1024} KB)")
+                return
+            if u.path == "/resolve":
+                # which YouTube video a song name matches (used before previewing playlist songs)
+                return self.send_json(best_match(q.get("q", ""), float(q["dur"]) if q.get("dur") else None))
+            if u.path == "/preview":
+                vid = q.get("id", "")
+                url = stream_url(vid)
+                # pass the audio through so the page can play it (keeps seeking working)
+                headers = {"User-Agent": UA}
+                if self.headers.get("Range"):
+                    headers["Range"] = self.headers["Range"]
+                try:
+                    up = urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30)
+                except urllib.error.HTTPError as e:
+                    if e.code == 403:  # link went stale, get a fresh one
+                        _stream_cache.pop(vid, None)
+                        up = urllib.request.urlopen(urllib.request.Request(stream_url(vid), headers=headers), timeout=30)
+                    else:
+                        raise
+                with up:
+                    self.send_response(up.status)
+                    self.cors()
+                    for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+                        if up.headers.get(h):
+                            self.send_header(h, up.headers[h])
+                    self.end_headers()
+                    try:
+                        while True:
+                            chunk = up.read(64 * 1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                        pass  # preview stopped / skipped, totally normal
                 return
             if u.path == "/thumb":
                 vid = q.get("id", "")

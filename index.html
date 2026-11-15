@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.11.0</title>
+    <title>okMUSIC v2.12.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -23,9 +23,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.11.0">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.12.0">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.11.0">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.12.0">
 </head>
 <body>
 
@@ -39,8 +39,9 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.11.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.12.0</span></div>
         <div class="top-actions">
+            <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
             <button onclick="window.ui.toggleLibrary()" class="top-icon" title="Library"><i class="fa-solid fa-music"></i></button>
             <button onclick="window.ui.toggleQueue()" class="top-icon" title="Queue"><i class="fa-solid fa-list-ul"></i></button>
             <button onclick="window.ui.toggleSettings()" class="top-icon" title="Settings"><i class="fa-solid fa-sliders"></i></button>
@@ -112,11 +113,16 @@
         </div>
         
         <div class="panel-content custom-scrollbar fade-mask relative pb-4">
-            <button onclick="window.finder.open()" class="lib-add-btn"><i class="fa-solid fa-cloud-arrow-down"></i><span><b>Add Songs</b><small>Search any song or grab a whole Spotify playlist</small></span></button>
+            <button onclick="window.finder.open()" class="lib-add-btn"><i class="fa-solid fa-cloud-arrow-down"></i><span><b>Add Songs</b><small>Search a song or grab a whole playlist</small></span><span class="lib-add-srcs"><i class="fa-brands fa-spotify" style="color:#1ed760"></i><i class="fa-brands fa-youtube" style="color:#ff3b30"></i></span></button>
 
             <!-- QUICK ACTIONS (Restored to Top) -->
             <div class="quick-actions" style="grid-template-columns: repeat(5, 1fr);">
-                <button onclick="document.getElementById('fileInput').click()" class="q-btn" title="Add Files"><i class="fa-solid fa-plus"></i></button>
+                <div class="ios-select q-menu-wrap"><button onclick="window.uiv3.toggleMenu('addFilesMenu', this)" class="q-btn w-full" title="Add your own files"><i class="fa-solid fa-plus"></i></button>
+                    <div id="addFilesMenu" class="ios-menu ios-menu-left">
+                        <button onclick="window.uiv3.closeMenus(); document.getElementById('fileInput').click()"><i class="fa-solid fa-file-audio"></i> Add files</button>
+                        <button onclick="window.uiv3.closeMenus(); document.getElementById('ltFolderBtn').click()"><i class="fa-solid fa-folder-open"></i> Add a whole folder</button>
+                        <button onclick="window.uiv3.closeMenus(); document.getElementById('ltLinkBtn').click()"><i class="fa-solid fa-link"></i> Add from audio link</button>
+                    </div></div>
                 <button onclick="window.libraryMgr.openFolderModal()" class="q-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
                 <button onclick="window.libraryMgr.shareLibrary()" id="shareLibBtn" class="q-btn" title="Share Library"><i class="fa-solid fa-share-nodes"></i></button>
                 <button onclick="window.player.toggleShuffle()" id="shuffleBtn" class="q-btn" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
@@ -144,12 +150,26 @@
             
             <hr class="border-white/5 my-4">
             <div class="px-2 pb-4 space-y-2">
-                <button onclick="window.libraryMgr.generateSyncLink()" class="w-full bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 border border-blue-500/30 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition shadow-[0_0_15px_rgba(59,130,246,0.1)] hover:shadow-[0_0_20px_rgba(59,130,246,0.25)]"><i class="fa-solid fa-link mr-2"></i> Generate Sync Link via URL</button>
-                <button onclick="window.libraryMgr.exportLibrary()" class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-download mr-2"></i> Export Library Data</button>
-                <button onclick="$('importLibraryInput').click()" class="w-full bg-white/5 hover:bg-white/10 text-white opacity-50 font-bold py-2 rounded-lg text-[10px] tracking-wider uppercase transition"><i class="fa-solid fa-upload mr-2"></i> Import Library / Data</button>
+                <div class="lib-bottom-row">
+                    <div class="ios-select lib-menu-wrap">
+                        <button class="lib-pill" onclick="window.uiv3.toggleMenu('backupMenu', this)"><i class="fa-solid fa-arrow-right-arrow-left"></i> Sync &amp; Backup <i class="fa-solid fa-chevron-up lib-pill-chev"></i></button>
+                        <div id="backupMenu" class="ios-menu ios-menu-up">
+                            <button onclick="window.uiv3.closeMenus(); window.libraryMgr.generateSyncLink()"><i class="fa-solid fa-link"></i> Sync link for your phone</button>
+                            <button onclick="window.uiv3.closeMenus(); window.libraryMgr.exportLibrary()"><i class="fa-solid fa-download"></i> Export library backup</button>
+                            <button onclick="window.uiv3.closeMenus(); $('importLibraryInput').click()"><i class="fa-solid fa-upload"></i> Import a backup</button>
+                        </div>
+                    </div>
+                    <div class="ios-select lib-menu-wrap">
+                        <button class="lib-pill lib-pill-connect" id="connectBtn" onclick="window.uiv3.toggleMenu('connectMenu', this)"><i class="fa-brands fa-spotify"></i><i class="fa-brands fa-youtube"></i> <span id="connectTxt">Connect</span></button>
+                        <div id="connectMenu" class="ios-menu ios-menu-up ios-menu-right">
+                            <div class="menu-info" id="connectSpotifyInfo">Spotify: not connected</div>
+                            <button id="connectSpotifyAct" onclick="window.uiv3.closeMenus(); window.spotify.isConnected() ? window.spotify.logout() : window.spotify.login()"><i class="fa-brands fa-spotify" style="color:#1ed760"></i> <span>Connect Spotify</span></button>
+                            <div class="menu-info"><i class="fa-brands fa-youtube" style="color:#ff3b30"></i> YouTube needs no login, just paste links in Add Songs</div>
+                        </div>
+                    </div>
+                </div>
                 <input type="file" id="importLibraryInput" accept=".json" class="hidden" onchange="window.libraryMgr.importLibrary(this)">
-                
-                <button onclick="window.ui.openPlaylistImporter()" class="lib-row-btn lib-row-spotify"><i class="fa-brands fa-spotify"></i> Import Spotify / YouTube playlist</button>
+                <button onclick="window.ui.openPlaylistImporter()" hidden aria-hidden="true"></button>
             </div>
 
             <div class="mt-2 text-center">
@@ -172,7 +192,7 @@
 
             <!-- ===== SOUND ===== -->
             <div class="set-group-title">Sound</div>
-            <div class="set-group">
+            <div class="set-group grp-sound">
                 <div class="set-row set-row-col">
                     <div class="set-row-top"><span class="set-icon" style="--c:#ef4444"><i class="fa-solid fa-drum"></i></span><span class="set-label">Bass Boost</span><span id="bassVal" class="set-value">0dB</span></div>
                     <input type="range" id="bassSlider" class="setting-slider" min="0" max="40" value="0" oninput="window.audioSys.setBass(this.value)">
@@ -240,7 +260,7 @@
 
             <!-- ===== LOOK ===== -->
             <div class="set-group-title">Look</div>
-            <div class="set-group">
+            <div class="set-group grp-look">
                 <div class="set-row">
                     <span class="set-icon" style="--c:var(--accent)"><i class="fa-solid fa-palette"></i></span>
                     <span class="set-text"><span class="set-label">Theme</span></span>
@@ -308,7 +328,7 @@
 
             <!-- ===== VISUALIZER ===== -->
             <div class="set-group-title">Visualizer</div>
-            <div class="set-group">
+            <div class="set-group grp-viz">
                 <div class="set-row">
                     <span class="set-icon" style="--c:#06b6d4"><i class="fa-solid fa-circle-nodes"></i></span>
                     <span class="set-text"><span class="set-label">Style</span></span>
@@ -318,6 +338,14 @@
                         <button data-mode="liquid" onclick="window.uiv3.setVizMode('liquid')">Liquid</button>
                     </div>
                     <span id="vizModeBtn" hidden>RING</span>
+                </div>
+                <div class="set-row" id="liquidVerRow">
+                    <span class="set-icon" style="--c:#8b5cf6"><i class="fa-solid fa-fire"></i></span>
+                    <span class="set-text"><span class="set-label">Liquid version</span><span class="set-sub">V2 = phonk edit style</span></span>
+                    <div class="seg" id="liquidVerSeg">
+                        <button data-ver="v1" onclick="window.uiv3.setLiquidVer('v1')">V1</button>
+                        <button data-ver="v2" onclick="window.uiv3.setLiquidVer('v2')">V2</button>
+                    </div>
                 </div>
                 <button type="button" class="set-row set-row-btn" id="vizTunerOpenBtn" onclick="window.uiv3.toggleTuner()">
                     <span class="set-icon" style="--c:var(--accent)"><i class="fa-solid fa-sliders"></i></span>
@@ -364,7 +392,7 @@
 
             <!-- ===== PARTY ===== -->
             <div class="set-group-title">Party Mode</div>
-            <div class="set-group">
+            <div class="set-group grp-party">
                 <label class="set-row">
                     <span class="set-icon" style="--c:#f97316"><i class="fa-solid fa-satellite-dish"></i></span>
                     <span class="set-text"><span class="set-label">Host controls FX</span><span class="set-sub">Guests hear the host's bass/speed</span></span>
@@ -379,7 +407,7 @@
 
             <!-- ===== ADVANCED ===== -->
             <div class="set-group-title">Advanced</div>
-            <div class="set-group">
+            <div class="set-group grp-adv">
                 <details class="set-details">
                     <summary class="set-row">
                         <span class="set-icon" style="--c:#334155"><i class="fa-solid fa-microscope"></i></span>
@@ -754,12 +782,15 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.11.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.12.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.11.0"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.12.0"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.11.0"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.12.0"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.11.0"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.12.0"></script>
+    <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
+    <script type="module" src="assets/js/lyrics.js?v=2.12.0"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.12.0"></script>
 </body>
 </html>

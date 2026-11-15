@@ -1442,6 +1442,29 @@ class Visualizer {
   resize() {
     this.cv.width = window.innerWidth;
     this.cv.height = window.innerHeight;
+    this._isMobile =
+      window.innerWidth < 800 ||
+      window.innerHeight < 600 ||
+      /Mobi|Android/i.test(navigator.userAgent);
+  }
+  // Accent color without asking the browser to recalculate all styles every frame.
+  // setTheme() writes --accent inline on <html>, so reading the inline value is free.
+  accent() {
+    const v = document.documentElement.style.getPropertyValue("--accent").trim();
+    if (v) return v;
+    if (!this._accentCss) this._accentCss = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#60a5fa";
+    return this._accentCss;
+  }
+  // Center of the album art, measured once per frame BEFORE anything on the page changes
+  // (measuring after style changes forces the browser to redo the whole layout every frame).
+  measureArt() {
+    const art = this._artEl || (this._artEl = document.getElementById("albumArt"));
+    if (!art) return (this._artC = null);
+    const r = art.getBoundingClientRect();
+    this._artC = { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 };
+  }
+  artCenter(w, h) {
+    return this._artC || { x: w / 2, y: h / 2 - 40, r: 140 };
   }
   start() {
     this.draw();
@@ -1510,10 +1533,19 @@ class Visualizer {
     // Save CPU/RAM: don't draw when the tab is hidden or minimized,
     // and only draw at ~10fps while the music is paused (music itself is not affected)
     if (document.hidden) return;
-    if (window.audioSys.audio.paused) {
-      this._pausedTick = ((this._pausedTick || 0) + 1) % 6;
+    // Paused: keep full speed while the shapes are still settling down (before, this ran
+    // at 10fps and the liquid settled in slow motion). Once everything is still, draw at
+    // half rate - only the slow drifting sparks are left by then.
+    const pausedNow = window.audioSys.audio.paused;
+    if (pausedNow && this._settled) {
+      this._pausedTick = ((this._pausedTick || 0) + 1) % 2;
       if (this._pausedTick !== 0) return;
     }
+    if (!pausedNow) {
+      this._settled = false;
+      this._quiet = 0;
+    }
+    this.measureArt();
 
     const t = window.audioSys.audio.currentTime;
     if (t < this.lastTrigger) this.lastTrigger = -1;
@@ -1549,7 +1581,10 @@ class Visualizer {
       this._fftBuf = new Uint8Array(binCount);
     }
     const buf = this._fftBuf;
-    window.audioSys.analyser.getByteFrequencyData(buf);
+    // same numbers the history buffer just read this frame - copy instead of asking the analyser again
+    const hf = this.history.getDelayedFrame(0);
+    if (hf.length === buf.length) buf.set(hf);
+    else window.audioSys.analyser.getByteFrequencyData(buf);
     const ctx = this.ctx,
       w = this.cv.width,
       h = this.cv.height;
@@ -1567,9 +1602,10 @@ class Visualizer {
     let avgVolume = (totalVol / buf.length) / 255.0; // 0.0 to 1.0
     
     ctx.clearRect(-w, -h, w * 3, h * 3);
+    const useV2 = this.mode === "liquid" && window.liquidV2 && window.liquidV2.active();
     // Draw Particles behind everything else (AND independent of camera shake)
     const cfg = window.vizConfig || { sparks: true };
-    if (cfg.sparks !== false) {
+    if (cfg.sparks !== false && !useV2) {
         ctx.save();
         ctx.translate(w / 2, h / 2); // Center 0,0 without the shake
         
@@ -1595,35 +1631,35 @@ class Visualizer {
     bass /= 4;
 
     // RESTORED: Beat Flash Logic
-    const flashEl = window.$("beat-flash");
+    const flashEl = this._flashEl || (this._flashEl = window.$("beat-flash"));
     if (this.flash && flashEl) {
         const th = 80; // Even lower threshold (from 100)
-        if (bass > th) {
-            const intensity = (bass - th) / (255 - th);
-            flashEl.style.opacity = intensity * 1.2; // Even higher intensity (from 1.0)
+        const fo = bass > th ? Math.round(((bass - th) / (255 - th)) * 1.2 * 100) / 100 : 0;
+        if (fo !== this._flashOp) {
+            flashEl.style.opacity = fo; // Even higher intensity (from 1.0)
+            this._flashOp = fo;
+        }
+        if (fo && baseZoom !== this._flashZoom) {
             flashEl.style.transform = `translate(-50%, -50%) scale(${baseZoom})`;
-        } else {
-            flashEl.style.opacity = 0;
+            this._flashZoom = baseZoom;
         }
     }
 
     // Bass Reactive Background
-    const bgLayer = window.$("bg-layer");
-    const isMobile =
-      window.innerWidth < 800 ||
-      window.innerHeight < 600 ||
-      /Mobi|Android/i.test(navigator.userAgent);
+    // (Only opacity changes now: rewriting the blur filter every frame made the browser
+    // re-blur a screen-sized layer 60 times a second. Brighter = a bit more opacity.)
+    const bgLayer = this._bgEl || (this._bgEl = window.$("bg-layer"));
     if (bgLayer) {
-      const baseOp = parseFloat(localStorage.getItem("sv_bg_bright") || 0.15);
+      if (this._baseOp == null) this._baseOp = parseFloat(localStorage.getItem("sv_bg_bright") || 0.15);
+      let op = this._baseOp;
       if (bass > 100) {
         const bgInt = (bass - 100) / (255 - 100);
-        bgLayer.style.opacity = Math.min(1, baseOp + bgInt * 0.4);
-        bgLayer.style.filter = isMobile
-          ? "none"
-          : `blur(30px) brightness(${1 + bgInt * 0.5})`;
-      } else {
-        bgLayer.style.opacity = baseOp;
-        bgLayer.style.filter = isMobile ? "none" : `blur(30px) brightness(1)`;
+        op = Math.min(1, (op + bgInt * 0.4) * (1 + bgInt * 0.5));
+      }
+      op = Math.round(op * 100) / 100;
+      if (op !== this._bgOp) {
+        bgLayer.style.opacity = op;
+        this._bgOp = op;
       }
     }
 
@@ -1646,8 +1682,16 @@ class Visualizer {
       setTimeout(() => ripple.remove(), 1000);
     }
 
-    const te = buf.reduce((a, b) => a + b, 0);
-    if (te > 100) {
+    let te = 0;
+    for (let i = 0; i < buf.length; i++) te += buf[i];
+    if (pausedNow) {
+      // the ghost layers lag ~21 frames behind, so wait a bit longer than that
+      // "quiet" = only faint leftover noise (reverb tail / analyser floor), avg level under 3/255
+      this._quiet = te < buf.length * 3 ? (this._quiet || 0) + 1 : 0;
+      if (this._quiet > 40) this._settled = true;
+    }
+    if (useV2) window.liquidV2.frame(ctx, w, h, buf, this);
+    else if (te > 100) {
       if (this.mode === "ring") this.drawRing(ctx, w, h, buf);
       else if (this.mode === "liquid") this.drawLiquid(ctx, w, h, buf);
       else this.drawBars(ctx, w, h, buf);
@@ -1655,27 +1699,17 @@ class Visualizer {
     ctx.restore();
   }
   drawRing(ctx, w, h, d) {
-    const art = document.getElementById("albumArt");
-    let cx = w / 2,
-      cy = h / 2 - 40;
-    if (art) {
-      const rect = art.getBoundingClientRect();
-      cx = rect.left + rect.width / 2;
-      cy = rect.top + rect.height / 2;
-    }
+    const ac = this.artCenter(w, h);
+    let cx = ac.x,
+      cy = ac.y;
     const r = 140,
       bars = 100;
     // IMPROVED: Use a wider range of the buffer to avoid static/dead lines
     const lim = Math.floor(d.length * 0.6),
       step = Math.max(1, Math.floor(lim / bars));
     const sens = window.vizSens || 1.0;
-    const col = getComputedStyle(document.documentElement).getPropertyValue(
-      "--accent",
-    );
-    const isMobile =
-      window.innerWidth < 800 ||
-      window.innerHeight < 600 ||
-      /Mobi|Android/i.test(navigator.userAgent);
+    const col = this.accent();
+    const isMobile = this._isMobile;
     if (this.xStrength > 0.2) {
       ctx.strokeStyle = "#ffffff";
       ctx.shadowColor = "#ffffff";
@@ -1752,13 +1786,8 @@ class Visualizer {
     const lim = Math.floor(d.length * 0.6),
       step = Math.max(1, Math.floor(lim / cnt));
     const sens = window.vizSens || 1.0;
-    const isMobile =
-      window.innerWidth < 800 ||
-      window.innerHeight < 600 ||
-      /Mobi|Android/i.test(navigator.userAgent);
-    const col = getComputedStyle(document.documentElement).getPropertyValue(
-      "--accent",
-    );
+    const isMobile = this._isMobile;
+    const col = this.accent();
     ctx.fillStyle = col;
     ctx.shadowBlur = isMobile ? 0 : 10;
     ctx.shadowColor = col;
@@ -1801,7 +1830,7 @@ class Visualizer {
     const totalBars = barsPerSide * 2; // 120
     const sp = w / totalBars;
     const sens = window.vizSens || 1.0;
-    const col = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    const col = this.accent();
     
     ctx.shadowBlur = 0; // Crisp lines like the video
     const barW = Math.max(1, sp * 0.7); // Leave a 30% gap between bars
@@ -1921,6 +1950,15 @@ class Visualizer {
     } catch(e) {}
   }
 
+
+  artConic(ctx, cx, cy) {
+    const ring = window.artRing;
+    const g = ctx.createConicGradient(0, cx, cy);
+    const n = ring.length;
+    for (let i = 0; i < n; i++) g.addColorStop(i / n, ring[i]);
+    g.addColorStop(1, ring[0]);
+    return g;
+  }
 
   getSymmetricPoints(cx, cy, frameData) {
     const points = [];
@@ -2158,14 +2196,9 @@ class Visualizer {
   }
 
   drawLiquid(ctx, w, h, ignored_d) {
-    const art = document.getElementById("albumArt");
-    let cx = w / 2,
-      cy = h / 2 - 40;
-    if (art) {
-      const rect = art.getBoundingClientRect();
-      cx = rect.left + rect.width / 2;
-      cy = rect.top + rect.height / 2;
-    }
+    const ac = this.artCenter(w, h);
+    let cx = ac.x,
+      cy = ac.y;
     
     // UI Feature: Draw the perfectly mirrored audio spectrum "sound lines" behind the liquid visualizer
     if (document.getElementById("tuneBgLines") && document.getElementById("tuneBgLines").checked) {
@@ -2182,10 +2215,7 @@ class Visualizer {
     }
 
     const renderQueue = [];
-    const isMobile =
-      window.innerWidth < 800 ||
-      window.innerHeight < 600 ||
-      /Mobi|Android/i.test(navigator.userAgent);
+    const isMobile = this._isMobile;
     const tMode = window.ui ? window.ui.themeMode : "solid";
     const ghosting = this.smooth; // 'smooth' boolean handles the UI toggle for "Smooth Following"
 
@@ -2233,20 +2263,11 @@ class Visualizer {
             data: this.history.getDelayedFrame(6),
             color: window.ui.themeGrad2,
           });
-        } else if (tMode === "dominant" && window.dominantColor) {
-          renderQueue.push({
-            data: this.history.getDelayedFrame(12),
-            color: window.dominantColor2 || "#ffffff",
-          });
-          renderQueue.push({
-            data: this.history.getDelayedFrame(6),
-            color: window.dominantColor,
-          });
+        } else if (tMode === "dominant") {
+          // Album Art mode: no trailing color layers, the liquid itself carries the art's colors
         } else {
           const acc =
-            getComputedStyle(document.documentElement).getPropertyValue(
-              "--accent",
-            ) || "#ff0044";
+            this.accent() || "#ff0044";
           renderQueue.push({
             data: this.history.getDelayedFrame(12),
             color: acc,
@@ -2278,9 +2299,17 @@ class Visualizer {
     );
     const mainPath = this.buildSmoothPath(mainPts);
 
-    const acc = getComputedStyle(document.documentElement).getPropertyValue("--accent") || "#ff0044";
+    const acc = this.accent() || "#ff0044";
 
-    if (tMode === "solid-fill") {
+    if (tMode === "dominant" && window.artRing && window.artRing.length) {
+      // Each direction gets the color of the album art's edge pixel in that direction,
+      // so the art looks like it melts outward into the liquid.
+      ctx.fillStyle = this.artConic(ctx, cx, cy);
+      if (this.flash && this.lastBassSpike > 0.1) {
+          ctx.shadowBlur = 30 * this.lastBassSpike;
+          ctx.shadowColor = window.dominantColor || acc;
+      }
+    } else if (tMode === "solid-fill") {
       ctx.fillStyle = acc;
     } else {
       ctx.fillStyle = "#ffffff";
@@ -3178,9 +3207,7 @@ class CurveEditor {
     ctx.moveTo(0, h / 2);
     ctx.lineTo(w, h / 2);
     ctx.stroke();
-    const col = getComputedStyle(document.documentElement).getPropertyValue(
-      "--accent",
-    );
+    const col = this.accent();
     ctx.strokeStyle = this.editMode === "speed" ? col : `rgba(255,255,255,0.2)`;
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -4380,6 +4407,42 @@ class UI {
 
         window.dominantColor = `rgb(${r},${g},${b})`;
 
+        // Colors along the inside edge of the round album art, one per direction
+        // (used by the Album Art theme to paint the liquid). Clockwise from 3 o'clock,
+        // same as the canvas conic gradient.
+        try {
+          const S = 96;
+          const c2 = document.createElement("canvas");
+          c2.width = c2.height = S;
+          const x2 = c2.getContext("2d", { willReadFrequently: true });
+          const side = Math.min(img.width, img.height); // "cover" crop, like the circle shows it
+          x2.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+          const px = x2.getImageData(0, 0, S, S).data;
+          const N = 72;
+          const ring = [];
+          for (let k = 0; k < N; k++) {
+            const ang = (k / N) * Math.PI * 2;
+            let rr = 0, gg = 0, bb = 0, cnt = 0;
+            for (const rad of [0.4, 0.44, 0.48]) {
+              const x = Math.round(S / 2 + Math.cos(ang) * S * rad);
+              const y = Math.round(S / 2 + Math.sin(ang) * S * rad);
+              const o = (Math.min(S - 1, Math.max(0, y)) * S + Math.min(S - 1, Math.max(0, x))) * 4;
+              rr += px[o]; gg += px[o + 1]; bb += px[o + 2]; cnt++;
+            }
+            rr /= cnt; gg /= cnt; bb /= cnt;
+            // a little extra color + brightness so dark covers still glow
+            const mx = Math.max(rr, gg, bb), mn = Math.min(rr, gg, bb);
+            const sat = 0.35, lift = mx < 90 ? 90 - mx : 0;
+            rr = Math.min(255, rr + (rr - mn) * sat + lift) | 0;
+            gg = Math.min(255, gg + (gg - mn) * sat + lift) | 0;
+            bb = Math.min(255, bb + (bb - mn) * sat + lift) | 0;
+            ring.push(`rgb(${rr},${gg},${bb})`);
+          }
+          window.artRing = ring;
+        } catch (e) {
+          window.artRing = null;
+        }
+
         // Create a complementary/secondary color by shifting hue
         window.dominantColor2 = `rgb(${g},${b},${r})`;
       };
@@ -4389,6 +4452,7 @@ class UI {
       window.$("artPlaceholder").style.display = "flex";
       window.dominantColor = null;
       window.dominantColor2 = null;
+      window.artRing = null;
     }
   }
   updatePlayBtn(p) {
@@ -4789,6 +4853,7 @@ class UI {
   setBgBrightness(v) {
     window.$("bg-layer").style.opacity = v;
     localStorage.setItem("sv_bg_bright", v);
+    if (window.viz) window.viz._baseOp = parseFloat(v);
   }
   updateMetaTags() {
     const c = window.$("metaTags");

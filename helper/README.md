@@ -20,4 +20,5 @@ works, so this does the downloading and hands the songs to the okMUSIC page.
 - It only answers okMUSIC (okfait.github.io and localhost), other sites get blocked.
 - It updates yt-dlp by itself once a day, because YouTube changes stuff often.
 - Songs are saved as the original YouTube audio (.m4a), no quality lost to re-encoding.
+- Previews (the play button in Add Songs) stream the song through the helper, nothing gets saved.
 - Port: 47823 on 127.0.0.1 (your PC only, not reachable from the internet).
