@@ -1,5 +1,5 @@
 // okMUSIC Phone Remote: the PC plays the music, the phone shows the same visuals live and
-// has play / pause / skip / back / repeat / stop (no timeline editor, no volume).
+// has play / pause / skip / back / repeat (no stop, no timeline editor, no volume).
 //
 // PC: ••• → Phone remote → a QR code shows up. Phone: scan it (or open okMUSIC → ••• →
 // Phone remote → type the code). Nothing to install, it's just the website.
@@ -8,7 +8,7 @@
 // own visualizer draws them, so it looks exactly like the PC: ring / bars / liquid V1 / V2,
 // beat flash, colors, album art, lyrics.
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.13.3";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.14.0";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);

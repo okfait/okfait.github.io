@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.13.3</title>
+    <title>okMUSIC v2.14.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -25,9 +25,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.13.3">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.14.0">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.13.3">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.14.0">
 </head>
 <body>
 
@@ -41,7 +41,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.13.3</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.14.0</span></div>
         <div class="top-actions">
             <button onclick="window.remote.stop()" class="remote-pill" title="Stop being a remote"><i class="fa-solid fa-mobile-screen-button"></i> Remote · Exit</button>
             <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
@@ -93,7 +93,6 @@
     <div class="controls glass-panel">
         <button class="btn" onclick="window.player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
         <button class="btn btn-editor" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
-        <button class="btn remote-only" onclick="window.remote.cmd('stop')" title="Stop"><i class="fa-solid fa-stop"></i></button>
         
         <button class="btn" onclick="window.player.prev()"><i class="fa-solid fa-backward-step"></i></button>
         <button class="btn main" onclick="window.player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
@@ -748,20 +747,22 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/app.js?v=2.14.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.14.0"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.14.0"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.14.0"></script>
     <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
-    <script type="module" src="assets/js/lyrics.js?v=2.13.3"></script>
-    <script type="module" src="assets/js/liquid-v2.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/lyrics.js?v=2.14.0"></script>
+    <script type="module" src="assets/js/kick-map.js?v=2.14.0"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.14.0"></script>
+    <script type="module" src="assets/js/scrubber.js?v=2.14.0"></script>
     <!-- v2.13: Jam (listen together, device to device) + Phone remote -->
-    <script type="module" src="assets/js/party.js?v=2.13.3"></script>
-    <script type="module" src="assets/js/remote.js?v=2.13.3"></script>
-    <!-- v2.13.3: first-visit pulsating tutorial -->
-    <script type="module" src="assets/js/tutorial.js?v=2.13.3"></script>
+    <script type="module" src="assets/js/party.js?v=2.14.0"></script>
+    <script type="module" src="assets/js/remote.js?v=2.14.0"></script>
+    <!-- v2.13.1: first-visit pulsating tutorial -->
+    <script type="module" src="assets/js/tutorial.js?v=2.14.0"></script>
 </body>
 </html>

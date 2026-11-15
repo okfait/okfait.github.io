@@ -1454,13 +1454,20 @@ class Visualizer {
   // The drawing surface must be EXACTLY the size the canvas shows at, or everything gets
   // stretched (that's the "liquid off to the side / too high" bug on iPhone after rotating or
   // when the address bar moves: the window size Safari reports lags behind the real one).
+  // Phones/retina screens have 2-3 real pixels per "page pixel": the drawing surface gets that many
+  // too (capped at 2, more costs a lot and looks the same), so the liquid is sharp, not pixelated.
+  // All the drawing code keeps working in page pixels (this.W x this.H).
   resize() {
     const r = this.cv.getBoundingClientRect();
     const W = Math.round(r.width) || window.innerWidth;
     const H = Math.round(r.height) || window.innerHeight;
-    if (this.cv.width === W && this.cv.height === H) return;
-    this.cv.width = W;
-    this.cv.height = H;
+    const D = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    if (this.W === W && this.H === H && this.dpr === D) return;
+    this.W = W;
+    this.H = H;
+    this.dpr = D;
+    this.cv.width = Math.round(W * D);
+    this.cv.height = Math.round(H * D);
     this._isMobile =
       window.innerWidth < 800 ||
       window.innerHeight < 600 ||
@@ -1482,7 +1489,7 @@ class Visualizer {
     const r = art.getBoundingClientRect();
     // canvas position + real size, checked every frame (cheap: layout was just measured anyway)
     const c = this.cv.getBoundingClientRect();
-    if (Math.round(c.width) !== this.cv.width || Math.round(c.height) !== this.cv.height) this.resize();
+    if (Math.round(c.width) !== this.W || Math.round(c.height) !== this.H) this.resize();
     // the art can be scaled by the V2 punch: use its layout size, not the punched size
     const size = art.offsetWidth || r.width;
     this._artC = { x: r.left + r.width / 2 - c.left, y: r.top + r.height / 2 - c.top, r: size / 2 };
@@ -1612,8 +1619,10 @@ class Visualizer {
     if (hf.length === buf.length) buf.set(hf);
     else window.audioSys.analyser.getByteFrequencyData(buf);
     const ctx = this.ctx,
-      w = this.cv.width,
-      h = this.cv.height;
+      w = this.W,
+      h = this.H;
+    // everything below draws in page pixels; the surface itself has dpr x more real pixels
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     if (this.xStrength > 0) this.xStrength -= 0.05;
     if (this.xStrength < 0) this.xStrength = 0;
     const baseZoom = window.displayScale || 1.0;
@@ -1695,10 +1704,18 @@ class Visualizer {
     const prevBass = this.bassHistory[this.bassHistory.length - 2] || bass;
     const bassJump = bass - prevBass; // dC/dt
 
+    // when the song has been scanned, the ripple goes off on REAL kicks only (not voices / notes)
+    const km = window.kickMap && window.kickMap.current();
+    let rippleNow;
+    if (km && window.liquidV2) {
+      window.liquidV2.probe();
+      const seq = window.liquidV2.kickSeq;
+      rippleNow = seq !== this._rippleSeq && window.liquidV2.kickStr >= 0.85;
+      this._rippleSeq = seq;
+    } else rippleNow = bass > 180 && bassJump > 30;
     if (
       this.rippleEffect &&
-      bass > 180 &&
-      bassJump > 30 &&
+      rippleNow &&
       performance.now() - this.lastRippleTime > 300
     ) {
       this.lastRippleTime = performance.now();
@@ -4493,9 +4510,7 @@ class UI {
     if (!a.duration) return;
     const pct = (a.currentTime / a.duration) * 100;
     const bar = window.$("progressBar");
-    bar.value = pct;
-    const precisePct = (pct / 100) * (bar.offsetWidth - 12) + 6;
-    bar.style.background = `linear-gradient(to right, var(--accent) ${precisePct}px, rgba(255,255,255,0.3) ${precisePct}px)`;
+    bar.value = pct; // (scrubber.js replaces this whole function with the new slider)
     const f = (s) =>
       `${Math.floor(s / 60)}:${Math.floor(s % 60)
         .toString()

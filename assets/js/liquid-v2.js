@@ -1,22 +1,22 @@
-// Liquid V2 - phonk edit style (v2.13.2 rebuild, modeled on the YouTube Shorts phonk visualizers).
+// Liquid V2 (v2.14.0): the V1 liquid shape, with the phonk-edit EFFECTS on top.
 //
 // What's on screen, back to front:
 //  - the album art blown up as the background, turned 2-tone (black -> your color -> white),
 //    dark, and it moves with the "camera"
-//  - thin glowing liquid OUTLINES (no filled white blob any more = no raindrop), several
-//    layers that lag behind each other, with sharp spikes on both sides (mirrored 4 ways)
-//  - a black disc behind the cover + a ring of little teeth spinning around it (faster on bass)
+//  - the normal V1 liquid (same shape, same settings), with a soft bloom around it
+//  - a ring of little teeth spinning around the cover (faster on bass) + shockwave rings on kicks
 //  - the cover itself 2-tone with a shine sweeping across (CSS, see ui-v3.css body.lv2)
-//  - camera: every kick punches in (springy zoom that overshoots), zoom blur, a little shake + tilt,
-//    and a slow drift the rest of the time so it never feels frozen
-// Kicks come from a separate zero-smoothing listener on the clean signal (catches way more
-// than reading the boosted, smoothed visualizer numbers).
+//  - camera: every KICK punches in (springy zoom that overshoots), zoom blur, red/blue split,
+//    a little shake + tilt, and a slow drift the rest of the time so it never feels frozen
+// Kicks: from the song's kick map (kick-map.js scans the whole song once = only real kick drums,
+// not voices or notes). Until that scan is done, a live detector on the clean signal fills in.
 
 const S = {
-  w: 0, h: 0,
-  layer: null, lctx: null, glow: null, vignette: null,
+  w: 0, h: 0, D: 1,
+  layer: null, lctx: null, glow: null, tint: null, vignette: null,
   bg: null, bgKey: "", bgImg: null, bgImgSrc: "",
   spring: { x: 0, v: 0 },
+  R: { x: 0, v: 0 },
   shake: 0, tilt: 0,
   last: 0, t0: performance.now(),
   shocks: [],
@@ -24,9 +24,7 @@ const S = {
   artScale: 1, artBlur: 0, artEl: null,
   lastFrame: 0,
   bodyOn: false,
-  n: 96,
-  x: null, v: null, ex: null, ev: null, ex2: null, ev2: null,
-  R: { x: 0, v: 0 },
+  mapId: null, mapIdx: 0, mapPos: -1,
   an: null, fbuf: null, hist: [], fluxM: 1, fluxV: 1, lvl: -60, lastKick: 0, probeAt: 0,
   kickSeq: 0, kickStr: 0, usedSeq: 0,
   ext: false,
@@ -38,21 +36,56 @@ function makeCanvas(w, h) {
   c.height = Math.max(1, Math.round(h));
   return c;
 }
-function setup(w, h) {
+function setup(w, h, D) {
   S.w = w;
   S.h = h;
-  S.layer = makeCanvas(w, h);
+  S.D = D;
+  S.layer = makeCanvas(w * D, h * D);
   S.lctx = S.layer.getContext("2d");
   S.glow = makeCanvas(w / 4, h / 4);
+  S.tint = null;
   S.vignette = null;
   S.bgKey = "";
 }
-function ring() {
-  if (S.x) return;
-  for (const k of ["x", "v", "ex", "ev", "ex2", "ev2"]) S[k] = new Float32Array(S.n);
+
+// ---------------------------------------------------------------- kicks
+function fire(str) {
+  S.kickSeq++;
+  S.kickStr = str || 1;
+}
+function outLat() {
+  const c = window.audioSys && window.audioSys.ctx;
+  return c ? (c.outputLatency || 0) + (c.baseLatency || 0) : 0;
+}
+// kick map: fire when what you HEAR passes a kick (audio position minus the speaker delay,
+// a hair early because the screen shows what we draw about one refresh later)
+function probeMap(map) {
+  const a = window.audioSys.audio;
+  if (a.paused) {
+    S.mapPos = -1;
+    return;
+  }
+  const pos = a.currentTime - outLat() + 0.012;
+  const t = map.t;
+  if (S.mapId !== map.id || S.mapPos < 0 || pos < S.mapPos - 0.05 || pos > S.mapPos + 0.6) {
+    // new song / seek / just pressed play: jump to the right spot without firing old kicks
+    S.mapId = map.id;
+    let lo = 0, hi = t.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (t[m] < pos - 0.02) lo = m + 1;
+      else hi = m;
+    }
+    S.mapIdx = lo;
+  }
+  while (S.mapIdx < t.length && t[S.mapIdx] <= pos) {
+    if (pos - t[S.mapIdx] < 0.15) fire(map.s[S.mapIdx]);
+    S.mapIdx++;
+  }
+  S.mapPos = pos;
 }
 
-// ---------------------------------------------------------------- kick detector
+// live fallback (only while the song hasn't been scanned yet): zero-smoothing listener on the clean signal
 function ensureAnalyser() {
   if (S.an || S.ext) return S.an;
   const as = window.audioSys;
@@ -64,10 +97,7 @@ function ensureAnalyser() {
   S.fbuf = new Float32Array(S.an.frequencyBinCount);
   return S.an;
 }
-function probe() {
-  const now = performance.now();
-  if (now - S.probeAt < 8) return;
-  S.probeAt = now;
+function probeLive(now) {
   const an = ensureAnalyser();
   if (!an) return;
   if (window.audioSys.audio.paused) {
@@ -93,14 +123,22 @@ function probe() {
   S.fluxV += (d * d - S.fluxV) * 0.02;
   if (isKick) {
     S.lastKick = now;
-    S.kickSeq++;
-    S.kickStr = Math.min(1.35, 0.6 + (flux - thr) / 8);
+    fire(Math.min(1.35, 0.6 + (flux - thr) / 8));
   }
 }
+function probe() {
+  const now = performance.now();
+  if (now - S.probeAt < 8) return;
+  S.probeAt = now;
+  if (S.ext) return; // phone remote: the PC tells us when
+  const map = window.kickMap && window.kickMap.current();
+  if (map) probeMap(map);
+  else probeLive(now);
+}
+// phone remote: the PC says "kick!"
 function kick(strength) {
   S.ext = true;
-  S.kickSeq++;
-  S.kickStr = strength || 1;
+  fire(strength || 1);
 }
 
 function colors(viz) {
@@ -109,11 +147,11 @@ function colors(viz) {
   const t = performance.now() / 1000;
   if (tMode === "rainbow") {
     const h = (t * 50) % 360;
-    return { line: `hsl(${h},100%,62%)`, line2: `hsl(${(h + 60) % 360},100%,62%)` };
+    return { line: `hsl(${h},100%,62%)` };
   }
-  if (tMode === "gradient" && window.ui.themeGrad1) return { line: window.ui.themeGrad1, line2: window.ui.themeGrad2 };
-  if (tMode === "dominant" && window.dominantColor) return { line: window.dominantColor, line2: window.dominantColor2 || acc };
-  return { line: acc, line2: acc };
+  if (tMode === "gradient" && window.ui.themeGrad1) return { line: window.ui.themeGrad1 };
+  if (tMode === "dominant" && window.dominantColor) return { line: window.dominantColor };
+  return { line: acc };
 }
 
 // ---------------------------------------------------------------- 2-tone background from the cover
@@ -161,33 +199,13 @@ function buildBg(w, h, color) {
   S.bg = c;
 }
 
-// smooth closed outline through the ring points (arr = how far out each point is)
-function blobPath(cx, cy, base, arr, scale) {
-  const n = S.n;
-  const px = new Array(n), py = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
-    const r = (base + arr[i]) * scale;
-    px[i] = cx + Math.cos(ang) * r;
-    py[i] = cy + Math.sin(ang) * r;
-  }
-  const p = new Path2D();
-  p.moveTo((px[n - 1] + px[0]) / 2, (py[n - 1] + py[0]) / 2);
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    p.quadraticCurveTo(px[i], py[i], (px[i] + px[j]) / 2, (py[i] + py[j]) / 2);
-  }
-  p.closePath();
-  return p;
-}
-
 function frame(ctx, w, h, buf, viz) {
   const now = performance.now();
   const dt = Math.min(0.05, Math.max(0.001, (now - (S.last || now - 16)) / 1000));
   S.last = now;
   S.lastFrame = now;
-  if (w !== S.w || h !== S.h || !S.layer) setup(w, h);
-  ring();
+  const D = viz.dpr || 1;
+  if (w !== S.w || h !== S.h || D !== S.D || !S.layer) setup(w, h, D);
   probe();
   if (!S.bodyOn) {
     S.bodyOn = true;
@@ -198,17 +216,15 @@ function frame(ctx, w, h, buf, viz) {
   const sens = cfg.sens || window.vizSens || 1;
   const ac = viz.artCenter(w, h);
   const cx = ac.x, cy = ac.y;
-  const sc = window.displayScale || 1;
-  const base = (ac.r || 120) + 10 * sc;
+  const sc = Math.max(0.6, Math.min(1.4, (ac.r || 120) / 120)) * (window.displayScale || 1);
+  const base = (ac.r || 120) + 4 * sc;
   const paused = window.audioSys.audio.paused && !S.ext;
   const T = (now - S.t0) / 1000;
 
-  let bass = 0, mids = 0, highs = 0;
+  let bass = 0, highs = 0;
   for (let i = 0; i < 6; i++) bass += buf[i];
-  for (let i = 12; i < 48; i++) mids += buf[i];
   for (let i = 60; i < 200; i++) highs += buf[i];
   bass = Math.min(1, (bass / 6 / 255) * sens);
-  mids = mids / 36 / 255;
   highs = highs / 140 / 255;
 
   // ---------------------------------------------------------------- kicks
@@ -219,9 +235,8 @@ function frame(ctx, w, h, buf, viz) {
       S.spring.v += 42 * k;
       S.shake = Math.min(1, S.shake + 0.5 * k);
       S.tilt = (Math.random() < 0.5 ? -1 : 1) * 0.035 * k;
-      S.R.v += 300 * k * sc;
-      for (let i = 0; i < S.n; i++) S.v[i] += 380 * k * sc * (0.6 + 0.4 * Math.random());
-      S.shocks.push({ r: base, a: 0.6 * k });
+      S.R.v += 160 * k;
+      S.shocks.push({ r: base + 14 * sc, a: 0.6 * k });
       if (S.shocks.length > 3) S.shocks.shift();
     }
   }
@@ -237,36 +252,6 @@ function frame(ctx, w, h, buf, viz) {
   S.tilt *= Math.exp(-dt * 6);
   S.shake *= Math.exp(-dt * 9);
   S.spin += dt * (0.35 + bass * 1.6 + punch * 7);
-
-  // the outline: 4-way mirrored (balanced, spiky on both sides), bass at the sides, highs top/bottom
-  const n = S.n, q = n / 4;
-  const amp = 120 * sc * sens;
-  const steps = 2, h2 = dt / steps;
-  for (let s = 0; s < steps; s++) {
-    for (let i = 0; i < n; i++) {
-      const m = i % (2 * q);
-      const f = 1 - Math.abs(m - q) / q; // 1 at the sides (3 & 9 o'clock), 0 at top/bottom
-      const bin = Math.floor(2 + Math.pow(1 - f, 1.5) * 150);
-      let lv = (buf[bin] + buf[bin + 1]) / 510;
-      lv = Math.max(0, lv - 0.2) / 0.8;
-      // sharp spikes: high power curve, extra reach for the bass horns
-      const target = paused ? 0 : Math.pow(lv, 2.4) * amp * (0.45 + f * 0.75);
-      const l = S.x[(i - 1 + n) % n], r = S.x[(i + 1) % n];
-      const acc = 520 * (target - S.x[i]) + 380 * (l + r - 2 * S.x[i]) - 16 * S.v[i];
-      S.v[i] += acc * h2;
-    }
-    for (let i = 0; i < n; i++) {
-      S.x[i] += S.v[i] * h2;
-      if (S.x[i] < -8 * sc) {
-        S.x[i] = -8 * sc;
-        S.v[i] *= -0.3;
-      }
-      S.ev[i] += (90 * (S.x[i] - S.ex[i]) - 9 * S.ev[i]) * h2; // 1st echo
-      S.ex[i] += S.ev[i] * h2;
-      S.ev2[i] += (35 * (S.ex[i] - S.ex2[i]) - 6 * S.ev2[i]) * h2; // 2nd, lazier echo
-      S.ex2[i] += S.ev2[i] * h2;
-    }
-  }
 
   // ---------------------------------------------------------------- album art punches + blurs
   const blurAmt = Math.max(0, punch - 0.06);
@@ -294,9 +279,10 @@ function frame(ctx, w, h, buf, viz) {
   const sy = (Math.random() - 0.5) * 16 * sh * sc + Math.cos(T * 0.37) * 5 * sc;
   const rot = S.tilt + Math.sin(T * 0.23) * 0.01;
   if (S.bg) {
-    const z = 1.08 + punch * 0.07 + bass * 0.02;
+    // big enough that the tilt + shake never show an edge, even on a tall phone screen
+    const z = 1.1 + Math.abs(rot) * (h / w + w / h) + punch * 0.07 + bass * 0.02;
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(D, 0, 0, D, 0, 0);
     ctx.translate(w / 2 + sx * 0.5, h / 2 + sy * 0.5);
     ctx.rotate(rot * 0.6);
     ctx.scale(z, z);
@@ -305,14 +291,13 @@ function frame(ctx, w, h, buf, viz) {
     ctx.restore();
   }
 
-  // ---------------------------------------------------------------- front layer
+  // ---------------------------------------------------------------- front layer: the V1 liquid + V2 extras
   const L = S.lctx;
   L.setTransform(1, 0, 0, 1, 0, 0);
-  L.clearRect(0, 0, w, h);
-  const baseR = base + S.R.x;
-  const core = blobPath(cx, cy, baseR, S.x, 1);
-  const e1 = blobPath(cx, cy, baseR, S.ex, 1.04);
-  const e2 = blobPath(cx, cy, baseR, S.ex2, 1.09 + bass * 0.03);
+  L.globalAlpha = 1;
+  L.globalCompositeOperation = "source-over";
+  L.clearRect(0, 0, S.layer.width, S.layer.height);
+  L.setTransform(D, 0, 0, D, 0, 0);
 
   for (let i = S.shocks.length - 1; i >= 0; i--) {
     const r = S.shocks[i];
@@ -332,40 +317,43 @@ function frame(ctx, w, h, buf, viz) {
   L.globalAlpha = 1;
 
   if (!hideShape) {
-    // glow (tiny + blurred + stretched = cheap bloom)
+    // the normal V1 liquid, swelling a little on each kick
+    const grow = 1 + Math.max(-0.03, S.R.x / 400);
+    L.save();
+    L.translate(cx, cy);
+    L.scale(grow, grow);
+    L.translate(-cx, -cy);
+    viz.drawLiquid(L, w, h, buf);
+    L.restore();
+    L.globalCompositeOperation = "source-over";
+    L.shadowBlur = 0;
+
+    // soft bloom (tiny copy, blurred, added back on top = cheap glow)
     const g = S.glow.getContext("2d");
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, S.glow.width, S.glow.height);
-    g.scale(0.25, 0.25);
-    if ("filter" in g) g.filter = "blur(5px)";
-    g.strokeStyle = col.line;
-    g.globalAlpha = 0.7 + bass * 0.3;
-    g.lineWidth = 26;
-    g.stroke(core);
-    g.lineWidth = 16;
-    g.stroke(e2);
+    if ("filter" in g) g.filter = "blur(4px)";
+    g.drawImage(S.layer, 0, 0, S.glow.width, S.glow.height);
     if ("filter" in g) g.filter = "none";
     L.save();
+    L.setTransform(1, 0, 0, 1, 0, 0);
     L.globalCompositeOperation = "lighter";
-    L.drawImage(S.glow, 0, 0, w, h);
+    L.globalAlpha = Math.min(0.9, 0.3 + bass * 0.3 + Math.max(0, punch) * 0.4);
+    L.drawImage(S.glow, 0, 0, S.layer.width, S.layer.height);
     L.restore();
 
-    // the black disc inside (the cover sits on it)
-    L.fillStyle = "rgba(0,0,0,0.88)";
-    L.fill(core);
-
-    // spinning teeth around the disc
-    const teeth = 40, tr = base - 4 * sc;
+    // spinning teeth right around the cover (the cover sits on top of the liquid's middle)
+    const teeth = 44, tr = base;
     L.save();
     L.translate(cx, cy);
     L.rotate(S.spin);
     L.fillStyle = col.line;
-    L.globalAlpha = 0.55 + highs * 0.8;
+    L.globalAlpha = 0.8 + highs * 0.2;
     L.beginPath();
     for (let i = 0; i < teeth; i++) {
       const a = (i / teeth) * Math.PI * 2;
-      const len = (5 + (i % 2 ? 0 : 4) + highs * 10) * sc;
-      const wa = 0.035;
+      const len = (3 + (i % 2 ? 0 : 3) + highs * 8 + Math.max(0, punch) * 6) * sc;
+      const wa = 0.03;
       L.moveTo(Math.cos(a - wa) * tr, Math.sin(a - wa) * tr);
       L.lineTo(Math.cos(a) * (tr + len), Math.sin(a) * (tr + len));
       L.lineTo(Math.cos(a + wa) * tr, Math.sin(a + wa) * tr);
@@ -373,69 +361,54 @@ function frame(ctx, w, h, buf, viz) {
     L.fill();
     // thin counter-spinning dashed circle
     L.rotate(-S.spin * 1.7);
-    L.globalAlpha = 0.5;
-    L.strokeStyle = "#fff";
-    L.lineWidth = 1.2 * sc;
-    L.setLineDash([14 * sc, 10 * sc]);
+    L.globalAlpha = 0.6;
+    L.strokeStyle = col.line;
+    L.lineWidth = 1.3 * sc;
+    L.setLineDash([12 * sc, 9 * sc]);
     L.beginPath();
-    L.arc(0, 0, tr - 6 * sc, 0, Math.PI * 2);
+    L.arc(0, 0, tr + 14 * sc, 0, Math.PI * 2);
     L.stroke();
     L.setLineDash([]);
     L.restore();
-
-    // the layered outlines: lazy echo (color, faint) -> echo (color) -> core (white-hot, thin)
-    L.lineJoin = "round";
-    L.strokeStyle = col.line2;
-    L.globalAlpha = 0.35 + mids * 0.4;
-    L.lineWidth = 1.5 * sc;
-    L.stroke(e2);
-    L.strokeStyle = col.line;
-    L.globalAlpha = 0.85;
-    L.lineWidth = (2.5 + bass * 2.5) * sc;
-    L.stroke(e1);
-    if (punch > 0.2) {
-      // red / blue split on hard hits
-      const o = punch * 8 * sc;
-      L.save();
-      L.globalCompositeOperation = "lighter";
-      L.globalAlpha = Math.min(0.6, punch * 0.6);
-      L.lineWidth = 2 * sc;
-      L.translate(-o, 0);
-      L.strokeStyle = "rgb(255,40,90)";
-      L.stroke(core);
-      L.translate(o * 2, 0);
-      L.strokeStyle = "rgb(40,170,255)";
-      L.stroke(core);
-      L.restore();
-    }
     L.globalAlpha = 1;
-    L.strokeStyle = "#fff";
-    L.lineWidth = 2 * sc;
-    L.shadowColor = col.line;
-    L.shadowBlur = 12;
-    L.stroke(core);
-    L.shadowBlur = 0;
   }
 
   // ---------------------------------------------------------------- camera: punch + zoom blur + shake/tilt/drift
-  const put = (z, alpha) => {
+  const put = (img, z, alpha, ox = 0) => {
     ctx.globalAlpha = alpha;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.translate(cx + sx, cy + sy);
+    ctx.setTransform(D, 0, 0, D, 0, 0);
+    ctx.translate(cx + sx + ox, cy + sy);
     ctx.rotate(rot);
     ctx.scale(z, z);
     ctx.translate(-cx, -cy);
-    ctx.drawImage(S.layer, 0, 0);
+    ctx.drawImage(img, 0, 0, w, h);
   };
   ctx.save();
-  put(zoom, 1);
-  if (blurAmt > 0.01) for (let k = 1; k <= 4; k++) put(zoom * (1 + blurAmt * 0.05 * k), (0.3 * (5 - k)) / 4);
+  if (punch > 0.2 && !hideShape) {
+    // red / blue split on hard hits: the liquid copied twice, tinted, pushed apart
+    if (!S.tint || S.tint.width !== S.layer.width || S.tint.height !== S.layer.height) S.tint = makeCanvas(S.layer.width, S.layer.height);
+    const tc = S.tint.getContext("2d");
+    const o = punch * 9 * sc;
+    ctx.globalCompositeOperation = "lighter";
+    for (const [c, dx] of [["rgb(255,40,90)", -o], ["rgb(40,170,255)", o]]) {
+      tc.globalCompositeOperation = "source-over";
+      tc.clearRect(0, 0, S.tint.width, S.tint.height);
+      tc.drawImage(S.layer, 0, 0);
+      tc.globalCompositeOperation = "source-in";
+      tc.fillStyle = c;
+      tc.fillRect(0, 0, S.tint.width, S.tint.height);
+      put(S.tint, zoom, Math.min(0.55, punch * 0.6), dx);
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+  put(S.layer, zoom, 1);
+  if (blurAmt > 0.01) for (let k = 1; k <= 4; k++) put(S.layer, zoom * (1 + blurAmt * 0.05 * k), (0.3 * (5 - k)) / 4);
   ctx.restore();
 
   // flash on hard hits + dark edges
   if (punch > 0.35) {
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(D, 0, 0, D, 0, 0);
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = Math.min(0.18, (punch - 0.35) * 0.4);
     ctx.fillStyle = col.line;
@@ -449,7 +422,7 @@ function frame(ctx, w, h, buf, viz) {
     S.vignette = vg;
   }
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(D, 0, 0, D, 0, 0);
   ctx.fillStyle = S.vignette;
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
@@ -465,7 +438,6 @@ function reset() {
   S.R.x = S.R.v = 0;
   S.shake = S.tilt = 0;
   S.shocks.length = 0;
-  if (S.x) for (const k of ["x", "v", "ex", "ev", "ex2", "ev2"]) S[k].fill(0);
   const art = S.artEl || document.getElementById("artContainer");
   if (art) {
     art.style.transform = "";

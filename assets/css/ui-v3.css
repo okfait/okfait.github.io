@@ -750,7 +750,7 @@ body.display-mode #lyricsPane, body.clean-lines-mode #lyricsPane { display: none
 #bg-layer { transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), background 0.8s ease-out; }
 #beat-flash, .controls, .bass-ripple { transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.1s ease-out; }
 @media (min-width: 900px) {
-  body.lyrics-open #bg-layer { left: calc(-50% + 14vw); }
+  body.lyrics-open #bg-layer { left: calc(50% + 14vw); }
   body.lyrics-open #beat-flash,
   body.lyrics-open .controls,
   body.lyrics-open .bass-ripple { left: 64%; }
@@ -924,14 +924,19 @@ body.lv2 #albumArt::after {
   background: var(--accent);
   mix-blend-mode: color;
 }
+/* the shine is a round layer the exact size of the cover, and the streak slides INSIDE it
+   (moving the gradient, not the layer). Before, a bigger square layer slid across and iPhones
+   don't clip moving layers to a circle = a square shining. */
 body.lv2 #albumArt::before {
-  content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 1;
-  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.55) 48%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0.55) 52%, transparent 62%);
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.55) 47%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0.55) 53%, transparent 62%) no-repeat;
+  background-size: 300% 100%;
+  background-position: 150% 0;
   mix-blend-mode: overlay;
-  transform: translateX(-120%);
   animation: lv2-shine 3.2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
 }
-@keyframes lv2-shine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+@keyframes lv2-shine { 0% { background-position: 150% 0; } 55%, 100% { background-position: -50% 0; } }
+body.lv2 #albumArt { isolation: isolate; }
 
 /* ---------- v2.13.3: phone sideways = player on the left, buttons on the right */
 @media (orientation: landscape) and (max-height: 520px) {
@@ -980,3 +985,97 @@ html.ios .ios-menu {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 24px 60px rgba(0, 0, 0, 0.45) !important;
 }
 html.ios .btn.main { box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.15), 0 6px 20px rgba(255, 255, 255, 0.25); }
+
+/* ---------- v2.14.0: the spinning background is a big SQUARE now. It used to be 2x the screen,
+   which on a tall phone is a tall rectangle: every time it spun sideways its short side was
+   shorter than the screen = the background got cut off for a moment. */
+#bg-layer {
+  top: 50% !important; left: 50%;
+  width: 160vmax !important; height: 160vmax !important;
+  margin: -80vmax 0 0 -80vmax;
+}
+
+/* ---------- v2.14.0: phone remote = repeat / back / play / next only, sitting a bit higher */
+@media (orientation: portrait), (min-height: 521px) {
+  body.remote-mode .controls { bottom: calc(env(safe-area-inset-bottom, 0px) + 13vh) !important; }
+}
+
+/* ---------- v2.14.0: new song slider + rolling time */
+.seek {
+  position: relative; height: 22px; display: flex; align-items: center;
+  cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none;
+}
+.seek > input.seek-bar {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; pointer-events: none;
+}
+.seek-track {
+  position: relative; width: 100%; height: 4px; border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.seek-fill {
+  position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, white), var(--accent));
+  transform-origin: left center; transform: scaleX(0);
+  will-change: transform;
+}
+.seek-ghost {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 0; transition: opacity 0.15s;
+}
+.seek.ghost-on .seek-ghost { opacity: 1; }
+.seek-thumb {
+  position: absolute; top: 50%; left: 0;
+  width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0 var(--accent), 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 14px var(--accent-glow, transparent);
+  transform: scale(0);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s;
+  pointer-events: none;
+}
+.seek-tip {
+  position: absolute; bottom: calc(100% + 4px); left: 0;
+  transform: translate(-50%, 4px); opacity: 0;
+  padding: 3px 8px; border-radius: 8px;
+  background: rgba(15, 15, 18, 0.88); color: #fff;
+  font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: none; white-space: nowrap;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.seek.tip-on .seek-tip { opacity: 1; transform: translate(-50%, 0); }
+.seek:hover .seek-track { height: 6px; }
+.seek:hover .seek-thumb { transform: scale(1); }
+.seek.dragging .seek-track { height: 7px; }
+.seek.dragging .seek-thumb { transform: scale(1.25); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 18px var(--accent-glow, transparent); }
+/* touch screens: no hover, so the dot is always there (a bit smaller) */
+@media (hover: none) {
+  .seek-thumb { transform: scale(0.85); }
+  .seek-track { height: 5px; }
+}
+.scrubber .time-labels {
+  font-family: inherit; font-size: 11.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.2px;
+  margin-top: 4px; color: rgba(255, 255, 255, 0.45);
+}
+.scrubber #currTime { color: rgba(255, 255, 255, 0.85); }
+.roll-time { display: inline-flex; }
+.rt-ch {
+  position: relative; display: inline-block; width: 0.62em; height: 1.25em;
+  text-align: center; overflow: visible;
+}
+.rt-ch.rt-colon { width: 0.32em; }
+.rt-d { position: absolute; left: 0; right: 0; top: 0; line-height: 1.25em; }
+.rt-in { animation: rt-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.rt-out { animation: rt-out 0.32s cubic-bezier(0.55, 0, 0.75, 0.3) both; }
+@keyframes rt-in {
+  from { transform: translateY(-0.75em); opacity: 0; filter: blur(3px); }
+  to { transform: translateY(0); opacity: 1; filter: blur(0); }
+}
+@keyframes rt-out {
+  from { transform: translateY(0); opacity: 1; filter: blur(0); }
+  to { transform: translateY(0.75em); opacity: 0; filter: blur(3px); }
+}
