@@ -963,8 +963,11 @@ class AudioSystem {
     this.src.connect(this.bass);
     this.bass.connect(this.reverb);
     this.reverb.connect(this.revGain);
-    this.revGain.connect(this.gain);
-    this.bass.connect(this.gain);
+    // "deck": Auto DJ fades the song in/out here. YOUR volume stays on this.gain, untouched.
+    this.deck = this.ctx.createGain();
+    this.revGain.connect(this.deck);
+    this.bass.connect(this.deck);
+    this.deck.connect(this.gain);
     this.gain.connect(this.ctx.destination);
 
     // the sliders already hold your saved bass / reverb / xtreme (loaded before this existed),
@@ -5066,6 +5069,7 @@ class UI {
 }
 
 class Player {
+  static FADE = 6; // Auto DJ crossfade length (seconds)
   constructor() {
     this.songs = [];
     this.currId = null;
@@ -5409,71 +5413,71 @@ class Player {
       window.audioSys.audio.playbackRate =
         window.curveEditor.getSpeedAt(pct) * window.audioSys.baseSpeed;
 
-      if (
-        this.autoDj &&
-        window.audioSys.audio.duration - window.audioSys.audio.currentTime <
-          5 &&
-        !this.fading
-      ) {
-        this.fading = true;
-
-        // Dual-deck crossfade logic
-        if (!window.fadeAudio) {
-          window.fadeAudio = new Audio();
-          // same rule for the crossfade deck so the fading song keeps its pitch shift
-          window.fadeAudio.preservesPitch = false;
-          window.fadeAudio.mozPreservesPitch = false;
-          window.fadeAudio.webkitPreservesPitch = false;
-          window.fadeGain = window.audioSys.ctx.createGain();
-          const src = window.audioSys.ctx.createMediaElementSource(
-            window.fadeAudio,
-          );
-          src.connect(window.fadeGain);
-          // Connect directly to master gain to ensure it plays out of the speakers
-          window.fadeGain.connect(window.audioSys.gain);
-        }
-
-        // Swap tracks into the fade deck
-        window.fadeAudio.src = window.audioSys.audio.src;
-        window.fadeAudio.currentTime = window.audioSys.audio.currentTime;
-        window.fadeAudio.playbackRate = window.audioSys.audio.playbackRate;
-        window.fadeAudio.play().catch((e) => console.log("Fader unallowed", e));
-
-        let oldVol = window.audioSys.gain.gain.value || 1.0;
-        window.fadeGain.gain.value = oldVol;
-
-        const fadeOut = setInterval(() => {
-          if (oldVol > 0.02) {
-            oldVol -= 0.02;
-            window.fadeGain.gain.value = oldVol;
-          } else {
-            window.fadeGain.gain.value = 0;
-            clearInterval(fadeOut);
-            window.fadeAudio.pause();
-            // let go of the old song held by the fade deck
-            window.fadeAudio.removeAttribute("src");
-            window.fadeAudio.load();
-          }
-        }, 50);
-
-        let newVol = 0;
-        window.audioSys.gain.gain.value = 0;
-        this.next(); // Load new track into main audio
-
-        const fadeIn = setInterval(() => {
-          if (newVol < 1.0) {
-            newVol += 0.02;
-            window.audioSys.gain.gain.value = newVol;
-          } else {
-            window.audioSys.gain.gain.value = 1.0;
-            clearInterval(fadeIn);
-            this.fading = false;
-          }
-        }, 50);
+      // seconds left in REAL time (a 0.9x warp makes the song take longer)
+      const rate = window.audioSys.audio.playbackRate || 1;
+      const left = (window.audioSys.audio.duration - window.audioSys.audio.currentTime) / rate;
+      if (this.autoDj && !this.loop && !this.fading && window.audioSys.audio.duration > 20 && left < Player.FADE + 0.3 && left > 0.4) {
+        this.crossfade(Math.min(Player.FADE, left));
       }
     }
   }
+  // Auto DJ (v2.15.1): the song that's ending moves to a second "deck" and fades out while the
+  // next song fades in (equal-power curves = no dip in the middle, no jump at the end).
+  // Both stay at YOUR volume: before, the next song was faded up to 100% no matter what your
+  // volume was, and the old song was routed through the same knob that got set to 0 = it just cut off.
+  crossfade(dur) {
+    const as = window.audioSys;
+    const ctx = as.ctx;
+    if (!ctx || !as.deck) return this.next();
+    this.fading = true;
+    if (!window.fadeAudio) {
+      window.fadeAudio = new Audio();
+      // same rule for the crossfade deck so the fading song keeps its pitch shift
+      window.fadeAudio.preservesPitch = false;
+      window.fadeAudio.mozPreservesPitch = false;
+      window.fadeAudio.webkitPreservesPitch = false;
+      const src = ctx.createMediaElementSource(window.fadeAudio);
+      window.fadeBass = ctx.createBiquadFilter(); // the fading song keeps its bass boost
+      window.fadeGain = ctx.createGain();
+      src.connect(window.fadeBass);
+      window.fadeBass.connect(window.fadeGain);
+      window.fadeGain.connect(as.gain); // -> your volume -> speakers
+    }
+    const fa = window.fadeAudio;
+    window.fadeBass.type = as.bass.type;
+    window.fadeBass.frequency.value = as.bass.frequency.value;
+    window.fadeBass.gain.value = as.bass.gain.value;
+    fa.src = as.audio.src;
+    fa.currentTime = as.audio.currentTime;
+    fa.playbackRate = as.audio.playbackRate;
+    fa.play().catch((e) => console.log("Fader unallowed", e));
+
+    const now = ctx.currentTime;
+    const n = 64, outC = new Float32Array(n), inC = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1);
+      outC[i] = Math.cos((x * Math.PI) / 2);
+      inC[i] = Math.sin((x * Math.PI) / 2);
+    }
+    const g = window.fadeGain.gain, d = as.deck.gain;
+    g.cancelScheduledValues(now);
+    d.cancelScheduledValues(now);
+    g.setValueCurveAtTime(outC, now, dur);
+    d.setValueCurveAtTime(inC, now, dur);
+    this.next(); // new song starts in the main deck (silent at first, then rising)
+    clearTimeout(this._fadeEnd);
+    this._fadeEnd = setTimeout(() => {
+      d.cancelScheduledValues(ctx.currentTime);
+      d.value = 1;
+      fa.pause();
+      // let go of the old song held by the fade deck
+      fa.removeAttribute("src");
+      fa.load();
+      this.fading = false;
+    }, dur * 1000 + 150);
+  }
   onEnd() {
+    if (this.fading) return; // the crossfade already started the next song
     if (this.loop) this.play(this.currId);
     else this.next();
   }

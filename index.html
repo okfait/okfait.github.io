@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>okMUSIC v2.15.0</title>
+    <title>okMUSIC v2.15.1</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -25,9 +25,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.15.0">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.15.1">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.15.0">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.15.1">
 </head>
 <body>
 
@@ -41,7 +41,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.15.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.15.1</span></div>
         <div class="top-actions">
             <button onclick="window.remote.stop()" class="remote-pill" title="Stop being a remote"><i class="fa-solid fa-mobile-screen-button"></i> Remote · Exit</button>
             <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
@@ -321,7 +321,7 @@
                 </div>
                 <label class="set-row">
                     <span class="set-icon"><i class="fa-solid fa-fill-drip"></i></span>
-                    <span class="set-text"><span class="set-label">Album Color Tint</span><span class="set-sub">V2: paints the cover + background in your theme color</span></span>
+                    <span class="set-text"><span class="set-label">Album Color Tint</span><span class="set-sub">V2: paints the cover in your theme color</span></span>
                     <span class="ios-switch"><input type="checkbox" id="coverTintToggle" checked onchange="window.vizOpts.set('tint', this.checked)"><i></i></span>
                 </label>
                 <div class="set-row set-row-col">
@@ -762,23 +762,23 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/app.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.15.1"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.15.1"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.15.1"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.15.1"></script>
     <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
-    <script type="module" src="assets/js/lyrics.js?v=2.15.0"></script>
-    <script type="module" src="assets/js/kick-map.js?v=2.15.0"></script>
-    <script type="module" src="assets/js/liquid-v2.js?v=2.15.0"></script>
-    <script type="module" src="assets/js/scrubber.js?v=2.15.0"></script>
-    <script type="module" src="assets/js/viz-options.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/lyrics.js?v=2.15.1"></script>
+    <script type="module" src="assets/js/kick-map.js?v=2.15.1"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.15.1"></script>
+    <script type="module" src="assets/js/scrubber.js?v=2.15.1"></script>
+    <script type="module" src="assets/js/viz-options.js?v=2.15.1"></script>
     <!-- v2.13: Jam (listen together, device to device) + Phone remote -->
-    <script type="module" src="assets/js/party.js?v=2.15.0"></script>
-    <script type="module" src="assets/js/remote.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/party.js?v=2.15.1"></script>
+    <script type="module" src="assets/js/remote.js?v=2.15.1"></script>
     <!-- v2.13.1: first-visit pulsating tutorial -->
-    <script type="module" src="assets/js/tutorial.js?v=2.15.0"></script>
+    <script type="module" src="assets/js/tutorial.js?v=2.15.1"></script>
 </body>
 </html>

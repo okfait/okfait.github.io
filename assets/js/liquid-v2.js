@@ -1,7 +1,7 @@
 // Liquid V2 (v2.14.0, default since v2.15.0): the V1 liquid shape, with the phonk-edit EFFECTS on top.
 //
 // What's on screen, back to front:
-//  - a soft glow made from the cover's colors (2-tone in your color if Album Color Tint is on),
+//  - the cover blown up soft behind everything, 2-tone in your theme color,
 //    dark, and it moves with the "camera"
 //  - the normal V1 liquid (same shape, same settings), with a soft bloom around it
 //  - a ring of little teeth spinning around the cover (faster on bass) + shockwave rings on kicks
@@ -159,11 +159,13 @@ function coverSrc() {
   const t = window.player && window.player.currentTrack;
   return t && typeof t.art === "string" ? t.art : "";
 }
-// The background is a GLOW made from the cover's colors, never a picture you can recognize:
-//  - only the middle of the cover is used (YouTube thumbnails have black bars baked in on the
-//    sides - those showed up as dark stripes)
-//  - it's shrunk to a few dozen pixels first, then blown up with a big blur = soft color clouds
+// The background is the cover, blown up, soft and dark, in your theme color (like the edits):
+//  - only the middle square of the cover is used (YouTube thumbnails have black bars baked in
+//    on the sides - those showed up as dark stripes)
+//  - shrunk to ~120 px first, then blown up with a blur = you see the cover's shapes moving
+//    behind everything, but not a sharp photo
 //  - bright covers are dimmed and dark ones lifted, so every song glows about the same amount
+// (Album Color Tint only changes the cover in the circle, not this.)
 function buildBg(w, h, color) {
   const src = coverSrc();
   if (!src) {
@@ -183,15 +185,16 @@ function buildBg(w, h, color) {
   }
   const img = S.bgImg;
   if (!img || !img.complete || !img.naturalWidth) return;
-  const tint = !window.vizOpts || window.vizOpts.tint;
+  const tint = true; // background is always in your color
   // 1. tiny copy of the middle of the cover
   const iw = img.naturalWidth, ih = img.naturalHeight;
   const side = Math.min(iw, ih) * 0.82;
-  const tw = 28, th = Math.max(8, Math.round((tw * h) / w));
+  const tw = 120, th = Math.max(8, Math.round((tw * h) / w));
   const tiny = makeCanvas(tw, th);
   const t = tiny.getContext("2d");
-  // always a square from the middle (stretched to the screen shape - it's a blur, nobody can tell)
-  t.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, tw, th);
+  // the screen-shaped part from the middle square (not stretched)
+  const cw = w >= h ? side : (side * w) / h, ch = w >= h ? (side * h) / w : side;
+  t.drawImage(img, (iw - cw) / 2, (ih - ch) / 2, cw, ch, 0, 0, tw, th);
   if (tint) {
     // black -> your color: light parts of the cover glow in your color, dark parts stay dark
     if ("filter" in t) {
@@ -217,14 +220,14 @@ function buildBg(w, h, color) {
   } catch (e) {
     /* cover from another site: can't read it, use a safe guess */
   }
-  S.bgGain = Math.max(0.45, Math.min(1.6, 0.22 / Math.max(0.05, lum)));
+  S.bgGain = Math.max(0.5, Math.min(1.8, 0.2 / Math.max(0.04, lum)));
   // 3. blow it up with a big blur = color clouds
   const bw = Math.round(Math.min(480, w / 3)), bh = Math.max(8, Math.round((bw * h) / w));
   const c = makeCanvas(bw, bh);
   const g = c.getContext("2d");
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = "high";
-  if ("filter" in g) g.filter = `blur(${Math.round(bw / 14)}px) saturate(1.2)`;
+  if ("filter" in g) g.filter = `blur(${Math.max(2, Math.round(bw / 70))}px) saturate(1.2)`;
   const pad = bw / 6; // bigger than the canvas so the blur doesn't fade at the edges
   g.drawImage(tiny, -pad, -pad * (bh / bw), bw + pad * 2, bh + pad * 2 * (bh / bw));
   if ("filter" in g) g.filter = "none";
@@ -307,7 +310,7 @@ function frame(ctx, w, h, buf, viz) {
   const hideShape = document.body.classList.contains("clean-lines-mode");
 
   // ---------------------------------------------------------------- background (camera moves it, a bit less than the front = depth)
-  const key = coverSrc() + "|" + col.line + "|" + w + "x" + h + "|" + (!window.vizOpts || window.vizOpts.tint);
+  const key = coverSrc() + "|" + col.line + "|" + w + "x" + h;
   if (S.bgKey !== key && S.bgKey !== "loading") {
     buildBg(w, h, col.line);
     if (S.bgKey !== "loading") S.bgKey = key;
