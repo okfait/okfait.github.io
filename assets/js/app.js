@@ -4185,15 +4185,23 @@ class UI {
       const title = document.createElement("div");
       title.className = "lib-card-title";
 
+      // v2.19.0: "Artist - Title" shows as the title with the artist under it (no artist = no line)
+      const parts = window.songNames ? window.songNames.splitName(song.name) : { artist: "", title: song.name };
+      const shownTitle = parts.broken ? "Unnamed YouTube song" : parts.title;
       // HIGHLIGHT LOGIC
-      if (highlightQuery) {
-        const regex = new RegExp(`(${highlightQuery})`, "gi");
-        title.innerHTML = song.name.replace(
-          regex,
-          '<span class="text-highlight">$1</span>',
-        );
-      } else {
-        title.innerText = song.name;
+      const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      const mark = (t) => {
+        if (!highlightQuery) return esc(t);
+        const q = String(highlightQuery).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return esc(t).replace(new RegExp(`(${q})`, "gi"), '<span class="text-highlight">$1</span>');
+      };
+      title.innerHTML = mark(shownTitle);
+      let artistEl = null;
+      if (parts.artist || parts.broken) {
+        artistEl = document.createElement("div");
+        artistEl.className = "lib-card-artist" + (parts.broken ? " fix" : "");
+        if (parts.broken) artistEl.textContent = "right-click → Edit → paste its YouTube link to fix the name";
+        else artistEl.innerHTML = mark(parts.artist);
       }
 
       const subContainer = document.createElement("div");
@@ -4217,6 +4225,7 @@ class UI {
       }
 
       infoBox.appendChild(title);
+      if (artistEl) infoBox.appendChild(artistEl);
       infoBox.appendChild(subContainer);
 
       card.appendChild(iconBox);
@@ -4763,9 +4772,22 @@ class UI {
     r.readAsDataURL(f);
   }
   async saveEditor() {
-    const n = window.$("editName").value;
+    let n = window.$("editName").value;
     if (this.editType === "song") {
+      // v2.19.0: paste a YouTube link as the name = it fills in the real "Artist - Title"
+      // (fixes old "from your link - YouTube video" songs, the song itself stays as it is)
+      const sn = window.songNames;
+      const vid = sn && sn.ytId(n);
+      if (vid) {
+        const info = await sn.ytInfo(vid);
+        if (!info.title) {
+          this.showToast("Couldn't get that video's name, check the link");
+          return;
+        }
+        n = sn.niceName(info.title, info.channel);
+      }
       const u = { name: n };
+      if (vid) u.yt = vid;
       const customUrl = window.$("editArtUrl")
         ? window.$("editArtUrl").value.trim()
         : "";

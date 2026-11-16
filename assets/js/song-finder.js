@@ -18,7 +18,7 @@ function serverUrl() {
   return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
 }
 let HELPER = LOCAL;
-import * as web from "./web-yt.js?v=2.18.0";
+import * as web from "./web-yt.js?v=2.19.0";
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -185,7 +185,8 @@ async function grab({ id, query, dur, name, art, folder, meta }) {
   const file = new File([blob], `${safe}.${ext}`, { type: blob.type || "audio/mp4" });
   const songId = await window.player.db.add(file);
   const cover = (art && (await toDataUrl(art))) || (vid && (await toDataUrl(state.where === "web" ? `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/mqdefault.jpg` : `${HELPER}/thumb?id=${encodeURIComponent(vid)}`)));
-  if (cover) await window.player.db.update(songId, { art: cover }).catch(() => {});
+  // remember which video it was (v2.19.0) so a name can always be fixed later
+  await window.player.db.update(songId, cover ? { art: cover, yt: vid || null } : { yt: vid || null }).catch(() => {});
   if (folder) {
     folderByName(folder, true).items.push({ type: "song", id: songId });
     window.libraryMgr.save();
@@ -423,7 +424,11 @@ async function doSearch(q) {
   body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-spinner fa-spin"></i>Searching...</div>`;
   try {
     let results;
-    if (yt) results = [{ id: yt[1], title: "YouTube video", channel: "from your link", duration: 0, thumb: `https://i.ytimg.com/vi/${yt[1]}/mqdefault.jpg` }];
+    if (yt) {
+      // v2.19.0: the video's real title + channel (it used to say "from your link - YouTube video")
+      const info = window.songNames ? await window.songNames.ytInfo(yt[1]) : {};
+      results = [{ id: yt[1], title: info.title || "YouTube video", channel: info.channel || "", duration: info.duration || 0, thumb: `https://i.ytimg.com/vi/${yt[1]}/mqdefault.jpg` }];
+    }
     else if (/open\.spotify\.com\/track/.test(q)) {
       const l = await helperFetch("/list?url=" + encodeURIComponent(q));
       const t = l.tracks[0];
@@ -458,7 +463,8 @@ async function doSearch(q) {
         b.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
         try {
           const folder = $("finderFolder").value || null;
-          await grab({ id: r.id, name: r.channel && !/ - /.test(r.title) ? `${r.channel.replace(/ - Topic$/, "")} - ${r.title}` : r.title, folder });
+          const nm = window.songNames ? window.songNames.niceName(r.title, r.channel) : r.title;
+          await grab({ id: r.id, name: nm, folder });
           b.className = "f-act done";
           b.innerHTML = `<i class="fa-solid fa-check"></i>`;
           toast("Added: " + r.title);
