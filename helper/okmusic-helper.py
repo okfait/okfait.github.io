@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 # SERVER MODE (v1.2.0): on a hosting site (bot-hosting.net etc.) it notices the host's
 # PORT / SERVER_PORT and listens for the internet instead of just this PC.
 CLOUD_PORT = os.environ.get("PORT") or os.environ.get("SERVER_PORT")
@@ -264,7 +264,11 @@ def spotify_list(url):
 
 
 def youtube_list(url):
-    data = json.loads(run_ytdlp(["--flat-playlist", "-J", url], timeout=120))
+    extra = []
+    if re.search(r"[?&]list=RD", url):
+        # radio mixes never end (yt-dlp kept paging to ~500 songs = 35+ s): first 50 is plenty
+        extra = ["--playlist-end", "50"]
+    data = json.loads(run_ytdlp(["--flat-playlist", "-J"] + extra + [url], timeout=120))
     entries = data.get("entries") or [data]
     tracks = []
     for e in entries:

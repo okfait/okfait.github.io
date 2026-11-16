@@ -1278,3 +1278,6 @@ body.lv2 #vizCanvas { filter: none; }
 }
 .lib-card.active .lib-card-artist { color: color-mix(in srgb, var(--accent) 70%, white); }
 .lib-card-artist.fix { color: #fbbf24; font-weight: 500; font-size: 10px; }
+
+/* ---------- v2.19.2: "get the whole playlist / mix too" under a pasted song link */
+.finder-listbtn { width: calc(100% - 4px); margin: 10px 2px 4px; justify-content: center; gap: 8px; }

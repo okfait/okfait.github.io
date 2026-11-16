@@ -182,6 +182,12 @@ async function youtubeList(url) {
   if (!id) throw new Error("that doesn't look like a YouTube playlist link");
   const tracks = [];
   let title = "YouTube";
+  if (/^RD/.test(id)) {
+    // radio mix: never-ending, the mirror gives ~50 songs
+    const m = await inv(`/api/v1/mixes/${id}`, 60000);
+    (m.videos || []).forEach((v) => v.videoId && tracks.push({ title: v.title || "", artist: v.author || "", duration: v.lengthSeconds || 0, youtube: v.videoId }));
+    return { title: m.title || "YouTube mix", source: "youtube", tracks };
+  }
   for (let page = 1; page <= 10; page++) {
     const p = await inv(`/api/v1/playlists/${id}?page=${page}`, 60000);
     title = p.title || title;

@@ -18,7 +18,7 @@ function serverUrl() {
   return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
 }
 let HELPER = LOCAL;
-import * as web from "./web-yt.js?v=2.19.1";
+import * as web from "./web-yt.js?v=2.19.2";
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -415,7 +415,10 @@ async function doSearch(q) {
   if (!(await pingHelper()) && !needHelper()) return;
   const body = $("finderBody");
   const yt = q.match(/(?:youtu\.be\/|[?&]v=|shorts\/)([A-Za-z0-9_-]{11})/);
-  if (/open\.spotify\.com\/(playlist|album)|[?&]list=/.test(q)) {
+  // v2.19.2: a SONG link stays a song, even if it has a playlist / radio mix attached
+  // (watch?v=...&list=RD... used to jump to the Playlist tab and load a never-ending mix)
+  const listId = (q.match(/[?&]list=([A-Za-z0-9_-]+)/) || [])[1];
+  if (/open\.spotify\.com\/(playlist|album)/.test(q) || (listId && !yt)) {
     setTab("playlist");
     $("finderInput").value = q;
     return loadList(q);
@@ -438,6 +441,10 @@ async function doSearch(q) {
       body.innerHTML = `<div class="finder-empty">Nothing found. Try the artist + song name.</div>`;
       return;
     }
+    const isMix = listId && /^RD/.test(listId);
+    const listBtn = yt && listId
+      ? `<button type="button" class="set-btn finder-listbtn" id="finderWholeList"><i class="fa-solid fa-list"></i> ${isMix ? "Get the radio mix too (50 songs)" : "Get the whole playlist too"}</button>`
+      : "";
     body.innerHTML = results
       .map(
         (r, i) => `
@@ -448,7 +455,13 @@ async function doSearch(q) {
         <button type="button" class="f-act" data-i="${i}" title="Add to library"><i class="fa-solid fa-plus"></i></button>
       </div>`,
       )
-      .join("");
+      .join("") + listBtn;
+    if (listBtn)
+      $("finderWholeList").addEventListener("click", () => {
+        setTab("playlist");
+        $("finderInput").value = q;
+        loadList(q);
+      });
     body.querySelectorAll(".f-play").forEach((b) =>
       b.addEventListener("click", () => {
         const r = results[+b.dataset.i];
@@ -525,8 +538,18 @@ async function showMyPlaylists() {
 async function loadList(link) {
   if (!link) return showMyPlaylists();
   if (state.busy) return toast("Still downloading, hit Stop first");
+  // v2.19.2: pressing Load again while it's still reading = ignored (two loads used to race and
+  // the slower one wiped the list, so sometimes nothing showed)
+  if (state.loading === link) return toast("Still reading that list, hang on");
+  state.loading = link;
+  const seq = (state.loadSeq = (state.loadSeq || 0) + 1);
   const body = $("finderBody");
-  body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-spinner fa-spin"></i>Reading the song list...</div>`;
+  const t0 = Date.now();
+  body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-spinner fa-spin"></i>Reading the song list... <span id="finderSecs"></span></div>`;
+  const tick = setInterval(() => {
+    const el = $("finderSecs");
+    if (el) el.textContent = Math.round((Date.now() - t0) / 1000) + "s";
+  }, 1000);
   $("finderFoot").hidden = true;
   try {
     let list = null;
@@ -547,12 +570,16 @@ async function loadList(link) {
       }
       list = await helperFetch("/list?url=" + encodeURIComponent(link));
     }
+    if (seq !== state.loadSeq) return; // a newer load started meanwhile
     if (!list.tracks.length) throw new Error("that list is empty");
     list.tracks.forEach((t) => (t.st = haveSong(t) ? "have" : "todo"));
     state.list = list;
-    renderList();
+    if (state.tab === "playlist") renderList();
   } catch (e) {
-    body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-triangle-exclamation"></i>${esc(e.message)}</div>`;
+    if (seq === state.loadSeq) body.innerHTML = `<div class="finder-empty"><i class="fa-solid fa-triangle-exclamation"></i>${esc(e.message)}</div>`;
+  } finally {
+    clearInterval(tick);
+    if (seq === state.loadSeq) state.loading = null;
   }
 }
 

@@ -59,6 +59,7 @@ async function ytInfo(id) {
     out.title = j.title || "";
     out.channel = j.author_name || "";
   } catch (e) {}
+  if (out.title) return out; // oEmbed answered (instant): don't wait on the slow mirror for the length
   try {
     let base = "";
     try {
