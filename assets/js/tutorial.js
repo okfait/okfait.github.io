@@ -1,71 +1,47 @@
 // okMUSIC first-visit tutorial ("PT" = pulsating tutorial).
 // Almost no text: a spotlight glides to the thing you should press (everything else goes dark),
 // rings ripple out of it and a little finger taps on it.
-//   1. Library button ("Library")   2. Add Songs   3. the helper downloads (each one ticks off)
-//   4. "Start okMUSIC Helper.bat" + come back   5. Search / Playlist tabs once the helper connects
-// Shows once. "skip" in the corner ends it. Phones stop after step 2 (the helper is PC-only).
+//   1. Library button ("Library")   2. Add Songs   3. search a song / paste a playlist
+// Shows once. "skip" in the corner ends it.
 // Run it again any time: window.tutorial.start()
 // v2.15.0: smooth gliding spotlight, ripples, tapping finger, step dots, pop-in labels, finish burst.
 
 const KEY = "okmusic_tut_done";
 const $ = (id) => document.getElementById(id);
-const isPhone = () => matchMedia("(pointer: coarse)").matches || innerWidth < 700;
 
-const T = { step: -1, els: null, raf: 0, timer: 0, done: new Set(), rings: [], cur: null, lastT: 0, label: "", shown: 0 };
+const T = { step: -1, els: null, raf: 0, timer: 0, cur: null, lastT: 0, label: "", missSince: 0 };
 
+const libOpen = () => !!($("libraryPanel") && $("libraryPanel").classList.contains("open"));
+const finderOpen = () => !!($("finderSheet") && $("finderSheet").classList.contains("open"));
+
+// v2.17.0: Add Songs works without installing anything now, so the "download the helper" steps
+// are gone and phones get the whole tutorial too. If you close a panel halfway, it steps back
+// instead of leaving the screen dark (old bug).
 const STEPS = [
   { // 1: library button
+    enter: () => (libOpen() ? (go(1), true) : false), // already open: clicking it would close it
     target: () => document.querySelector('.top-actions button[onclick*="toggleLibrary"]'),
     label: "Library",
     clickNext: true,
   },
-  { // 2: add songs (no text)
+  { // 2: add songs
+    enter: () => (finderOpen() ? (go(2), true) : false),
     target: () => document.querySelector("#libraryPanel .lib-add-btn"),
     label: "",
     clickNext: true,
-    after: () => (isPhone() ? finish(true) : null),
+    lost: () => go(0), // library got closed
   },
-  { // 3: the helper downloads - each one ticks off when clicked
-    enter() {
-      if (helperOk()) return go(4), true; // already set up
-      const s = $("finderSetup");
-      if (s) s.hidden = false;
-    },
-    target: () => $("finderSetup") && $("finderSetup").querySelector("ol li:first-child"),
-    extra: () => [$("finderSetup") && $("finderSetup").querySelector("ol li:nth-child(2)")],
-    links: () => {
-      const s = $("finderSetup");
-      if (!s) return [];
-      return [...s.querySelectorAll('a[href*="okmusic-helper.py"], a[href*="Helper.bat"], a[href*="python.org"]')];
-    },
-    label: "Get these 3 to download songs from YouTube + Spotify playlists",
-    noFinger: true,
-  },
-  { // 4: start the helper, come back
-    enter() {
-      if (helperOk()) return go(4), true;
-      const s = $("finderSetup");
-      if (s) s.hidden = false;
-    },
-    target: () => $("finderSetup") && $("finderSetup").querySelector("ol li:nth-child(2) b"),
-    extra: () => [$("finderSetup") && $("finderSetup").querySelector("ol li:nth-child(3)")],
-    label: "Open Start okMUSIC Helper.bat, then come back here",
-    waitHelper: true,
-    noFinger: true,
-  },
-  { // 5: search / playlist
+  { // 3: search / playlist - done when you press anything in there
     target: () => $("finderTabs"),
-    label: "Search any song, or paste a Spotify / YouTube playlist",
+    extra: () => [document.querySelector(".finder-input-row")],
+    label: "Type any song and hit Search, or tap Playlist and paste a Spotify / YouTube link",
     clickNext: true,
+    clickExtra: true,
     after: () => finish(true),
+    lost: () => go(libOpen() ? 1 : 0), // Add Songs got closed
   },
 ];
-const visibleSteps = () => (isPhone() ? 2 : STEPS.length);
-
-function helperOk() {
-  const st = $("finderStatus");
-  return !!(st && st.classList.contains("ok"));
-}
+const visibleSteps = () => STEPS.length;
 
 function mk(cls, tag = "div") {
   const d = document.createElement(tag);
@@ -98,6 +74,7 @@ function rectOf(list) {
     if (!el || !el.isConnected) continue;
     const b = el.getBoundingClientRect();
     if (b.width < 2 || b.height < 2) continue;
+    if (b.right < 4 || b.bottom < 4 || b.left > innerWidth - 4 || b.top > innerHeight - 4) continue; // slid off screen
     r = r
       ? { left: Math.min(r.left, b.left), top: Math.min(r.top, b.top), right: Math.max(r.right, b.right), bottom: Math.max(r.bottom, b.bottom) }
       : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
@@ -136,8 +113,12 @@ function place(dt) {
     // target not on screen (panel closed etc.): no dimming until it comes back
     blocks.forEach((b) => (b.style.display = "none"));
     spot.style.opacity = label.style.opacity = finger.style.opacity = "0";
+    // gone for a moment (not just mid-animation): step back to where you can carry on
+    if (!T.missSince) T.missSince = performance.now();
+    else if (s.lost && performance.now() - T.missSince > 900) s.lost();
     return;
   }
+  T.missSince = 0;
   const pad = 8;
   const tgt = { l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad };
   // the spotlight glides (starts as the whole screen, then shrinks onto the first target)
@@ -163,7 +144,7 @@ function place(dt) {
   spot.style.borderRadius = small ? "999px" : "16px";
 
   // tapping finger, bottom-right of the target
-  const showFinger = !s.noFinger && !s.links;
+  const showFinger = !s.noFinger;
   finger.style.opacity = showFinger ? "1" : "0";
   if (showFinger) finger.style.transform = `translate(${Math.min(W - 40, c.r - 14)}px,${Math.min(H - 44, c.b - 12)}px)`;
 
@@ -181,20 +162,6 @@ function place(dt) {
     label.style.setProperty("--ax", Math.max(16, Math.min(lwid - 16, cx - x)) + "px");
     label.style.transform = `translate(${x}px,${below ? B + 16 : Math.max(10, Tp - 16 - lh)}px)`;
   } else label.style.opacity = "0";
-
-  // pulsing rings on each download link (they tick when clicked)
-  const links = s.links ? s.links() : [];
-  while (T.rings.length < links.length) T.rings.push(mk("pt-ring"));
-  T.rings.forEach((ring, i) => {
-    const a = links[i];
-    const b = a && a.getBoundingClientRect();
-    if (!b || b.width < 2) return (ring.style.display = "none");
-    ring.style.display = "block";
-    ring.classList.toggle("done", T.done.has(a.href));
-    ring.style.transform = `translate(${b.left - 5}px,${b.top - 4}px)`;
-    ring.style.width = b.width + 10 + "px";
-    ring.style.height = b.height + 8 + "px";
-  });
 }
 
 function loop() {
@@ -212,19 +179,13 @@ function loop() {
 
 function go(i) {
   T.step = i;
+  T.missSince = 0;
   clearInterval(T.timer);
-  T.rings.forEach((r) => r.remove());
-  T.rings = [];
   const s = STEPS[i];
   if (!s) return finish(true);
   build();
   paintDots();
   if (s.enter && s.enter() === true) return; // enter() jumped to another step
-  if (s.waitHelper) {
-    T.timer = setInterval(() => {
-      if (T.step === i && helperOk()) go(i + 1);
-    }, 700);
-  }
   loop();
 }
 
@@ -232,16 +193,8 @@ function onClick(e) {
   if (T.step < 0) return;
   const s = STEPS[T.step];
   const t = s.target();
-  if (s.links) {
-    const a = e.target.closest && e.target.closest("a");
-    const links = s.links();
-    if (a && links.includes(a)) {
-      T.done.add(a.href);
-      if (links.every((l) => T.done.has(l.href))) setTimeout(() => T.step === 2 && go(3), 600);
-    }
-    return;
-  }
-  if (s.clickNext && t && t.contains(e.target)) {
+  const hit = [t, ...(s.clickExtra && s.extra ? s.extra() : [])].some((el) => el && el.contains(e.target));
+  if (s.clickNext && hit) {
     const i = T.step;
     // let the real click happen first (opens the panel), then move on
     setTimeout(() => {
@@ -258,10 +211,10 @@ function finish(completed) {
   T.step = -1;
   clearInterval(T.timer);
   cancelAnimationFrame(T.raf);
-  localStorage.setItem(KEY, "1");
+  try {
+    localStorage.setItem(KEY, "1");
+  } catch (e) {}
   document.removeEventListener("click", onClick, true);
-  T.rings.forEach((r) => r.remove());
-  T.rings = [];
   T.cur = null;
   T.label = "";
   if (!T.els) return;
@@ -289,8 +242,9 @@ function finish(completed) {
 
 function start() {
   finish(false);
-  localStorage.removeItem(KEY);
-  T.done.clear();
+  try {
+    localStorage.removeItem(KEY);
+  } catch (e) {}
   go(0);
 }
 
@@ -298,4 +252,8 @@ window.tutorial = { start, stop: () => finish(false) };
 
 // first visit only (and not when opened as a phone remote / jam invite)
 const q = new URLSearchParams(location.search);
-if (!localStorage.getItem(KEY) && !q.get("remote") && !q.get("jam")) setTimeout(() => go(0), 1200);
+let seen = "1";
+try {
+  seen = localStorage.getItem(KEY);
+} catch (e) {}
+if (!seen && !q.get("remote") && !q.get("jam")) setTimeout(() => go(0), 1200);

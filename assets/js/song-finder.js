@@ -1,14 +1,15 @@
 // okMUSIC v3 "Add Songs": search any song, or grab a whole Spotify / YouTube playlist,
 // and it lands in your library (playlists get their own folder).
 //
-// The actual downloading is done by the okMUSIC helper running on your PC
-// (helper/okmusic-helper.py). YouTube blocks downloads from big servers, but
-// from your own PC it works - so the page talks to the helper at 127.0.0.1.
+// The downloading is done by the okMUSIC helper on your PC (helper/okmusic-helper.py) if it's
+// running, otherwise by free public YouTube mirrors straight from the browser (web-yt.js).
 
 // v2.16.0: or the same helper running online (bot-hosting.net) = nothing to install.
 // Order: the PC helper if it's running (fastest, never blocked), else the online server.
 const LOCAL = "http://127.0.0.1:47823";
-const SERVER_DEFAULT = ""; // the okMUSIC server link goes here once it's live
+// v2.17.0: the okMUSIC server on bot-hosting only reads Spotify links now (YouTube blocks its downloads);
+// the songs themselves come from web-yt.js (free public YouTube mirrors) when the PC helper is off
+const SERVER_DEFAULT = "https://h76s92g0n5.apps.bot-hosting.cloud";
 function serverUrl() {
   let u = "";
   try {
@@ -17,6 +18,7 @@ function serverUrl() {
   return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
 }
 let HELPER = LOCAL;
+import * as web from "./web-yt.js?v=2.17.0";
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -34,6 +36,7 @@ const state = {
 
 // ------------------------------------------------------------------ helper calls
 async function helperFetch(path, { timeout = 0, raw = false } = {}) {
+  if (state.where === "web") return web.fetchLike(path, { raw, server: serverUrl() });
   const ctl = new AbortController();
   const t = timeout ? setTimeout(() => ctl.abort(), timeout) : null;
   try {
@@ -67,17 +70,19 @@ async function tryPing(base, timeout) {
 }
 
 async function pingHelper() {
-  let j = await tryPing(LOCAL, 1500);
-  let where = "pc";
-  const srv = serverUrl();
-  // free servers fall asleep / are slow to answer: give it a few seconds
-  if (!j && srv) (j = await tryPing(srv, 8000)), (where = "server");
+  // 1. the PC helper (fastest, most reliable) 2. no-install mode (free public YouTube mirrors)
+  const j = await tryPing(LOCAL, 1500);
+  let ok = !!j;
   if (j) {
-    HELPER = where === "pc" ? LOCAL : srv;
-    state.where = where;
+    HELPER = LOCAL;
+    state.where = "pc";
     state.helperOld = !j.version || j.version < "1.1.0";
+  } else {
+    ok = await web.ping();
+    state.where = ok ? "web" : null;
+    state.helperOld = false;
   }
-  setHelper(!!j);
+  setHelper(ok);
   return state.helperOk;
 }
 
@@ -90,19 +95,19 @@ function setHelper(ok) {
   if (ok) $("finderSetup").hidden = true;
   if (!ok && was === null) $("finderSetup").hidden = false; // first look: show the steps
   st.querySelector("span.txt").textContent = ok
-    ? state.where === "server"
-      ? "okMUSIC server connected"
+    ? state.where === "web"
+      ? "Ready, no install needed (free YouTube servers)"
       : state.helperOld
         ? "Helper connected (old version: re-download it for previews)"
         : "PC helper connected"
-    : serverUrl()
-      ? "okMUSIC server isn't answering (and no PC helper)"
-      : "PC helper isn't running";
-  st.querySelector("button").textContent = ok ? "" : $("finderSetup").hidden ? "How to start it" : "Hide steps";
-  st.querySelector("button").style.display = ok ? "none" : "";
-  if (ok && was === false) toast("Helper connected 🎉");
+    : "The free YouTube servers aren't answering, try again in a bit (or use the PC helper)";
+  const showBtn = !ok || state.where === "web";
+  st.querySelector("button").textContent = !showBtn ? "" : !$("finderSetup").hidden ? "Hide" : ok ? "Faster?" : "Options";
+  st.querySelector("button").style.display = showBtn ? "" : "none";
+  if (ok && was === false) toast(state.where === "web" ? "Add Songs is back 🎉" : "Helper connected 🎉");
   clearInterval(state.pollTimer);
-  if (!ok && isOpen()) state.pollTimer = setInterval(pingHelper, 3000);
+  // in no-install mode keep checking now and then, so starting the PC helper switches to it
+  if (isOpen() && (!ok || state.where === "web")) state.pollTimer = setInterval(pingHelper, ok ? 15000 : 5000);
 }
 
 // ------------------------------------------------------------------ library helpers
@@ -179,7 +184,7 @@ async function grab({ id, query, dur, name, art, folder, meta }) {
   const safe = title.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   const file = new File([blob], `${safe}.${ext}`, { type: blob.type || "audio/mp4" });
   const songId = await window.player.db.add(file);
-  const cover = (art && (await toDataUrl(art))) || (vid && (await toDataUrl(`${HELPER}/thumb?id=${encodeURIComponent(vid)}`)));
+  const cover = (art && (await toDataUrl(art))) || (vid && (await toDataUrl(state.where === "web" ? `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/mqdefault.jpg` : `${HELPER}/thumb?id=${encodeURIComponent(vid)}`)));
   if (cover) await window.player.db.update(songId, { art: cover }).catch(() => {});
   if (folder) {
     folderByName(folder, true).items.push({ type: "song", id: songId });
@@ -229,7 +234,9 @@ async function togglePreview(key, getId, btn) {
       main.pause();
       window.ui.updatePlayBtn && window.ui.updatePlayBtn(false);
     }
-    const a = new Audio(`${HELPER}/preview?id=${encodeURIComponent(id)}`);
+    const src = state.where === "web" ? await web.previewUrl(id) : `${HELPER}/preview?id=${encodeURIComponent(id)}`;
+    if (pv.key !== key) return;
+    const a = new Audio(src);
     const g = window.audioSys && window.audioSys.gain;
     a.volume = g ? Math.min(1, g.gain.value) : 0.8;
     pv.audio = a;
@@ -275,17 +282,17 @@ function build() {
       <h3>Add Songs</h3>
       <button type="button" class="tuner-icon-btn" id="finderClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <div class="finder-status" id="finderStatus"><span class="dot"></span><span class="txt">Looking for the PC helper...</span><button type="button"></button></div>
+    <div class="finder-status" id="finderStatus"><span class="dot"></span><span class="txt">Getting ready...</span><button type="button"></button></div>
     <div class="finder-setup" id="finderSetup" hidden>
-      <b>One-time setup (PC only)</b>
+      <b>Works without installing anything.</b> <span style="opacity:.7">Songs come from free public YouTube servers: sometimes slow, sometimes down for a bit.</span>
+      <b style="display:block;margin-top:10px">Want it faster + always working? Optional PC helper:</b>
       <ol>
         <li>Download <a href="helper/okmusic-helper.py" download>okmusic-helper.py</a> and <a href="helper/Start%20okMUSIC%20Helper.bat" download>Start okMUSIC Helper.bat</a>, put both in the same folder.</li>
         <li>Double-click <b>Start okMUSIC Helper.bat</b>. A black window opens, leave it open. (Needs <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">Python</a>, tick "Add to PATH" when installing.)</li>
         <li>Come back here, it connects by itself. If the browser asks to <i>access devices on your network</i>, press Allow.</li>
       </ol>
-      <span style="opacity:.6">On your phone: add songs on the PC, then use <b>Generate Sync Link</b> in the library.</span>
       <label class="finder-server">
-        <b>Or use an okMUSIC server</b> (nothing to install)
+        <b>okMUSIC server</b> <span style="opacity:.7">(reads Spotify links when the PC helper is off)</span>
         <input class="finder-input" id="finderServer" placeholder="https://....apps.bot-hosting.cloud" autocomplete="off" spellcheck="false">
       </label>
     </div>
@@ -391,7 +398,7 @@ function needHelper() {
   if (state.helperOk) return true;
   $("finderSetup").hidden = false;
   setHelper(false);
-  toast("Start the PC helper first (steps are at the top)");
+  toast("Can't reach YouTube right now: the free servers are down. Try again in a bit, or start the PC helper");
   return false;
 }
 
@@ -529,7 +536,7 @@ async function loadList(link) {
     }
     if (!list || !list.tracks.length) {
       if (!(await pingHelper()) && !needHelper()) {
-        body.innerHTML = `<div class="finder-empty">The PC helper reads the playlist. Start it (steps at the top), then press Load again.</div>`;
+        body.innerHTML = `<div class="finder-empty">Can't reach the free YouTube servers right now. Try Load again in a bit, or start the PC helper (Options at the top).</div>`;
         return;
       }
       list = await helperFetch("/list?url=" + encodeURIComponent(link));
@@ -668,7 +675,7 @@ async function downloadAll() {
         setRow(i, "fail", e.message);
         if (++failsInRow >= 4) {
           state.stop = true;
-          toast("4 fails in a row, stopped. Is the helper still open?");
+          toast(state.where === "web" ? "4 fails in a row, stopped. The free servers might be busy, try again in a bit" : "4 fails in a row, stopped. Is the helper still open?");
         }
       }
     }
