@@ -28,13 +28,18 @@ const ls = {
   },
 };
 
-async function getJson(url, timeout = 12000) {
+// v2.19.1: free servers can take 20+ s on a busy day (it used to give up after 12 s and say
+// "signal is aborted without reason"). Wait longer, and say it in plain words when it's too slow.
+async function getJson(url, timeout = 30000) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeout);
   try {
     const r = await fetch(url, { signal: ctl.signal });
     if (!r.ok) throw new Error("HTTP " + r.status);
     return await r.json();
+  } catch (e) {
+    if (e && e.name === "AbortError") throw new Error("took too long");
+    throw e;
   } finally {
     clearTimeout(t);
   }
@@ -122,7 +127,7 @@ function score(e, query, wantDur) {
 }
 
 async function search(q, n = 6) {
-  const res = await inv(`/api/v1/search?type=video&q=${encodeURIComponent(q)}`);
+  const res = await inv(`/api/v1/search?type=video&q=${encodeURIComponent(q)}`, 40000);
   return (res || [])
     .filter((v) => v.type === "video" && v.videoId && !v.liveNow)
     .slice(0, n)
@@ -147,7 +152,7 @@ async function audioInfo(id) {
   const hit = urlCache.get(id);
   if (hit && Date.now() - hit.at < 30 * 60000) return hit;
   // local=true = the server passes the audio through itself (YouTube locks its links to one IP)
-  const v = await inv(`/api/v1/videos/${id}?local=true&fields=title,author,adaptiveFormats`);
+  const v = await inv(`/api/v1/videos/${id}?local=true&fields=title,author,adaptiveFormats`, 40000);
   const fm = (v.adaptiveFormats || []).filter((f) => /^audio\//.test(f.type || ""));
   // m4a first (plays everywhere, iPhone included), best quality first
   fm.sort((a, b) => (/mp4/.test(b.type) - /mp4/.test(a.type)) || (+b.bitrate || 0) - (+a.bitrate || 0));
@@ -178,7 +183,7 @@ async function youtubeList(url) {
   const tracks = [];
   let title = "YouTube";
   for (let page = 1; page <= 10; page++) {
-    const p = await inv(`/api/v1/playlists/${id}?page=${page}`);
+    const p = await inv(`/api/v1/playlists/${id}?page=${page}`, 60000);
     title = p.title || title;
     const vids = (p.videos || []).filter((v) => v.videoId && !tracks.some((t) => t.youtube === v.videoId));
     if (!vids.length) break;
@@ -190,8 +195,25 @@ async function youtubeList(url) {
 
 // ------------------------------------------------------------------ the fake helper
 // server = the okMUSIC server link (it can still read Spotify playlists, YouTube only blocks its downloads)
+// The okMUSIC server (bot-hosting) can search YouTube and read playlists fast - only downloads
+// get blocked there. So: search / lists / matching go to it first, the free mirrors are the backup.
+async function viaServer(server, path) {
+  const j = await getJson(server + path, 30000);
+  if (j && j.error) throw new Error(j.error);
+  return j;
+}
+
 export async function fetchLike(path, { raw = false, server = "" } = {}) {
   const u = new URL(path, "http://x");
+  if (server && /^\/(search|match|resolve|list)$/.test(u.pathname)) {
+    try {
+      return await viaServer(server, path);
+    } catch (e) {
+      // Spotify links only work through the server: no point trying the mirrors
+      if (u.pathname === "/list" && /spotify/.test(u.searchParams.get("url") || "")) throw e;
+      console.warn("okMUSIC server didn't answer, using the free mirrors", e);
+    }
+  }
   const q = Object.fromEntries(u.searchParams);
   const dur = q.dur ? +q.dur : null;
   switch (u.pathname) {
