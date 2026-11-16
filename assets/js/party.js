@@ -10,7 +10,7 @@
 //   lines up to within ~10-20ms. A big jump (seek, lag spike) gets fixed by jumping too.
 // Replaces the old Firebase party mode (that database is locked, so it never connected).
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.15.5";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.16.0";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);

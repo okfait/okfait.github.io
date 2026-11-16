@@ -8,7 +8,7 @@
 // own visualizer draws them, so it looks exactly like the PC: ring / bars / liquid V1 / V2,
 // beat flash, colors, album art, lyrics.
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.15.5";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.16.0";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);

@@ -474,6 +474,8 @@ body.display-mode .tuner-sheet { display: none !important; }
 .finder-setup ol { padding-left: 18px; list-style: decimal; display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
 .finder-setup a { color: var(--accent); font-weight: 800; }
 .finder-setup code { font-family: "JetBrains Mono", monospace; font-size: 11px; background: rgba(0, 0, 0, 0.35); padding: 1px 5px; border-radius: 5px; }
+.finder-server { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.finder-server .finder-input { font-size: 13px; padding: 9px 12px; }
 .finder-tabs { margin: 0 16px 10px; display: flex; }
 .finder-tabs.seg { display: flex; }
 .finder-tabs.seg button { flex: 1; padding: 8px; font-size: 13px; }

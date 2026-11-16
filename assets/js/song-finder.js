@@ -5,7 +5,18 @@
 // (helper/okmusic-helper.py). YouTube blocks downloads from big servers, but
 // from your own PC it works - so the page talks to the helper at 127.0.0.1.
 
-const HELPER = "http://127.0.0.1:47823";
+// v2.16.0: or the same helper running online (bot-hosting.net) = nothing to install.
+// Order: the PC helper if it's running (fastest, never blocked), else the online server.
+const LOCAL = "http://127.0.0.1:47823";
+const SERVER_DEFAULT = ""; // the okMUSIC server link goes here once it's live
+function serverUrl() {
+  let u = "";
+  try {
+    u = localStorage.getItem("okmusic_server") || "";
+  } catch (e) {}
+  return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
+}
+let HELPER = LOCAL;
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -42,14 +53,31 @@ async function helperFetch(path, { timeout = 0, raw = false } = {}) {
   }
 }
 
-async function pingHelper() {
+async function tryPing(base, timeout) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeout);
   try {
-    const j = await helperFetch("/ping", { timeout: 2000 });
-    state.helperOld = !j.version || j.version < "1.1.0";
-    setHelper(!!j.ok);
+    const j = await (await fetch(base + "/ping", { signal: ctl.signal })).json();
+    return j && j.ok ? j : null;
   } catch (e) {
-    setHelper(false);
+    return null;
+  } finally {
+    clearTimeout(t);
   }
+}
+
+async function pingHelper() {
+  let j = await tryPing(LOCAL, 1500);
+  let where = "pc";
+  const srv = serverUrl();
+  // free servers fall asleep / are slow to answer: give it a few seconds
+  if (!j && srv) (j = await tryPing(srv, 8000)), (where = "server");
+  if (j) {
+    HELPER = where === "pc" ? LOCAL : srv;
+    state.where = where;
+    state.helperOld = !j.version || j.version < "1.1.0";
+  }
+  setHelper(!!j);
   return state.helperOk;
 }
 
@@ -61,7 +89,15 @@ function setHelper(ok) {
   st.className = "finder-status " + (ok ? "ok" : "bad");
   if (ok) $("finderSetup").hidden = true;
   if (!ok && was === null) $("finderSetup").hidden = false; // first look: show the steps
-  st.querySelector("span.txt").textContent = ok ? (state.helperOld ? "Helper connected (old version: re-download it for previews)" : "PC helper connected") : "PC helper isn't running";
+  st.querySelector("span.txt").textContent = ok
+    ? state.where === "server"
+      ? "okMUSIC server connected"
+      : state.helperOld
+        ? "Helper connected (old version: re-download it for previews)"
+        : "PC helper connected"
+    : serverUrl()
+      ? "okMUSIC server isn't answering (and no PC helper)"
+      : "PC helper isn't running";
   st.querySelector("button").textContent = ok ? "" : $("finderSetup").hidden ? "How to start it" : "Hide steps";
   st.querySelector("button").style.display = ok ? "none" : "";
   if (ok && was === false) toast("Helper connected 🎉");
@@ -248,6 +284,10 @@ function build() {
         <li>Come back here, it connects by itself. If the browser asks to <i>access devices on your network</i>, press Allow.</li>
       </ol>
       <span style="opacity:.6">On your phone: add songs on the PC, then use <b>Generate Sync Link</b> in the library.</span>
+      <label class="finder-server">
+        <b>Or use an okMUSIC server</b> (nothing to install)
+        <input class="finder-input" id="finderServer" placeholder="https://....apps.bot-hosting.cloud" autocomplete="off" spellcheck="false">
+      </label>
     </div>
     <div class="seg finder-tabs" id="finderTabs">
       <button type="button" data-tab="search" class="active"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
@@ -269,6 +309,19 @@ function build() {
   $("finderStatus").querySelector("button").addEventListener("click", () => {
     $("finderSetup").hidden = !$("finderSetup").hidden;
     setHelper(state.helperOk);
+  });
+  const srvIn = $("finderServer");
+  srvIn.value = serverUrl();
+  srvIn.addEventListener("keydown", (e) => e.stopPropagation());
+  srvIn.addEventListener("change", () => {
+    let v = srvIn.value.trim();
+    if (v && !/^https?:\/\//i.test(v)) v = "https://" + v;
+    try {
+      if (v) localStorage.setItem("okmusic_server", v);
+      else localStorage.removeItem("okmusic_server");
+    } catch (e) {}
+    srvIn.value = v;
+    pingHelper();
   });
   $("finderTabs").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-tab]");

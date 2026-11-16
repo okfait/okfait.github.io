@@ -26,8 +26,15 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.1.0"
-PORT = 47823
+VERSION = "1.2.0"
+# SERVER MODE (v1.2.0): on a hosting site (bot-hosting.net etc.) it notices the host's
+# PORT / SERVER_PORT and listens for the internet instead of just this PC.
+CLOUD_PORT = os.environ.get("PORT") or os.environ.get("SERVER_PORT")
+SERVER_MODE = bool(CLOUD_PORT) or os.environ.get("OKMUSIC_SERVER") == "1"
+PORT = int(CLOUD_PORT or 47823)
+HOST = "0.0.0.0" if SERVER_MODE else "127.0.0.1"
+# a hosted server only has a little memory: only this many YouTube jobs at the same time
+JOBS = threading.BoundedSemaphore(int(os.environ.get("OKMUSIC_JOBS", "2" if SERVER_MODE else "8")))
 ALLOWED_ORIGINS = re.compile(
     r"^(https://okfait\.github\.io|https?://(localhost|127\.0\.0\.1)(:\d+)?)$"
 )
@@ -53,34 +60,64 @@ def ensure_ytdlp():
     except ImportError:
         print("  first start: installing the downloader (yt-dlp), takes a minute...")
     # YouTube changes stuff often, an old yt-dlp is the #1 reason downloads break
-    r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "-U", "--user", "yt-dlp[default]"],
-        capture_output=True,
-        text=True,
-    )
+    pkgs = ["yt-dlp[default]"] + (["deno"] if SERVER_MODE and not shutil.which("node") else [])
+    base = [sys.executable, "-m", "pip", "install", "-q", "-U"]
+    r = subprocess.run(base + ["--user"] + pkgs, capture_output=True, text=True)
+    if r.returncode != 0:  # inside a container / venv "--user" isn't allowed, try without
+        r = subprocess.run(base + pkgs, capture_output=True, text=True)
     if r.returncode != 0:
         print("  couldn't update yt-dlp:\n" + (r.stderr or r.stdout)[-800:])
     else:
         open(stamp, "w").close()
 
 
+def deno_path():
+    """deno from pip (the 'deno' package ships the program) - hosting sites usually don't have node."""
+    p = shutil.which("deno")
+    if p:
+        return p
+    try:
+        import deno
+
+        return deno.find_deno_bin()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_DENO = None
+
+
 def ytdlp_base():
+    global _DENO
     cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--no-progress"]
-    # new YouTube needs a javascript runtime to unlock the audio; Node is the common one
-    if not shutil.which("deno") and shutil.which("node"):
+    # new YouTube needs a javascript runtime to unlock the audio
+    if _DENO is None:
+        _DENO = deno_path() or ""
+    if _DENO:
+        cmd += ["--js-runtimes", "deno:" + _DENO]
+    elif shutil.which("node"):
         cmd += ["--js-runtimes", "node"]
+    # optional: cookies.txt next to this file (a throwaway YouTube account) if YouTube blocks the server
+    ck = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+    if os.path.exists(ck):
+        cmd += ["--cookies", ck]
     return cmd
 
 
 def run_ytdlp(args, timeout=180):
-    r = subprocess.run(ytdlp_base() + args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    with JOBS:
+        r = subprocess.run(ytdlp_base() + args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         msg = (r.stderr or r.stdout or "unknown error").strip().splitlines()
         err = next((l for l in reversed(msg) if "ERROR" in l), msg[-1] if msg else "unknown error")
         if "No module named yt_dlp" in err:
             err = "the downloader isn't installed yet, close the helper and start it again"
         elif "Sign in to confirm" in err or "not a bot" in err:
-            err = "YouTube wants a captcha from this PC right now, try again in a bit"
+            err = (
+                "YouTube is blocking the okMUSIC server right now (bot check)"
+                if SERVER_MODE
+                else "YouTube wants a captcha from this PC right now, try again in a bit"
+            )
         raise RuntimeError(err.replace("ERROR: ", "")[:300])
     return r.stdout
 
@@ -282,7 +319,10 @@ class Handler(BaseHTTPRequestHandler):
     def allowed(self):
         origin = self.headers.get("Origin")
         # no Origin = typed into the address bar / curl on this PC, that's fine
-        return origin is None or ALLOWED_ORIGINS.match(origin)
+        # (on a public server only /ping works without it, so random people can't use it)
+        if origin is None:
+            return not SERVER_MODE or self.path.startswith("/ping")
+        return ALLOWED_ORIGINS.match(origin)
 
     def do_OPTIONS(self):
         self.send_response(204 if self.allowed() else 403)
@@ -308,7 +348,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
         try:
             if u.path == "/ping":
-                return self.send_json({"ok": True, "app": "okmusic-helper", "version": VERSION})
+                return self.send_json({"ok": True, "app": "okmusic-helper", "version": VERSION, "server": SERVER_MODE})
             if u.path == "/search":
                 return self.send_json({"results": search(q.get("q", ""), min(10, int(q.get("n", 6))))})
             if u.path == "/match":
@@ -402,13 +442,25 @@ def main():
     print("\n  okMUSIC helper v" + VERSION)
     ensure_ytdlp()
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        srv = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:
+        if SERVER_MODE:
+            raise
         print("\n  the helper is already running in another window, you're good.")
         input("  press Enter to close this one...")
         return
-    print("\n  \033[92mready!\033[0m go back to okMUSIC and add songs.")
-    print("  keep this window open while downloading. close it when you're done.\n")
+    if SERVER_MODE:
+        print(f"  server mode: listening on {HOST}:{PORT} (deno: {deno_path() or 'none'})", flush=True)
+
+        def updater():  # keep yt-dlp fresh while the server stays up for days
+            while True:
+                time.sleep(6 * 3600)
+                ensure_ytdlp()
+
+        threading.Thread(target=updater, daemon=True).start()
+    else:
+        print("\n  \033[92mready!\033[0m go back to okMUSIC and add songs.")
+        print("  keep this window open while downloading. close it when you're done.\n")
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         threading.Event().wait()
