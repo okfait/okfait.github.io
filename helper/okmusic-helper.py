@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 # SERVER MODE (v1.2.0): on a hosting site (bot-hosting.net etc.) it notices the host's
 # PORT / SERVER_PORT and listens for the internet instead of just this PC.
 CLOUD_PORT = os.environ.get("PORT") or os.environ.get("SERVER_PORT")
@@ -104,9 +104,36 @@ def ytdlp_base():
     return cmd
 
 
+# YouTube's "not a bot" check hits some of its apps (clients) harder than others. When the
+# default gets blocked, try the others one by one and remember the one that worked.
+CLIENTS = ["tv", "android_vr", "web_embedded", "mweb", "web_safari", "tv_simply", "ios"]
+_good_client = None
+
+
+def _is_bot(r):
+    t = (r.stderr or "") + (r.stdout or "")
+    return r.returncode != 0 and ("Sign in to confirm" in t or "not a bot" in t)
+
+
 def run_ytdlp(args, timeout=180):
-    with JOBS:
-        r = subprocess.run(ytdlp_base() + args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    global _good_client
+
+    def go(extra):
+        with JOBS:
+            return subprocess.run(ytdlp_base() + extra + args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+
+    first = ["--extractor-args", "youtube:player_client=" + _good_client] if _good_client else []
+    r = go(first)
+    if _is_bot(r):
+        for c in CLIENTS:
+            if c == _good_client:
+                continue
+            r2 = go(["--extractor-args", "youtube:player_client=" + c])
+            print(f"  client {c}: {'works' if r2.returncode == 0 else 'blocked'}", flush=True)
+            if r2.returncode == 0:
+                _good_client = c
+                r = r2
+                break
     if r.returncode != 0:
         msg = (r.stderr or r.stdout or "unknown error").strip().splitlines()
         err = next((l for l in reversed(msg) if "ERROR" in l), msg[-1] if msg else "unknown error")
