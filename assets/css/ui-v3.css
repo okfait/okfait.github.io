@@ -1260,3 +1260,12 @@ body.spin-cover.lv2 #albumArt.circle::before {
 }
 body.spin-cover.lv2.is-playing #albumArt.circle::before { animation-play-state: running, running; }
 body.away #albumArt { animation-play-state: paused !important; }
+
+/* ---------- v2.18.0: speedups you can't see (laggy on some PCs / Chrome)
+   - blurring a smooth gradient looks the same as not blurring it, but the big spinning
+     background (160vmax square) and the 800px beat flash were re-blurred every frame
+   - the glow (drop-shadow) on the full-screen visualizer canvas made the browser blur the
+     whole screen every frame; V2 draws its own glow (bloom) so it isn't needed there */
+#bg-layer { filter: none !important; will-change: transform; }
+#beat-flash { filter: none; will-change: opacity; }
+body.lv2 #vizCanvas { filter: none; }

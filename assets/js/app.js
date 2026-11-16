@@ -1406,6 +1406,12 @@ class Visualizer {
   constructor() {
     this.cv = window.$("vizCanvas");
     this.ctx = this.cv.getContext("2d");
+    // sharpness this PC can handle smoothly (learned by watchSpeed, remembered)
+    try {
+      this.qCap = parseFloat(localStorage.getItem("okmusic_render_cap")) || 2;
+    } catch (e) {
+      this.qCap = 2;
+    }
 
     // Load Persisted Mode
     const savedMode = localStorage.getItem("okmusic_viz_mode");
@@ -1464,7 +1470,10 @@ class Visualizer {
     const r = this.cv.getBoundingClientRect();
     const W = Math.round(r.width) || window.innerWidth;
     const H = Math.round(r.height) || window.innerHeight;
-    const D = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    // v2.18.0: sharpness cap. Big/sharp screens (4K at 150%...) used to draw up to 8M+ pixels
+    // per pass; now max ~6M, and slow PCs lower it by themselves (see watchSpeed)
+    const fit = Math.sqrt(6e6 / Math.max(1, W * H));
+    const D = Math.round(Math.min(2, this.qCap || 2, fit, Math.max(1, window.devicePixelRatio || 1)) * 100) / 100;
     if (this.W === W && this.H === H && this.dpr === D) return;
     this.W = W;
     this.H = H;
@@ -1572,8 +1581,62 @@ class Visualizer {
       y1 + fb * (y2 - y0),
     ];
   }
+  // v2.18.0: auto speed. If frames come slower than ~40 a second while a song plays, draw the
+  // visualizer a bit less sharp (it's glowy/blurry anyway, you can't really tell) until it's
+  // smooth again. Fast PCs never change. Slowly goes back up if there's room again.
+  watchSpeed(now) {
+    const P = this._spd || (this._spd = { last: 0, ema: 16.7, n: 0, since: now, good: 0 });
+    const live = !document.hidden && !window.okAway && !window.audioSys.audio.paused;
+    const dt = now - P.last;
+    P.last = now;
+    if (!live || dt <= 0 || dt > 250) {
+      P.n = 0;
+      P.since = now;
+      return;
+    }
+    P.ema += (dt - P.ema) * 0.05;
+    P.n++;
+    if (P.n < 90 || now - P.since < 2500) return; // need a few seconds of real frames
+    // stuck at exactly ~30 fps = the browser's Energy Saver is capping it (even strong PCs),
+    // not the PC being slow: say how to turn it off (once)
+    if (P.ema > 31 && P.ema < 35.5 && !this._fpsTip) {
+      this._fpsTip = true;
+      try {
+        if (!localStorage.getItem("okmusic_fps_tip")) {
+          localStorage.setItem("okmusic_fps_tip", "1");
+          window.ui.showToast("Choppy? Your browser is holding it at 30 fps. Turn off Energy Saver: browser settings → Performance", 9000);
+        }
+      } catch (e) {}
+    }
+    let cap = this.qCap || 2;
+    // (floor 0.75: only a really struggling PC gets below the screen's own sharpness)
+    if (P.ema > 25 && cap > 0.75) {
+      cap = Math.max(0.75, Math.min(cap, this.dpr) - 0.25);
+      P.good = 0;
+    } else if (P.ema < 17.5 && cap < 2 && ++P.good >= 12) {
+      cap = Math.min(2, cap + 0.25); // ~30 s of smooth frames: try a little sharper
+      P.good = 0;
+    } else {
+      if (P.ema >= 17.5) P.good = 0; // only count smooth stretches in a row
+      P.n = 0;
+      P.since = now;
+      return;
+    }
+    this.qCap = cap;
+    try {
+      localStorage.setItem("okmusic_render_cap", String(cap));
+    } catch (e) {}
+    this.resize();
+    P.n = 0;
+    P.since = now;
+    P.ema = 16.7;
+  }
+
   draw() {
-    requestAnimationFrame(() => this.draw());
+    requestAnimationFrame((t) => {
+      this.watchSpeed(t);
+      this.draw();
+    });
 
     // Save CPU/RAM: don't draw when the tab is hidden or minimized,
     // and only draw at ~10fps while the music is paused (music itself is not affected)
@@ -4926,12 +4989,12 @@ class UI {
       c.innerHTML += `<span class="tag" style="background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); color: #4ade80;">AUTO DJ</span>`;
   }
 
-  showToast(msg) {
+  showToast(msg, ms = 3000) {
     const t = window.$("toast");
     t.innerText = msg;
     t.classList.add("show");
     if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+    this.toastTimer = setTimeout(() => t.classList.remove("show"), ms);
   }
   showSyncPopup(title, pct) {
     const pop = window.$("partySyncProgress");
@@ -5678,6 +5741,23 @@ window.VoiceCommander = VoiceCommander;
 window.libraryMgr = new LibraryManager();
 window.audioSys = new AudioSystem();
 window.viz = new Visualizer();
+
+// v2.18.0: is the browser drawing without the graphics card? (Chrome's "Use graphics acceleration"
+// switched off, or a broken driver). Then EVERYTHING is slow and no code can fix it, so say how
+// to turn it back on. Shown once.
+setTimeout(() => {
+  try {
+    if (localStorage.getItem("okmusic_gpu_tip")) return;
+    const gl = document.createElement("canvas").getContext("webgl");
+    const info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    const name = gl ? String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : "none";
+    if (!/swiftshader|llvmpipe|software|basic render|^none$/i.test(name)) return;
+    localStorage.setItem("okmusic_gpu_tip", "1");
+    const how = /Edg\//.test(navigator.userAgent) ? "Edge settings → System → Use graphics acceleration" : "browser settings → System → Use graphics acceleration";
+    window.ui && window.ui.showToast && window.ui.showToast("Laggy? Your browser isn't using the graphics card. Turn on: " + how + ", then restart the browser", 9000);
+    console.warn("okMUSIC: software rendering detected:", name);
+  } catch (e) {}
+}, 4000);
 window.ui = new UI();
 window.player = new Player();
 window.curveEditor = new CurveEditor();
