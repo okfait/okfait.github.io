@@ -1472,8 +1472,10 @@ class Visualizer {
     const H = Math.round(r.height) || window.innerHeight;
     // v2.18.0: sharpness cap. Big/sharp screens (4K at 150%...) used to draw up to 8M+ pixels
     // per pass; now max ~6M, and slow PCs lower it by themselves (see watchSpeed)
-    const fit = Math.sqrt(6e6 / Math.max(1, W * H));
-    const D = Math.round(Math.min(2, this.qCap || 2, fit, Math.max(1, window.devicePixelRatio || 1)) * 100) / 100;
+    // v2.20.0 High End "Ultra Visuals": your screen's full sharpness (up to 3x, ~14M px), never lowered
+    const ultra = !!(window.hiEnd && window.hiEnd.ultra);
+    const fit = Math.sqrt((ultra ? 14e6 : 6e6) / Math.max(1, W * H));
+    const D = Math.round(Math.min(ultra ? 3 : 2, ultra ? 3 : this.qCap || 2, fit, Math.max(1, window.devicePixelRatio || 1)) * 100) / 100;
     if (this.W === W && this.H === H && this.dpr === D) return;
     this.W = W;
     this.H = H;
@@ -1607,6 +1609,12 @@ class Visualizer {
           window.ui.showToast("Choppy? Your browser is holding it at 30 fps. Turn off Energy Saver: browser settings → Performance", 9000);
         }
       } catch (e) {}
+    }
+    if (window.hiEnd && window.hiEnd.ultra) {
+      // Ultra Visuals: you asked for full sharpness, don't touch it
+      P.n = 0;
+      P.since = now;
+      return;
     }
     let cap = this.qCap || 2;
     // (floor 0.75: only a really struggling PC gets below the screen's own sharpness)

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="author" content="rick_grimesz">
     <meta name="copyright" content="(c) 2025-2026 rick_grimesz. All rights reserved. See LICENSE.">
-    <title>okMUSIC v2.19.2</title>
+    <title>okMUSIC v2.20.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -28,9 +28,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.19.2">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.20.0">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.19.2">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.20.0">
 </head>
 <body>
 
@@ -44,7 +44,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.19.2</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.20.0</span></div>
         <div class="top-actions">
             <button onclick="window.remote.stop()" class="remote-pill" title="Stop being a remote"><i class="fa-solid fa-mobile-screen-button"></i> Remote · Exit</button>
             <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
@@ -264,6 +264,55 @@
                 <i class="fa-solid fa-download"></i> Export Processed Audio
             </button>
             <p class="set-foot">Saves a .wav with your current bass, speed and reverb.</p>
+
+            <!-- ===== HIGH END (v2.20.0) ===== -->
+            <div class="set-group-title"><i class="fa-solid fa-gem hi-gem"></i> High End</div>
+            <div class="set-group grp-hi">
+                <label class="set-row">
+                    <span class="set-icon"><i class="fa-solid fa-gem"></i></span>
+                    <span class="set-text"><span class="set-label">High End Mode</span><span class="set-sub">Studio sound + max visuals, for strong PCs</span></span>
+                    <span class="ios-switch"><input type="checkbox" id="hiToggle"><i></i></span>
+                </label>
+                <div class="hi-body" id="hiBody">
+                    <div class="hi-body-in">
+                        <div class="set-row set-row-col">
+                            <div class="set-row-top"><span class="set-icon"><i class="fa-solid fa-sliders"></i></span><span class="set-label">Studio EQ</span><span id="hiEqName" class="set-value">Flat</span></div>
+                            <div class="hi-eq" id="hiEq"></div>
+                            <div class="hi-presets" id="hiPresets"></div>
+                            <p class="set-hint">10 bands, &plusmn;12 dB. Double-click a band to zero it. <button type="button" class="hi-link" id="hiEqReset">Reset</button></p>
+                        </div>
+                        <label class="set-row">
+                            <span class="set-icon"><i class="fa-solid fa-scale-balanced"></i></span>
+                            <span class="set-text"><span class="set-label">Loudness Match</span><span class="set-sub">Every song plays equally loud (like Spotify)</span></span>
+                            <span class="ios-switch"><input type="checkbox" id="hiNorm"><i></i></span>
+                        </label>
+                        <label class="set-row">
+                            <span class="set-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                            <span class="set-text"><span class="set-label">Anti-Clip Limiter</span><span class="set-sub">No crackle, even at max bass</span></span>
+                            <span class="ios-switch"><input type="checkbox" id="hiLimit"><i></i></span>
+                        </label>
+                        <div class="set-row set-row-col">
+                            <div class="set-row-top"><span class="set-icon"><i class="fa-solid fa-arrows-left-right"></i></span><span class="set-label">3D Wide</span><span id="hiWidthVal" class="set-value">100%</span></div>
+                            <input type="range" id="hiWidth" class="setting-slider" min="0" max="200" step="5" value="100">
+                        </div>
+                        <label class="set-row">
+                            <span class="set-icon"><i class="fa-solid fa-headphones"></i></span>
+                            <span class="set-text"><span class="set-label">8D Audio</span><span class="set-sub">Sound circles around your head (headphones)</span></span>
+                            <span class="ios-switch"><input type="checkbox" id="hi8d"><i></i></span>
+                        </label>
+                        <label class="set-row">
+                            <span class="set-icon"><i class="fa-solid fa-gauge-simple-high"></i></span>
+                            <span class="set-text"><span class="set-label">dB Meter</span><span class="set-sub">Live levels, loudness + clip light on screen</span></span>
+                            <span class="ios-switch"><input type="checkbox" id="hiMeterToggle"><i></i></span>
+                        </label>
+                        <label class="set-row">
+                            <span class="set-icon"><i class="fa-solid fa-display"></i></span>
+                            <span class="set-text"><span class="set-label">Ultra Visuals</span><span class="set-sub">Full screen sharpness, never lowered</span></span>
+                            <span class="ios-switch"><input type="checkbox" id="hiUltra"><i></i></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
 
             <!-- ===== LOOK ===== -->
             <div class="set-group-title">Look</div>
@@ -765,24 +814,25 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/song-names.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/app.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/song-names.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.20.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.20.0"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.20.0"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.20.0"></script>
     <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
-    <script type="module" src="assets/js/lyrics.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/kick-map.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/liquid-v2.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/scrubber.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/viz-options.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/lyrics.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/kick-map.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/scrubber.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/viz-options.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/hi-end.js?v=2.20.0"></script>
     <!-- v2.13: Jam (listen together, device to device) + Phone remote -->
-    <script type="module" src="assets/js/party.js?v=2.19.2"></script>
-    <script type="module" src="assets/js/remote.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/party.js?v=2.20.0"></script>
+    <script type="module" src="assets/js/remote.js?v=2.20.0"></script>
     <!-- v2.13.1: first-visit pulsating tutorial -->
-    <script type="module" src="assets/js/tutorial.js?v=2.19.2"></script>
+    <script type="module" src="assets/js/tutorial.js?v=2.20.0"></script>
 </body>
 </html>
