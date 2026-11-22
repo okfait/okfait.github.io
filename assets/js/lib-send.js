@@ -1,4 +1,4 @@
-// okMUSIC "Send songs to your phone" (v2.22.0)
+// okMUSIC "Send songs to your phone" (v2.23.0)
 //
 // PC: Library → Sync & Backup → Send songs to your phone → a QR code shows up.
 // Phone: scan it with the camera → okMUSIC opens and the songs come straight from the PC
@@ -8,7 +8,7 @@
 //
 // The old "sync link" only sent song NAMES and made the phone download everything again.
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.22.0";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.23.0";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m, ms) => window.ui && window.ui.showToast(m, ms);

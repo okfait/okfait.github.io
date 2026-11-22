@@ -4,10 +4,11 @@
 //  - the cover blown up soft behind everything, 2-tone in your theme color,
 //    dark, and it moves with the "camera"
 //  - the normal V1 liquid (same shape, same settings), with a soft bloom around it
-//  - a ring of little teeth spinning around the cover (faster on bass) + shockwave rings on kicks
+//  - a ring of little teeth + a dashed ring around the cover = a wheel: every kick pushes it,
+//    it coasts back down to its slow idle spin, fast kicks stack up (capped) + shockwave rings on kicks
 //  - the cover itself 2-tone with a shine sweeping across (CSS, see ui-v3.css body.lv2)
 //  - camera: every KICK punches in (springy zoom that overshoots), zoom blur, red/blue split,
-//    a little shake + tilt, and a slow drift the rest of the time so it never feels frozen
+//    a little shake + tilt (the cover shakes with it); the slow drift only moves the background
 // Kicks: from the song's kick map (kick-map.js scans the whole song once = only real kick drums,
 // not voices or notes). Until that scan is done, a live detector on the clean signal fills in.
 
@@ -21,6 +22,8 @@ const S = {
   last: 0, t0: performance.now(),
   shocks: [],
   spin: 0,
+  wheel: { a: 0, v: 0.35 }, // teeth + dashed ring = a wheel that each kick pushes (v2.23.0)
+  artDx: 0, artDy: 0, // how far the cover was shoved by the last kick shake (px)
   artScale: 1, artBlur: 0, artEl: null,
   lastFrame: 0,
   bodyOn: false,
@@ -283,7 +286,11 @@ function frame(ctx, w, h, buf, viz) {
   const cfg = window.vizConfig || {};
   const sens = cfg.sens || window.vizSens || 1;
   const ac = viz.artCenter(w, h);
-  const cx = ac.x, cy = ac.y;
+  // the measured cover center includes the shake we put on it last frame - take that back out,
+  // so the middle of everything is the cover's REAL resting spot
+  const cx = ac.x - S.artDx, cy = ac.y - S.artDy;
+  // the V1 liquid measures the center itself - give it the resting spot too
+  if (viz._artC) viz._artC = { x: cx, y: cy, r: ac.r };
   const sc = Math.max(0.6, Math.min(1.4, (ac.r || 120) / 120)) * (window.displayScale || 1);
   const base = (ac.r || 120) + 4 * sc;
   const paused = window.audioSys.audio.paused && !S.ext;
@@ -305,6 +312,9 @@ function frame(ctx, w, h, buf, viz) {
       S.shake = Math.min(1, S.shake + 0.5 * k);
       S.tilt = (Math.random() < 0.5 ? -1 : 1) * 0.035 * k;
       S.R.v += 160 * k;
+      // the "hand" pushes the wheel: one kick = about a quarter turn that coasts to a stop,
+      // fast kicks stack up (faster spin), capped so it never goes crazy
+      S.wheel.v += 2.6 * k;
       S.shocks.push({ r: base + 14 * sc, a: 0.6 * k });
       if (S.shocks.length > 3) S.shocks.shift();
     }
@@ -320,19 +330,16 @@ function frame(ctx, w, h, buf, viz) {
   S.R.x += S.R.v * dt;
   S.tilt *= Math.exp(-dt * 6);
   S.shake *= Math.exp(-dt * 9);
-  S.spin += dt * (0.35 + bass * 1.6 + punch * 7);
+  // wheel: friction slows it back down between kicks - never to a stop, back to the old idle
+  // speed (the speed it had with no song playing). Soft top speed ~1.1 turns a second.
+  const IDLE = 0.35, VMAX = 7;
+  S.wheel.v = VMAX * Math.tanh(S.wheel.v / VMAX);
+  S.wheel.v = IDLE + (S.wheel.v - IDLE) * Math.exp(-dt * 1.6);
+  S.wheel.a = (S.wheel.a + S.wheel.v * dt) % (Math.PI * 200);
+  S.spin = S.wheel.a;
 
   // ---------------------------------------------------------------- album art punches + blurs
   const blurAmt = Math.max(0, punch - 0.06);
-  const art = S.artEl || (S.artEl = document.getElementById("artContainer"));
-  const as = Math.round(zoom * 1000) / 1000;
-  const ab = Math.round(blurAmt * 10) / 2;
-  if (art && (as !== S.artScale || ab !== S.artBlur)) {
-    art.style.transform = as !== 1 ? `scale(${as})` : "";
-    art.style.filter = ab > 0 ? `blur(${ab}px)` : "";
-    S.artScale = as;
-    S.artBlur = ab;
-  }
 
   const col = colors(viz);
   const hideShape = document.body.classList.contains("clean-lines-mode");
@@ -344,17 +351,36 @@ function frame(ctx, w, h, buf, viz) {
     if (S.bgKey !== "loading") S.bgKey = key;
   }
   const sh = S.shake * S.shake;
-  const sx = (Math.random() - 0.5) * 16 * sh * sc + Math.sin(T * 0.5) * 6 * sc;
-  const sy = (Math.random() - 0.5) * 16 * sh * sc + Math.cos(T * 0.37) * 5 * sc;
-  const rot = S.tilt + Math.sin(T * 0.23) * 0.01;
+  // v2.23.0: the slow side-to-side drift only moves the BACKGROUND now. Before it moved the liquid,
+  // teeth and ring too while the cover stayed put = the cover looked off-center.
+  // Kicks still shake everything, and the cover shakes WITH it.
+  const kx = (Math.random() - 0.5) * 16 * sh * sc, ky = (Math.random() - 0.5) * 16 * sh * sc;
+  const sx = kx, sy = ky;
+  const bgx = kx + Math.sin(T * 0.5) * 6 * sc, bgy = ky + Math.cos(T * 0.37) * 5 * sc;
+  const rot = S.tilt;
+  const bgRot = S.tilt + Math.sin(T * 0.23) * 0.01;
+
+  // the cover punches + blurs + shakes together with the liquid around it (still = dead center)
+  const art = S.artEl || (S.artEl = document.getElementById("artContainer"));
+  const as = Math.round(zoom * 1000) / 1000;
+  const ab = Math.round(blurAmt * 10) / 2;
+  const adx = Math.round(sx * 10) / 10, ady = Math.round(sy * 10) / 10;
+  if (art && (as !== S.artScale || ab !== S.artBlur || adx !== S.artDx || ady !== S.artDy)) {
+    art.style.transform = as !== 1 || adx || ady ? `translate(${adx}px, ${ady}px) scale(${as})` : "";
+    art.style.filter = ab > 0 ? `blur(${ab}px)` : "";
+    S.artScale = as;
+    S.artBlur = ab;
+    S.artDx = adx;
+    S.artDy = ady;
+  }
   if (S.bg) {
     // big enough that the tilt + shake never show an edge, even on a tall phone screen
     // the background fills the screen now, so zoom in just enough that the tilt never shows an empty corner
-    const z = 1.02 + Math.abs(rot * 0.6) * (h / w + w / h) + punch * 0.05 + bass * 0.015;
+    const z = 1.02 + Math.abs(bgRot * 0.6) * (h / w + w / h) + punch * 0.05 + bass * 0.015;
     ctx.save();
     ctx.setTransform(D, 0, 0, D, 0, 0);
-    ctx.translate(w / 2 + sx * 0.5, h / 2 + sy * 0.5);
-    ctx.rotate(rot * 0.6);
+    ctx.translate(w / 2 + bgx * 0.5, h / 2 + bgy * 0.5);
+    ctx.rotate(bgRot * 0.6);
     ctx.scale(z, z);
     ctx.globalAlpha = Math.min(0.75, (0.3 + bass * 0.12 + punch * 0.2) * (S.bgGain || 1));
     ctx.drawImage(S.bg, -w / 2, -h / 2, w, h);
@@ -436,8 +462,8 @@ function frame(ctx, w, h, buf, viz) {
       L.lineTo(Math.cos(a + wa) * tr, Math.sin(a + wa) * tr);
     }
     L.fill();
-    // thin counter-spinning dashed circle
-    L.rotate(-S.spin * 1.7);
+    // thin dashed circle on the same wheel, turning a bit slower (looks like a 2nd layer of it)
+    L.rotate(-S.spin * 0.35);
     L.globalAlpha = 0.6;
     L.strokeStyle = col.line;
     L.lineWidth = 1.3 * sc;
@@ -522,6 +548,7 @@ function reset() {
   }
   S.artScale = 1;
   S.artBlur = 0;
+  S.artDx = S.artDy = 0;
   if (S.bodyOn) {
     S.bodyOn = false;
     document.body.classList.remove("lv2");
@@ -533,4 +560,4 @@ setInterval(() => {
   if ((S.artScale !== 1 || S.artBlur || S.bodyOn) && performance.now() - S.lastFrame > 300) reset();
 }, 500);
 
-window.liquidV2 = { frame, active, reset, probe, kick, get kickSeq() { return S.kickSeq; }, get kickStr() { return S.kickStr; } };
+window.liquidV2 = { frame, active, reset, probe, kick, get wheel() { return S.wheel; }, get kickSeq() { return S.kickSeq; }, get kickStr() { return S.kickStr; } };

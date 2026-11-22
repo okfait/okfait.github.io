@@ -18,7 +18,7 @@ function serverUrl() {
   return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
 }
 let HELPER = LOCAL;
-import * as web from "./web-yt.js?v=2.22.0";
+import * as web from "./web-yt.js?v=2.23.0";
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
