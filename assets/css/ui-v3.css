@@ -1373,16 +1373,35 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
 .lib-card-icon.has-art { background-size: cover; background-position: center; background-repeat: no-repeat; }
 .lib-card.active .lib-card-icon.has-art { box-shadow: 0 0 0 2px var(--accent), 0 0 15px var(--accent-glow); }
 
-/* v2.24: Saved Looks (Settings > Visualizer) */
-.look-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.look-row { display: flex; gap: 6px; align-items: center; }
-.look-apply { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: #fff; font-size: 13px; font-weight: 700; text-align: left; }
-.look-apply > span:not(.look-dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.look-apply small { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.4); }
-.look-apply:active { transform: scale(0.98); }
-.look-dot { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15); }
-.look-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.7); }
-.look-del { color: #f87171; }
-.look-empty { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.4); padding: 4px 2px 6px; }
-.look-import { margin-top: 8px; }
-.look-import input { font-size: 13px; letter-spacing: 0; text-transform: none; text-align: left; }
+
+/* v2.25: Your Wrapped (wrapped.js) */
+.wr-cardbox { max-width: 460px; }
+.wr-seg { display: flex; margin-bottom: 14px; }
+.wr-seg button { flex: 1; }
+.wr-empty { text-align: center; padding: 26px 10px 18px; color: rgba(255, 255, 255, 0.6); }
+.wr-empty i { font-size: 34px; color: var(--accent); margin-bottom: 12px; display: block; }
+.wr-empty b { display: block; color: #fff; font-size: 17px; margin-bottom: 6px; }
+.wr-empty p { font-size: 12px; font-weight: 600; line-height: 1.5; }
+.wr-hero { text-align: center; padding: 20px 14px; border-radius: 20px; margin-bottom: 12px;
+  background: radial-gradient(120% 140% at 0% 0%, var(--accent) 0%, transparent 60%), radial-gradient(120% 140% at 100% 100%, var(--accent-glow, rgba(255,255,255,.2)) 0%, transparent 55%), rgba(255, 255, 255, 0.05); }
+.wr-hero small { display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.75); }
+.wr-big { font-size: 46px; font-weight: 900; color: #fff; line-height: 1.1; margin: 4px 0; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.35); }
+.wr-card { padding: 12px; border-radius: 18px; background: rgba(255, 255, 255, 0.05); margin-bottom: 12px; }
+.wr-h { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); margin: 2px 4px 8px; }
+.wr-song { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+.wr-rank { width: 16px; text-align: center; font-size: 14px; font-weight: 900; color: var(--accent); }
+.wr-art { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; background: rgba(255, 255, 255, 0.08) center/cover no-repeat; display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.35); font-size: 13px; }
+.wr-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wr-name b, .wr-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-name b { font-size: 13px; color: #fff; }
+.wr-name small { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.45); }
+.wr-num { text-align: right; display: flex; flex-direction: column; }
+.wr-num b { font-size: 15px; color: #fff; line-height: 1; }
+.wr-num small { font-size: 9px; font-weight: 700; color: rgba(255, 255, 255, 0.4); }
+.wr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wr-tile { padding: 12px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); min-width: 0; }
+.wr-tile-wide { grid-column: span 2; }
+.wr-tile small { display: block; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); }
+.wr-tile b { display: block; font-size: 17px; color: #fff; margin: 3px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-tile span { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.5); }
+.wr-since { text-align: center; margin: 12px 0 0; }
