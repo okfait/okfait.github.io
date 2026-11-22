@@ -256,4 +256,4 @@ let seen = "1";
 try {
   seen = localStorage.getItem(KEY);
 } catch (e) {}
-if (!seen && !q.get("remote") && !q.get("jam")) setTimeout(() => go(0), 1200);
+if (!seen && !q.get("remote") && !q.get("jam") && !q.get("libsync")) setTimeout(() => go(0), 1200);

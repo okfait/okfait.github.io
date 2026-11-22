@@ -869,6 +869,16 @@ body.away .bass-ripple { display: none; }
 .jam-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.7); margin-bottom: 8px; }
 .jam-leave { background: rgba(239, 68, 68, 0.14) !important; color: #f87171 !important; }
 #remoteBtn.active, #partyBtn.active { color: #fbbf24; }
+/* v2.22: send songs to your phone (lib-send.js) */
+.ls-prog { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); margin-bottom: 10px; }
+.ls-prog-top { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; color: rgba(255, 255, 255, 0.75); margin-bottom: 8px; }
+.ls-bar { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.ls-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.2s; }
+.ls-name { font-size: 12px; font-weight: 700; color: #fff; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ls-skip { display: block; font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.4); margin-top: 6px; }
+.ls-done { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 14px; background: rgba(34, 197, 94, 0.12); color: #4ade80; font-size: 14px; font-weight: 800; margin-bottom: 10px; }
+.ls-done small { color: rgba(255, 255, 255, 0.45); font-size: 11px; }
+.ls-err { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(239, 68, 68, 0.12); color: #f87171; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
 @media (max-width: 480px) {
   .jam-code-wrap { flex-direction: column; text-align: center; }
   .jam-qr { width: 180px; height: 180px; }
@@ -1358,3 +1368,7 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
 .hm-info span { display: flex; flex-direction: column; }
 .hm-info b { color: #fff; font-size: 11px; }
 @media (max-width: 700px) { .hi-meter { left: 10px; bottom: auto; top: 64px; width: 200px; scale: 0.82; transform-origin: top left; } }
+
+/* v2.22: library rows show the song cover */
+.lib-card-icon.has-art { background-size: cover; background-position: center; background-repeat: no-repeat; }
+.lib-card.active .lib-card-icon.has-art { box-shadow: 0 0 0 2px var(--accent), 0 0 15px var(--accent-glow); }

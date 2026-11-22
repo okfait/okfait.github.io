@@ -618,6 +618,9 @@ class LibraryManager {
           beatSignals: s.beatSignals || [],
           speedPoints: s.speedPoints || [],
         };
+        // v2.22.0: covers, YouTube id and per-song sound come along too
+        for (const k of ["art", "yt", "lyrics", "kickMap", "bassVal", "reverbVal", "baseSpeed", "xtremeOn"])
+          if (s[k] !== undefined && s[k] !== null) songObj[k] = s[k];
         chunks.push(JSON.stringify(songObj));
         if (i < allSongs.length - 1) chunks.push(",");
       }
@@ -644,17 +647,33 @@ class LibraryManager {
       const text = await file.text();
       const data = JSON.parse(text);
       if (data && data.songs) {
+        // backup song id -> new song id, so the folders point at the right songs
+        const idMap = new Map();
         for (const s of data.songs) {
           if (!s.b64) continue;
           const res = await fetch(s.b64);
           const blob = await res.blob();
-          blob.name = s.name + ".mp3";
-          await window.player.db.add(blob, {
+          const file = new File([blob], (s.name || "Song") + ".mp3", { type: blob.type || "audio/mpeg" });
+          const newId = await window.player.db.add(file, {
             beatSignals: s.beatSignals,
             speedPoints: s.speedPoints,
           });
+          const upd = { name: s.name || "Song" };
+          for (const k of ["art", "yt", "lyrics", "kickMap", "bassVal", "reverbVal", "baseSpeed", "xtremeOn"])
+            if (s[k] !== undefined) upd[k] = s[k];
+          await window.player.db.update(newId, upd);
+          if (s.id) idMap.set(s.id, newId);
         }
-        this.structure = data.structure || [];
+        const remap = (items) =>
+          (items || [])
+            .map((it) =>
+              it.type === "song"
+                ? idMap.has(it.id) ? { type: "song", id: idMap.get(it.id) } : null
+                : it.type === "folder" ? { ...it, items: remap(it.items) } : null,
+            )
+            .filter(Boolean);
+        // add the backup's folders next to what you already have (before, it wiped your folders)
+        this.structure = [...this.structure, ...remap(data.structure)];
         this.save();
         await window.player.loadLib();
         window.ui.showToast("Library Imported Successfully!");
@@ -4211,6 +4230,10 @@ class UI {
             "border-[var(--accent)]",
             "bg-[var(--accent-dim)]",
           );
+      } else if (typeof song.art === "string" && /^(data:image|https?:|blob:)/.test(song.art)) {
+        // v2.22.0: the song's cover instead of the music note
+        iconBox.classList.add("has-art");
+        iconBox.style.backgroundImage = `url("${song.art.replace(/"/g, "%22")}")`;
       } else {
         iconBox.innerHTML =
           '<i class="fa-solid fa-music text-sm opacity-50"></i>';
