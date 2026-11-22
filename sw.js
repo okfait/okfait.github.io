@@ -1,4 +1,4 @@
-const CACHE_NAME = 'okmusic-v2.23.0';
+const CACHE_NAME = 'okmusic-v2.24.0';
 const ASSETS = [
     './index.html',
     './manifest.json',

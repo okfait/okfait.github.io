@@ -31,6 +31,7 @@ const S = {
   an: null, fbuf: null, hist: [], fluxM: 1, fluxV: 1, lvl: -60, lastKick: 0, probeAt: 0,
   kickSeq: 0, kickStr: 0, usedSeq: 0,
   ext: false,
+  drop: 0, dropSeq: 0, usedDrop: 0, shards: [], dropFlash: 0, // Drop Mode (v2.24.0)
 };
 
 function makeCanvas(w, h) {
@@ -52,10 +53,20 @@ function setup(w, h, D) {
 }
 
 // ---------------------------------------------------------------- kicks
-function fire(str) {
+// the "hand" on the wheel: pushes add up, but get weaker the closer it is to top speed
+// (~1.1 turns a second), so 3 fast kicks spin it fast but never crazy
+const WHEEL_IDLE = 0.35, WHEEL_MAX = 7;
+function pushWheel(p) {
+  S.wheel.v += p * Math.max(0, 1 - S.wheel.v / WHEEL_MAX);
+}
+function fire(str, drop) {
   S.kickSeq++;
   S.kickStr = str || 1;
+  if (drop) S.dropSeq++;
 }
+// Drop Mode: a "drop" = the kicks come back after a break of 2+ seconds (the quiet build-up part),
+// not in the first seconds of the song, and the beat really keeps going after it
+const DROP_GAP = 2.2;
 function outLat() {
   const c = window.audioSys && window.audioSys.ctx;
   return c ? (c.outputLatency || 0) + (c.baseLatency || 0) : 0;
@@ -82,7 +93,12 @@ function probeMap(map) {
     S.mapIdx = lo;
   }
   while (S.mapIdx < t.length && t[S.mapIdx] <= pos) {
-    if (pos - t[S.mapIdx] < 0.15) fire(map.s[S.mapIdx]);
+    const i = S.mapIdx;
+    if (pos - t[i] < 0.15) {
+      const gap = i > 0 ? t[i] - t[i - 1] : 0;
+      const keepsGoing = i + 2 < t.length && t[i + 2] - t[i] < 2.4; // 2 more kicks soon after
+      fire(map.s[i], i > 0 && gap >= DROP_GAP && t[i] > 8 && keepsGoing);
+    }
     S.mapIdx++;
   }
   S.mapPos = pos;
@@ -125,8 +141,9 @@ function probeLive(now) {
   S.fluxM += d * 0.02;
   S.fluxV += (d * d - S.fluxV) * 0.02;
   if (isKick) {
+    const gap = (now - S.lastKick) / 1000;
     S.lastKick = now;
-    fire(Math.min(1.35, 0.6 + (flux - thr) / 8));
+    fire(Math.min(1.35, 0.6 + (flux - thr) / 8), gap >= DROP_GAP && gap < 60 && window.audioSys.audio.currentTime > 8);
   }
 }
 function probe() {
@@ -270,6 +287,24 @@ function buildBg(w, h, color) {
   S.bg = c;
 }
 
+// the drop hits: huge punch, the wheel gets slammed, 3 shockwaves, a flash and the teeth fly off
+function startDrop(base, sc) {
+  S.drop = 1;
+  S.dropFlash = 1;
+  S.spring.v += 85;
+  S.shake = 1;
+  S.R.v += 320;
+  pushWheel(6);
+  S.shocks.length = 0;
+  for (let i = 0; i < 3; i++) S.shocks.push({ r: base + (14 - i * 30) * sc, a: 0.9 - i * 0.15 });
+  S.shards.length = 0;
+  const n = 44;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + S.spin;
+    S.shards.push({ a, r: base, v: (380 + Math.random() * 420) * sc, rot: 0, vr: (Math.random() - 0.5) * 14, life: 1, len: (6 + Math.random() * 8) * sc });
+  }
+}
+
 function frame(ctx, w, h, buf, viz) {
   const now = performance.now();
   const dt = Math.min(0.05, Math.max(0.001, (now - (S.last || now - 16)) / 1000));
@@ -303,18 +338,25 @@ function frame(ctx, w, h, buf, viz) {
   highs = highs / 140 / 255;
 
   // ---------------------------------------------------------------- kicks
+  const dropOn = !!(window.vizOpts && window.vizOpts.dropMode);
+  if (S.dropSeq !== S.usedDrop) {
+    S.usedDrop = S.dropSeq;
+    if (dropOn && !paused) startDrop(base, sc);
+  }
+  S.drop = Math.max(0, S.drop - dt / 4.5); // the crazy part lasts ~4.5 s, fading out
+  const dm = 1 + 0.6 * S.drop; // kicks hit harder while it lasts
   if (S.kickSeq !== S.usedSeq) {
     S.usedSeq = S.kickSeq;
     // Settings > Visualizer > Beat Effects (on by default)
     if (!paused && (!window.vizOpts || window.vizOpts.beatFx)) {
-      const k = S.kickStr;
+      const k = S.kickStr * dm;
       S.spring.v += 42 * k;
       S.shake = Math.min(1, S.shake + 0.5 * k);
       S.tilt = (Math.random() < 0.5 ? -1 : 1) * 0.035 * k;
       S.R.v += 160 * k;
       // the "hand" pushes the wheel: one kick = about a quarter turn that coasts to a stop,
       // fast kicks stack up (faster spin), capped so it never goes crazy
-      S.wheel.v += 2.6 * k;
+      pushWheel(1.6 * k);
       S.shocks.push({ r: base + 14 * sc, a: 0.6 * k });
       if (S.shocks.length > 3) S.shocks.shift();
     }
@@ -332,9 +374,10 @@ function frame(ctx, w, h, buf, viz) {
   S.shake *= Math.exp(-dt * 9);
   // wheel: friction slows it back down between kicks - never to a stop, back to the old idle
   // speed (the speed it had with no song playing). Soft top speed ~1.1 turns a second.
-  const IDLE = 0.35, VMAX = 7;
-  S.wheel.v = VMAX * Math.tanh(S.wheel.v / VMAX);
-  S.wheel.v = IDLE + (S.wheel.v - IDLE) * Math.exp(-dt * 1.6);
+  // v2.24.0: the top-speed limit used to squeeze the speed EVERY frame = it acted like a brake
+  // (that's why it stopped so fast). Now the limit only applies to pushes (see pushWheel) and
+  // only gentle friction slows it - one kick coasts for ~2-3 s.
+  S.wheel.v = WHEEL_IDLE + (S.wheel.v - WHEEL_IDLE) * Math.exp(-dt * 1.0);
   S.wheel.a = (S.wheel.a + S.wheel.v * dt) % (Math.PI * 200);
   S.spin = S.wheel.a;
 
@@ -382,7 +425,7 @@ function frame(ctx, w, h, buf, viz) {
     ctx.translate(w / 2 + bgx * 0.5, h / 2 + bgy * 0.5);
     ctx.rotate(bgRot * 0.6);
     ctx.scale(z, z);
-    ctx.globalAlpha = Math.min(0.75, (0.3 + bass * 0.12 + punch * 0.2) * (S.bgGain || 1));
+    ctx.globalAlpha = Math.min(0.85, (0.3 + bass * 0.12 + punch * 0.2 + S.drop * 0.15) * (S.bgGain || 1));
     ctx.drawImage(S.bg, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
@@ -455,7 +498,7 @@ function frame(ctx, w, h, buf, viz) {
     L.beginPath();
     for (let i = 0; i < teeth; i++) {
       const a = (i / teeth) * Math.PI * 2;
-      const len = (3 + (i % 2 ? 0 : 3) + highs * 8 + Math.max(0, punch) * 6) * sc;
+      const len = (3 + (i % 2 ? 0 : 3) + highs * 8 + Math.max(0, punch) * 6 + S.drop * 9) * sc;
       const wa = 0.03;
       L.moveTo(Math.cos(a - wa) * tr, Math.sin(a - wa) * tr);
       L.lineTo(Math.cos(a) * (tr + len), Math.sin(a) * (tr + len));
@@ -474,6 +517,35 @@ function frame(ctx, w, h, buf, viz) {
     L.setLineDash([]);
     L.restore();
     L.globalAlpha = 1;
+
+    // drop: the teeth that flew off
+    if (S.shards.length) {
+      L.save();
+      L.fillStyle = col.line;
+      for (let i = S.shards.length - 1; i >= 0; i--) {
+        const p = S.shards[i];
+        p.r += p.v * dt;
+        p.v *= Math.exp(-dt * 1.8);
+        p.rot += p.vr * dt;
+        p.life -= dt / 1.3;
+        if (p.life <= 0) {
+          S.shards.splice(i, 1);
+          continue;
+        }
+        const x = cx + Math.cos(p.a) * p.r, y = cy + Math.sin(p.a) * p.r;
+        L.globalAlpha = p.life;
+        L.setTransform(D, 0, 0, D, 0, 0);
+        L.translate(x, y);
+        L.rotate(p.a + p.rot);
+        L.beginPath();
+        L.moveTo(-p.len * 0.25, -2.2 * sc);
+        L.lineTo(p.len, 0);
+        L.lineTo(-p.len * 0.25, 2.2 * sc);
+        L.fill();
+      }
+      L.restore();
+      L.globalAlpha = 1;
+    }
   }
 
   // ---------------------------------------------------------------- camera: punch + zoom blur + shake/tilt/drift
@@ -509,6 +581,17 @@ function frame(ctx, w, h, buf, viz) {
   ctx.restore();
 
   // flash on hard hits + dark edges
+  if (S.dropFlash > 0) {
+    // drop: one big flash in your color
+    ctx.save();
+    ctx.setTransform(D, 0, 0, D, 0, 0);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.45 * S.dropFlash * S.dropFlash;
+    ctx.fillStyle = col.line;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    S.dropFlash = Math.max(0, S.dropFlash - dt * 2.5);
+  }
   if (punch > 0.35) {
     ctx.save();
     ctx.setTransform(D, 0, 0, D, 0, 0);
@@ -541,6 +624,8 @@ function reset() {
   S.R.x = S.R.v = 0;
   S.shake = S.tilt = 0;
   S.shocks.length = 0;
+  S.shards.length = 0;
+  S.drop = S.dropFlash = 0;
   const art = S.artEl || document.getElementById("artContainer");
   if (art) {
     art.style.transform = "";
@@ -560,4 +645,4 @@ setInterval(() => {
   if ((S.artScale !== 1 || S.artBlur || S.bodyOn) && performance.now() - S.lastFrame > 300) reset();
 }, 500);
 
-window.liquidV2 = { frame, active, reset, probe, kick, get wheel() { return S.wheel; }, get kickSeq() { return S.kickSeq; }, get kickStr() { return S.kickStr; } };
+window.liquidV2 = { frame, active, reset, probe, kick, get wheel() { return S.wheel; }, get drop() { return S.drop; }, get kickSeq() { return S.kickSeq; }, get kickStr() { return S.kickStr; } };

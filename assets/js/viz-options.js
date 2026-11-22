@@ -6,7 +6,8 @@
 //  - Spin Cover (off): only the album cover turns, like a record (stops when paused)
 
 const $ = (id) => document.getElementById(id);
-const KEYS = { tint: ["sv_cover_tint", true], spin: ["sv_spin_cover", false], beatfx: ["sv_v2_beatfx", true] };
+// drop (v2.24.0, off): Drop Mode - V2 goes crazy for a few seconds when the beat drops
+const KEYS = { tint: ["sv_cover_tint", true], spin: ["sv_spin_cover", false], beatfx: ["sv_v2_beatfx", true], drop: ["sv_drop_mode", false] };
 
 function get(k) {
   const [key, def] = KEYS[k];
@@ -23,6 +24,7 @@ function apply() {
   document.body.classList.toggle("spin-cover", get("spin"));
   if ($("coverTintToggle")) $("coverTintToggle").checked = get("tint");
   if ($("spinCoverToggle")) $("spinCoverToggle").checked = get("spin");
+  if ($("dropModeToggle")) $("dropModeToggle").checked = get("drop");
   const cfg = window.vizConfig || {};
   if ($("particlesToggle")) $("particlesToggle").checked = cfg.sparks !== false;
   syncRow();
@@ -99,6 +101,10 @@ window.vizOpts = {
   get beatFx() {
     return get("beatfx");
   },
+  get dropMode() {
+    return get("drop");
+  },
+  apply,
 };
 apply();
 playingClass();

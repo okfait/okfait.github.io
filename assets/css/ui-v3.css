@@ -1372,3 +1372,17 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
 /* v2.22: library rows show the song cover */
 .lib-card-icon.has-art { background-size: cover; background-position: center; background-repeat: no-repeat; }
 .lib-card.active .lib-card-icon.has-art { box-shadow: 0 0 0 2px var(--accent), 0 0 15px var(--accent-glow); }
+
+/* v2.24: Saved Looks (Settings > Visualizer) */
+.look-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.look-row { display: flex; gap: 6px; align-items: center; }
+.look-apply { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: #fff; font-size: 13px; font-weight: 700; text-align: left; }
+.look-apply > span:not(.look-dot) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-apply small { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.4); }
+.look-apply:active { transform: scale(0.98); }
+.look-dot { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15); }
+.look-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.7); }
+.look-del { color: #f87171; }
+.look-empty { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.4); padding: 4px 2px 6px; }
+.look-import { margin-top: 8px; }
+.look-import input { font-size: 13px; letter-spacing: 0; text-transform: none; text-align: left; }

@@ -13,7 +13,7 @@ let waiters = {};
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(`assets/js/kick-scan.js?v=2.23.0&k=${VER}`);
+  worker = new Worker(`assets/js/kick-scan.js?v=2.24.0&k=${VER}`);
   worker.onmessage = (e) => {
     const { id, t, s, err } = e.data;
     const done = waiters[id];
@@ -103,4 +103,14 @@ window.kickMap = {
     return busyId;
   },
   _mem: mem,
+  // Smart Queue scans songs in the background to learn their speed (one at a time)
+  scanSong(song) {
+    if (busyId || !song || failed.has(song.id)) return false;
+    if (song.kickMap && song.kickMap.v === VER) return false;
+    scan(song);
+    return true;
+  },
+  isDone(song) {
+    return !!(song && ((song.kickMap && song.kickMap.v === VER) || failed.has(song.id)));
+  },
 };

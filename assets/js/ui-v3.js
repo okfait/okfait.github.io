@@ -308,10 +308,10 @@ function init() {
     paintAll();
   }, 1200);
 
-  window.uiv3 = { toggleMenu, closeMenus, markSwatch, setVizMode, toggleTuner, resetTuner, exitClean, paintAll, enhanceSelect };
+  window.uiv3 = { toggleMenu, closeMenus, markSwatch, setVizMode, toggleTuner, resetTuner, restoreTuner, exitClean, paintAll, enhanceSelect };
 }
 
-window.uiv3 = { toggleMenu, closeMenus, markSwatch, setVizMode, toggleTuner, resetTuner, exitClean, paintAll, enhanceSelect };
+window.uiv3 = { toggleMenu, closeMenus, markSwatch, setVizMode, toggleTuner, resetTuner, restoreTuner, exitClean, paintAll, enhanceSelect };
 init();
 
 // =====================================================================
