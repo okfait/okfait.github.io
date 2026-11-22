@@ -282,7 +282,16 @@ class MusicDB extends Dexie {
       isNew: true,
     };
     if (data && data.speedPoints) entry.speedPoints = data.speedPoints;
-    await this.songs.add(entry);
+    try {
+      await this.songs.add(entry);
+    } catch (e) {
+      // some iPhones refuse to save audio "files" in site storage - save the raw bytes instead
+      console.warn("saving song as file failed, saving bytes instead", e);
+      entry.blob = null;
+      entry.bytes = await f.arrayBuffer();
+      entry.mime = f.type || "audio/mpeg";
+      await this.songs.add(entry);
+    }
     return id;
   }
   async update(id, d) {
@@ -292,7 +301,12 @@ class MusicDB extends Dexie {
     await this.songs.delete(id);
   }
   async getAll() {
-    return await this.songs.toArray();
+    const all = await this.songs.toArray();
+    for (const s of all) {
+      // songs saved as raw bytes (see add) turn back into a playable file here
+      if (!s.blob && s.bytes) s.blob = new Blob([s.bytes], { type: s.mime || "audio/mpeg" });
+    }
+    return all;
   }
   async clearAll() {
     if (confirm("Factory Reset?")) {
@@ -925,7 +939,10 @@ class okMUSICLearningController {
 class AudioSystem {
   constructor() {
     this.ctx = null;
-    this.audio = new Audio();
+    // iPhone/iPad: the phone engine (phone-deck.js) - Safari ignores speed + skips effects
+    // when a normal <audio> tag goes through the effects, so phones play the song inside them
+    this.phone = !!(window.phoneEngine && window.phoneEngine.wanted());
+    this.audio = this.phone ? new window.PhoneDeck({ anchor: true }) : new Audio();
     // Slowing down/speeding up must change the PITCH too (slowed = deeper, faster = higher).
     // Set once here so it applies however a song starts (click, resume, restore, party sync).
     this.audio.preservesPitch = false;
@@ -948,7 +965,11 @@ class AudioSystem {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AC();
-    this.src = this.ctx.createMediaElementSource(this.audio);
+    if (this.phone) {
+      // phone engine: the song is played straight into this node (same spot as before)
+      this.src = this.ctx.createGain();
+      this.audio.attach(this.ctx, this.src);
+    } else this.src = this.ctx.createMediaElementSource(this.audio);
     this.bass = this.ctx.createBiquadFilter();
     this.bass.type = "lowshelf";
     this.bass.frequency.value = 200;
@@ -1160,7 +1181,15 @@ class AudioSystem {
     }
   }
 
-  setBass(v) {
+  setBass(v, byHand) {
+    // Dynamic Bass Curve sets the bass from your volume and used to silently ignore this slider
+    // (on phones it looked like bass boost was broken). Moving the slider yourself = curve off.
+    if (byHand && this.curveEnabled) {
+      this.toggleBassCurve(false);
+      const t = window.$("curveToggle");
+      if (t) t.checked = false;
+      if (window.ui && window.ui.showToast) window.ui.showToast("Dynamic Bass Curve turned off so your bass slider works", 3500);
+    }
     this.bassVal = v;
     window.$("bassVal").innerText = `+${v}dB`;
     this.updateDynamicBass();
@@ -1268,7 +1297,7 @@ class AudioSystem {
     }
     window.$("bassSlider").value = bass;
     window.$("reverbSlider").value = rev;
-    this.setBass(bass);
+    this.setBass(bass, true);
     this.setReverb(rev);
   }
 
@@ -5534,13 +5563,17 @@ class Player {
   ensureFadeDeck() {
     const as = window.audioSys;
     if (window.fadeAudio || !as.ctx) return;
-    window.fadeAudio = new Audio();
+    window.fadeAudio = as.phone ? new window.PhoneDeck() : new Audio();
     // same rule for the crossfade deck so the fading song keeps its pitch shift
     window.fadeAudio.preservesPitch = false;
     window.fadeAudio.mozPreservesPitch = false;
     window.fadeAudio.webkitPreservesPitch = false;
     window.fadeAudio.preload = "auto";
-    const src = as.ctx.createMediaElementSource(window.fadeAudio);
+    let src;
+    if (as.phone) {
+      src = as.ctx.createGain();
+      window.fadeAudio.attach(as.ctx, src);
+    } else src = as.ctx.createMediaElementSource(window.fadeAudio);
     window.fadeBass = as.ctx.createBiquadFilter(); // the fading song keeps its bass boost
     window.fadeGain = as.ctx.createGain();
     window.fadeGain.gain.value = 0;

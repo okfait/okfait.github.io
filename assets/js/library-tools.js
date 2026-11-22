@@ -346,6 +346,32 @@ window.ltStorage = {
   },
 };
 
+// iPhone: Safari wipes a website's saved stuff (songs, settings) when you don't open it for a
+// while, and the mini browsers inside apps (Discord, Instagram...) forget it every time.
+// A home screen okMUSIC is treated like a real app: it keeps everything.
+function setupPhoneStorage() {
+  const ios = document.documentElement.classList.contains("ios");
+  if (!ios) return;
+  const standalone = navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+  requestPersist().then(refreshStorage);
+  if (standalone) return;
+  const inApp = !/Safari\//.test(navigator.userAgent) || /FBAN|FBAV|Instagram|Discord|Snapchat|TikTok|Line\//i.test(navigator.userAgent);
+  let seen = null;
+  try {
+    seen = localStorage.getItem("okmusic_home_tip");
+  } catch (e) {}
+  if (seen && !inApp) return;
+  setTimeout(() => {
+    const msg = inApp
+      ? "You're in an app's mini browser - it forgets your songs + settings. Open okMUSIC in Safari, then Share → Add to Home Screen."
+      : "iPhone tip: tap Share → Add to Home Screen. okMUSIC then keeps your songs + settings and works like an app.";
+    window.ui.showToast(msg, 9000);
+    try {
+      localStorage.setItem("okmusic_home_tip", "1");
+    } catch (e) {}
+  }, 5000);
+}
+
 // ------------------------------------------------------------- media keys
 function setupMediaSession() {
   const ms = navigator.mediaSession;
@@ -936,6 +962,7 @@ function init() {
   };
   safely("media keys", setupMediaSession);
   safely("sleep timer", setupSleepTimer);
+  safely("phone storage", setupPhoneStorage);
   safely("storage line", () => {
     // small line above "Factory Reset" in the library panel
     const reset = document.querySelector('button[onclick="window.player.db.clearAll()"]');
