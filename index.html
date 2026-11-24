@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="author" content="rick_grimesz">
     <meta name="copyright" content="(c) 2025-2026 rick_grimesz. All rights reserved. See LICENSE.">
-    <title>okMUSIC v2.26.0</title>
+    <title>okMUSIC v2.27.0</title>
     
     <!-- PWA Manifest & Icons -->
     <link rel="icon" type="image/png" href="favicon.png">
@@ -33,9 +33,9 @@
     <link rel="stylesheet" href="assets/css/style.css">
     <!-- Built once from the classes this page uses (replaces the live-compiling Tailwind CDN script).
          Loaded AFTER style.css on purpose: same order the CDN used. -->
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.26.0">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2.27.0">
     <!-- v3 look: iOS-style settings, menus, sliders, add-songs sheet. Loaded last so it wins. -->
-    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.26.0">
+    <link rel="stylesheet" href="assets/css/ui-v3.css?v=2.27.0">
 </head>
 <body>
 
@@ -49,7 +49,7 @@
 
     <!-- TOP BAR -->
     <div class="top-bar">
-        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.26.0</span></div>
+        <div class="text-2xl font-black tracking-tighter text-white logo">ok<span style="color:var(--accent)">MUSIC</span> <span class="text-sm opacity-40 font-normal ml-1">v2.27.0</span></div>
         <div class="top-actions">
             <button onclick="window.remote.stop()" class="remote-pill" title="Stop being a remote"><i class="fa-solid fa-mobile-screen-button"></i> Remote · Exit</button>
             <button onclick="window.lyrics.toggle()" class="top-icon lyrics-btn" id="lyricsBtn" title="Lyrics"><i class="fa-solid fa-quote-right"></i></button>
@@ -101,7 +101,8 @@
     <!-- CONTROLS -->
     <div class="controls glass-panel">
         <button class="btn" onclick="window.player.toggleRepeat()" id="btnLoop"><i class="fa-solid fa-repeat"></i></button>
-        <button class="btn btn-editor" onclick="window.curveEditor.open()"><i class="fa-solid fa-wave-square"></i></button>
+        <!-- v2.27.0: the timeline editor moved to Settings > Sound; this is shuffle now (off / shuffle / smart shuffle) -->
+        <button class="btn btn-shuffle" onclick="window.player.toggleShuffle()" id="shuffleBtn" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
         
         <button class="btn" onclick="window.player.prev()"><i class="fa-solid fa-backward-step"></i></button>
         <button class="btn main" onclick="window.player.togglePlay()" id="btnPlay"><i class="fa-solid fa-play ml-1"></i></button>
@@ -138,7 +139,7 @@
                     </div></div>
                 <button onclick="window.libraryMgr.openFolderModal()" class="q-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
                 <button onclick="window.libraryMgr.shareLibrary()" id="shareLibBtn" class="q-btn" title="Share Library"><i class="fa-solid fa-share-nodes"></i></button>
-                <button onclick="window.player.toggleShuffle()" id="shuffleBtn" class="q-btn" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
+                <button onclick="window.smartShuffle && window.smartShuffle.radioBtn()" id="radioBtn" class="q-btn" title="Song Radio: songs like the one playing"><i class="fa-solid fa-tower-broadcast"></i></button>
                 <button onclick="window.ui.toggleSelectMode()" id="selectBtn" class="q-btn" title="Select Multiple"><i class="fa-solid fa-check-double"></i></button>
             </div>
 
@@ -238,6 +239,11 @@
                     <span class="set-text"><span class="set-label">Smart Queue</span><span class="set-sub">Next song = one with a similar speed (BPM), so fades sound smooth</span></span>
                     <span class="ios-switch"><input type="checkbox" id="smartQueueToggle" onchange="window.smartQueue && window.smartQueue.set(this.checked)"><i></i></span>
                 </label>
+                <button type="button" class="set-row set-row-btn" onclick="window.ui.toggleSettings(); window.curveEditor.open()">
+                    <span class="set-icon"><i class="fa-solid fa-wave-square"></i></span>
+                    <span class="set-text"><span class="set-label">Timeline Editor</span><span class="set-sub">Speed curve + beat points for the song playing</span></span>
+                    <i class="fa-solid fa-chevron-right set-chev"></i>
+                </button>
                 <details class="set-details">
                     <summary class="set-row">
                         <span class="set-icon"><i class="fa-solid fa-sliders"></i></span>
@@ -815,6 +821,7 @@
 
     <!-- CONTEXT MENU -->
     <div id="contextMenu">
+        <div class="ctx-item" id="ctxRadio" onclick="window.ui.handleContextAction('radio')"><i class="fa-solid fa-tower-broadcast"></i> Start Radio</div>
         <div class="ctx-item" onclick="window.ui.handleContextAction('queue')"><i class="fa-solid fa-plus"></i> Add to Queue</div>
         <div class="ctx-item" onclick="window.ui.handleContextAction('edit')"><i class="fa-solid fa-pen"></i> Edit</div>
         <div class="ctx-item delete" onclick="window.ui.handleContextAction('delete')"><i class="fa-solid fa-trash"></i> Delete</div>
@@ -830,35 +837,35 @@
             <div class="text-[10px] text-white/30 text-center uppercase tracking-widest mt-4">Queue is empty</div>
         </div>
     </aside>
-    <script type="module" src="assets/js/song-names.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/song-names.js?v=2.27.0"></script>
     <!-- v2.25.0: iPhone sound engine (speed + bass work on phones, lock screen controls) -->
-    <script type="module" src="assets/js/phone-deck.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/app.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/phone-deck.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/app.js?v=2.27.0"></script>
     <!-- Extra library tools (add from link, folder drop, ...). Loads AFTER app.js on purpose. -->
-    <script type="module" src="assets/js/library-tools.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/library-tools.js?v=2.27.0"></script>
     <!-- v3: menus, clean-display exit, tuner, swatches, slider fill -->
-    <script type="module" src="assets/js/ui-v3.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/ui-v3.js?v=2.27.0"></script>
     <!-- v3: Add Songs (search + Spotify/YouTube playlists through the PC helper) -->
-    <script type="module" src="assets/js/song-finder.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/song-finder.js?v=2.27.0"></script>
     <!-- v2.12: lyrics (lrclib.net) + Liquid V2 visualizer -->
-    <script type="module" src="assets/js/lyrics.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/kick-map.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/liquid-v2.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/scrubber.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/viz-options.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/hi-end.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/lyrics.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/kick-map.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/liquid-v2.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/scrubber.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/viz-options.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/hi-end.js?v=2.27.0"></script>
     <!-- v2.13: Jam (listen together, device to device) + Phone remote -->
-    <script type="module" src="assets/js/party.js?v=2.26.0"></script>
-    <script type="module" src="assets/js/remote.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/party.js?v=2.27.0"></script>
+    <script type="module" src="assets/js/remote.js?v=2.27.0"></script>
     <!-- v2.25.0: send songs to your phone with a QR code -->
-    <script type="module" src="assets/js/lib-send.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/lib-send.js?v=2.27.0"></script>
     <!-- v2.24.0: Smart Queue (similar BPM next) -->
-    <script type="module" src="assets/js/smart-queue.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/smart-queue.js?v=2.27.0"></script>
     <!-- v2.26.0: Smart Shuffle (new songs like yours mixed into the library) -->
-    <script type="module" src="assets/js/smart-shuffle.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/smart-shuffle.js?v=2.27.0"></script>
     <!-- v2.25.0: okMUSIC Wrapped (••• menu) -->
-    <script type="module" src="assets/js/wrapped.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/wrapped.js?v=2.27.0"></script>
     <!-- v2.13.1: first-visit pulsating tutorial -->
-    <script type="module" src="assets/js/tutorial.js?v=2.26.0"></script>
+    <script type="module" src="assets/js/tutorial.js?v=2.27.0"></script>
 </body>
 </html>

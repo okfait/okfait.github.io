@@ -13,7 +13,7 @@ let waiters = {};
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(`assets/js/kick-scan.js?v=2.26.0&k=${VER}`);
+  worker = new Worker(`assets/js/kick-scan.js?v=2.27.0&k=${VER}`);
   worker.onmessage = (e) => {
     const { id, t, s, err } = e.data;
     const done = waiters[id];
@@ -52,6 +52,44 @@ async function decode(ab) {
   return null;
 }
 
+// v2.27.0 silence trim: where the sound really starts / ends (dead-silent intro + outro get skipped).
+// "silent" = every 10 ms slice peaks under ~-49 dB, so even a quiet fade-in counts as sound.
+const TRIM_V = 1, QUIET = 0.0035;
+function trimOf(x, sr) {
+  const win = Math.max(1, Math.round(sr * 0.01));
+  const n = Math.floor(x.length / win);
+  const loud = (w) => {
+    for (let i = w * win, e = i + win; i < e; i++) if (x[i] > QUIET || x[i] < -QUIET) return true;
+    return false;
+  };
+  let a = 0;
+  while (a < n && !loud(a)) a++;
+  if (a >= n) return { v: TRIM_V, a: 0, b: 0, d: 0 }; // all silent: don't touch it
+  let b = n - 1;
+  while (b > a && !loud(b)) b--;
+  const d = x.length / sr;
+  return { v: TRIM_V, a: Math.max(0, (a * win) / sr - 0.03), b: Math.min(d, ((b + 1) * win) / sr + 0.1), d };
+}
+const trimFailed = new Set();
+// songs scanned before v2.27.0 have a kick map but no trim: decode once more just for the trim
+async function scanTrim(song) {
+  const id = song.id;
+  if (busyId) return;
+  busyId = id;
+  try {
+    const ab = song.blob ? await song.blob.arrayBuffer() : song.url ? await (await fetch(song.url)).arrayBuffer() : null;
+    if (!ab) throw new Error("no audio");
+    const pcm = await decode(ab);
+    if (!pcm) throw new Error("can't decode");
+    song.trim = trimOf(pcm.x, pcm.sr);
+    if (song.blob && window.player && window.player.db) window.player.db.update(id, { trim: song.trim }).catch(() => {});
+  } catch (e) {
+    trimFailed.add(id);
+  } finally {
+    busyId = null;
+  }
+}
+
 async function scan(song) {
   const id = song.id;
   if (busyId) return;
@@ -64,6 +102,7 @@ async function scan(song) {
     const pcm = await decode(ab);
     ab = null;
     if (!pcm) throw new Error("can't decode");
+    song.trim = trimOf(pcm.x, pcm.sr); // before the samples go to the worker
     const res = await new Promise((resolve) => {
       waiters[id] = resolve;
       getWorker().postMessage({ id, x: pcm.x, sr: pcm.sr }, [pcm.x.buffer]);
@@ -73,7 +112,7 @@ async function scan(song) {
     mem.set(id, { id, t: map.t, s: map.s });
     song.kickMap = map;
     // saved with the song, so it's only ever scanned once
-    if (song.blob && window.player && window.player.db) window.player.db.update(id, { kickMap: map }).catch(() => {});
+    if (song.blob && window.player && window.player.db) window.player.db.update(id, { kickMap: map, trim: song.trim }).catch(() => {});
   } catch (e) {
     failed.add(id);
   } finally {
@@ -88,11 +127,43 @@ function check() {
   const saved = song.kickMap;
   if (saved && saved.v === VER && saved.t) {
     mem.set(song.id, { id: song.id, t: saved.t, s: saved.s });
+    if (!(song.trim && song.trim.v === TRIM_V) && !trimFailed.has(song.id)) scanTrim(song);
     return;
   }
   scan(song);
 }
 setInterval(check, 500);
+// the playing song also needs its trim when the kick map was already in memory
+setInterval(() => {
+  const song = window.player && window.player.currentTrack;
+  if (!song || !song.id || busyId || trimFailed.has(song.id) || (song.trim && song.trim.v === TRIM_V)) return;
+  if (mem.has(song.id) && !document.body.classList.contains("remote-mode")) scanTrim(song);
+}, 700);
+
+// skip the dead-silent start: once per song load, jump to where the sound starts
+// (if you're still before it - a restored position or a seek is left alone)
+let trimmedSrc = null;
+function applyStart() {
+  const as = window.audioSys;
+  const a = as && as.audio;
+  const song = window.player && window.player.currentTrack;
+  if (!a || !song || !song.trim || song.trim.v !== TRIM_V || !a.src || trimmedSrc === a.src) return;
+  if (!(a.duration > 0)) return;
+  if (document.body.classList.contains("remote-mode") || (window.partyMode && window.partyMode.active && !window.partyMode.isHost)) return;
+  trimmedSrc = a.src;
+  const t = song.trim;
+  if (t.a >= 0.3 && a.currentTime < t.a - 0.05) a.currentTime = t.a * (t.d ? a.duration / t.d : 1);
+}
+setInterval(applyStart, 80);
+// where the sound really ends (Auto DJ fades out from there, and the song ends there)
+function songEnd() {
+  const a = window.audioSys && window.audioSys.audio;
+  const song = window.player && window.player.currentTrack;
+  if (!a || !(a.duration > 0)) return 0;
+  const t = song && song.trim;
+  if (!t || t.v !== TRIM_V || !t.d || t.d - t.b < 0.5) return a.duration;
+  return Math.min(a.duration, t.b * (a.duration / t.d));
+}
 
 window.kickMap = {
   current() {
@@ -103,6 +174,8 @@ window.kickMap = {
     return busyId;
   },
   _mem: mem,
+  songEnd,
+  trimOf,
   // Smart Queue scans songs in the background to learn their speed (one at a time)
   scanSong(song) {
     if (busyId || !song || failed.has(song.id)) return false;
@@ -110,6 +183,7 @@ window.kickMap = {
     scan(song);
     return true;
   },
+  // Smart Queue's background scan also fills in the trim
   isDone(song) {
     return !!(song && ((song.kickMap && song.kickMap.v === VER) || failed.has(song.id)));
   },

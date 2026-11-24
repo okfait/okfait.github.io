@@ -3386,7 +3386,7 @@ class CurveEditor {
     ctx.moveTo(0, h / 2);
     ctx.lineTo(w, h / 2);
     ctx.stroke();
-    const col = this.accent();
+    const col = (window.viz && window.viz.accent && window.viz.accent()) || getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#60a5fa"; // v2.27.0: CurveEditor has no accent() of its own (it crashed on open)
     ctx.strokeStyle = this.editMode === "speed" ? col : `rgba(255,255,255,0.2)`;
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -3818,13 +3818,15 @@ class UI {
 
     const menu = window.$("contextMenu");
     menu.style.display = "flex";
+    const radio = window.$("ctxRadio"); // Start Radio is for songs only
+    if (radio) radio.style.display = type === "song" ? "" : "none";
 
     let x = e.clientX;
     let y = e.clientY;
     const w = window.innerWidth;
     const h = window.innerHeight;
     if (x + 160 > w) x = w - 170;
-    if (y + 100 > h) y = h - 110;
+    if (y + 140 > h) y = h - 150;
 
     menu.style.left = x + "px";
     menu.style.top = y + "px";
@@ -3837,6 +3839,10 @@ class UI {
       this.openEdit(this.activeContextType, this.activeContextId);
     } else if (action === "delete") {
       window.libraryMgr.deleteItem(this.activeContextId);
+    } else if (action === "radio") {
+      // v2.27.0: Song Radio (smart-shuffle.js)
+      if (this.activeContextType === "song" && window.smartShuffle) window.smartShuffle.radio(this.activeContextId);
+      else this.showToast("Right-click a song to start its radio");
     } else if (action === "queue") {
       if (this.activeContextType === "song") {
         window.player.queue.push(this.activeContextId);
@@ -5571,10 +5577,19 @@ class Player {
 
       // seconds left in REAL time (a 0.9x warp makes the song take longer)
       const rate = window.audioSys.audio.playbackRate || 1;
-      const left = (window.audioSys.audio.duration - window.audioSys.audio.currentTime) / rate;
-      const djOn = this.autoDj && !this.loop && !this.fading && window.audioSys.audio.duration > 20;
-      if (djOn && left < Player.FADE + 4 && left > Player.FADE + 0.5 && this._preSrc !== window.audioSys.audio.src) this.preloadFade();
+      // v2.27.0: the song "ends" where its sound ends (dead-silent outro skipped, kick-map.js)
+      const a = window.audioSys.audio;
+      const guest = window.partyMode && window.partyMode.active && !window.partyMode.isHost;
+      const end = !guest && window.kickMap && window.kickMap.songEnd ? window.kickMap.songEnd() || a.duration : a.duration;
+      const left = (end - a.currentTime) / rate;
+      const djOn = this.autoDj && !this.loop && !this.fading && a.duration > 20;
+      if (djOn && left < Player.FADE + 4 && left > Player.FADE + 0.5 && this._preSrc !== a.src) this.preloadFade();
       if (djOn && left < Player.FADE + 0.3 && left > 0.4) this.crossfade(Math.min(Player.FADE, left));
+      // no Auto DJ (or too short to fade): jump to the next song as soon as the silence starts
+      if (end < a.duration - 0.3 && a.currentTime >= end && !a.paused && !this.fading && this._trimEndSrc !== a.src) {
+        this._trimEndSrc = a.src;
+        this.onEnd();
+      }
     }
   }
   // Auto DJ (v2.15.2): the song that's ending moves to a second "deck" and fades out while the

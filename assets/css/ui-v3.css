@@ -893,7 +893,7 @@ body.remote-mode .more-wrap,
 body.remote-mode #exitCleanBtn,
 body.remote-mode .side-panel,
 body.remote-mode .vol-container,
-body.remote-mode .controls .btn-editor { display: none !important; }
+body.remote-mode .controls .btn-editor, body.remote-mode .controls .btn-shuffle { display: none !important; }
 body.remote-mode .controls { gap: 14px; }
 .remote-pill { display: none; }
 body.remote-mode .remote-pill {
@@ -1464,3 +1464,53 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
   animation: ssTwinkle 1.8s ease-in-out infinite;
 }
 @keyframes ssTwinkle { 0%, 100% { transform: scale(1) rotate(0); opacity: 1; } 50% { transform: scale(1.3) rotate(20deg); opacity: 0.75; } }
+
+/* ---------- v2.27.0: picks download by themselves - not-ready ones look a bit faded */
+.ss-card.ss-wait .lib-card-icon { opacity: 0.55; }
+.ss-why .ss-dl-t { display: none; }
+.ss-card.ss-dl .ss-why .ss-why-t { display: none; }
+.ss-card.ss-dl .ss-why .ss-dl-t { display: inline; animation: ssPulse 1.2s ease-in-out infinite; }
+@keyframes ssPulse { 50% { opacity: 0.45; } }
+
+/* shuffle on the main controls (was the timeline editor button) */
+.controls #shuffleBtn.active { color: var(--accent); text-shadow: 0 0 12px var(--accent-glow); }
+.controls #shuffleBtn.ss-on::after { top: 2px; right: 4px; }
+
+/* ---------- v2.27.0: Song Radio box at the top of the library */
+.radio-box {
+  margin: 2px 2px 10px; padding: 8px; border-radius: 20px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 16%, transparent), rgba(255, 255, 255, 0.03) 60%);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.radio-top { display: flex; align-items: center; gap: 10px; padding: 2px 2px 8px; }
+.radio-ic {
+  width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--accent); color: black; box-shadow: 0 0 14px var(--accent-glow);
+  animation: radioBeat 1.6s ease-in-out infinite;
+}
+@keyframes radioBeat { 50% { box-shadow: 0 0 22px var(--accent-glow); transform: scale(1.05); } }
+.radio-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.radio-txt b { font-size: 13px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.radio-txt small { font-size: 10px; color: rgba(255, 255, 255, 0.55); font-weight: 600; }
+.radio-stop {
+  width: 28px; height: 28px; border-radius: 99px; flex-shrink: 0; color: white;
+  background: rgba(255, 255, 255, 0.08); transition: background 0.2s;
+}
+.radio-stop:hover { background: rgba(255, 80, 80, 0.35); }
+.radio-list { display: flex; flex-direction: column; gap: 4px; }
+.radio-row {
+  display: flex; align-items: center; padding: 6px 8px; border-radius: 16px; cursor: pointer;
+  border: 1px solid transparent; transition: background 0.2s, border-color 0.2s;
+}
+.radio-row:hover { background: rgba(255, 255, 255, 0.06); }
+.radio-row.ss-card { border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent); }
+.radio-row .lib-card-icon { width: 34px; height: 34px; border-radius: 12px; margin-right: 12px; }
+.radio-row .lib-card-title { font-size: 12px; }
+.radio-row.now { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.radio-row.now .lib-card-title { color: var(--accent); }
+.ss-why.own { color: rgba(255, 255, 255, 0.45); }
+.radio-more {
+  margin-top: 4px; padding: 7px; border-radius: 12px; font-size: 10.5px; font-weight: 700;
+  color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.04);
+}
+.radio-more:hover { color: white; background: rgba(255, 255, 255, 0.1); }
