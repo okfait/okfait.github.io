@@ -58,6 +58,8 @@ try {
     localStorage.setItem(K_POOLS, JSON.stringify(S.pools));
   }
   localStorage.removeItem("okmusic_ss_pool");
+  // v2.28.0: picks found the old way (unverified seed -> meditation videos) are thrown away once
+  for (const k in S.pools) if (!S.pools[k] || S.pools[k].v !== 2) delete S.pools[k];
 } catch (e) {}
 try {
   (JSON.parse(localStorage.getItem(K_NO) || "[]") || []).forEach((x) => S.no.add(x));
@@ -399,7 +401,7 @@ async function refill(key, quiet) {
     if (!picks.length) throw new Error("couldn't find new songs right now, try refresh in a bit");
     // already-downloaded picks first (no waiting), the rest after
     picks.sort((a, b) => (S.ready.has(b.yt) ? 1 : 0) - (S.ready.has(a.yt) ? 1 : 0));
-    S.pools[key] = { at: Date.now(), items: picks.slice(0, 40) };
+    S.pools[key] = { v: 2, at: Date.now(), items: picks.slice(0, 40) };
     S.played.clear();
     savePools();
     if (!quiet) toast(`Smart Shuffle found ${S.pools[key].items.length} songs for ${ctxName(key)} ✨`, 2500);
