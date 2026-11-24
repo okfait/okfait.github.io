@@ -116,7 +116,7 @@ const st = {
   song: null,
   lines: [],
   scale: 1, // slowed / sped-up files: stretch the timestamps to fit
-  off: 0, // v2.28.0: seconds the lyrics are shifted (video clip intros), auto + your nudges
+  off: 0, // v2.28.0: seconds the lyrics are shifted (silent start / video clip intro) + your fixes
   active: -2,
   raf: 0,
   userScrollUntil: 0,
@@ -129,40 +129,18 @@ function build() {
   pane.id = "lyricsPane";
   pane.innerHTML = `<div id="lyricsTrack"></div>`;
   document.body.appendChild(pane);
-  // own element (the pane fades out at its edges, this shouldn't)
-  const bar = document.createElement("div");
-  bar.id = "lyricsSync";
-  bar.title = "Lyrics too early / too late? Nudge them (saved for this song)";
-  bar.innerHTML = `<button type="button" data-d="-0.5" title="Lyrics come earlier"><i class="fa-solid fa-backward"></i></button>
-      <span id="lyricsOff" role="button" title="Tap, then tap the line you hear = perfect sync">sync</span>
-      <button type="button" data-d="0.5" title="Lyrics come later"><i class="fa-solid fa-forward"></i></button>`;
-  document.body.appendChild(bar);
-  bar.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const b = e.target.closest("button[data-d]");
-    if (b) return nudge(+b.dataset.d);
-    if (e.target.closest("#lyricsOff")) {
-      st.tapSync = !st.tapSync;
-      updateScale();
-      if (st.tapSync) toast("Tap the line you're hearing right now");
-    }
+  // v2.29.0: no sync bar (not clean). Hidden instead: right-click (long-press on phones) the line
+  // you're hearing right now = the lyrics jump to match it, saved for that song.
+  pane.addEventListener("contextmenu", (e) => {
+    const line = e.target.closest(".ly-line[data-t]");
+    if (!line || pane.classList.contains("plain") || !st.song) return;
+    e.preventDefault();
+    syncTo(line);
   });
   pane.addEventListener("click", (e) => {
     const line = e.target.closest(".ly-line[data-t]");
     if (!line || pane.classList.contains("plain")) return;
     const a = window.audioSys.audio;
-    if (st.tapSync && st.song) {
-      // that line is being sung NOW (minus ~0.25 s to tap): shift everything to match
-      st.tapSync = false;
-      const want = a.currentTime - 0.25 - +line.dataset.t * st.scale;
-      const s = st.song;
-      s.lyricsNudge = Math.round((want - (st.off - (s.lyricsNudge || 0))) * 10) / 10;
-      saveNudge(s);
-      updateScale();
-      tick(true);
-      toast("Lyrics synced ✅");
-      return;
-    }
     a.currentTime = Math.max(0, +line.dataset.t * st.scale + st.off + 0.01);
     st.userScrollUntil = 0;
     st.manual = 0;
@@ -221,8 +199,6 @@ function render() {
       L.plain.split(/\r?\n/).map((l) => `<div class="ly-line">${escapeHtml(l) || "&nbsp;"}</div>`).join("") +
       `<div class="ly-credit">Lyrics from LRCLIB (not synced)</div>`;
   }
-  const bar = $("lyricsSync");
-  if (bar) bar.classList.toggle("plain", !L.synced); // unsynced lyrics: nothing to nudge
   updateScale();
   tick(true);
   if (L.synced) autoSync(st.song);
@@ -232,10 +208,14 @@ function escapeHtml(s) {
 }
 // v2.28.0: before, ANY file a bit longer than the lyrics' song (a video clip with an intro / outro)
 // was treated as a SLOWED version and every line got stretched -> lyrics later and later.
-// Now: stretched only when the name says slowed / sped up / nightcore. A longer "official video"
-// file gets the lyrics SHIFTED to where the beat really starts in it (kick map). Plus the
-// << sync >> bar: nudge by 0.5 s, or tap "sync" then tap the line you hear (saved per song).
-const SYNC_V = 2;
+// Now: stretched only when the name says slowed / sped up / nightcore. A longer file gets the
+// lyrics SHIFTED instead:
+//  v2.29.0 1) by the dead-silent start of the file (MGK666 - Da Don: 4 s of silence that the
+//     silence skip jumps over = lyrics were 4 s early). lrclib times count from where the real
+//     song starts making sound.
+//  2) a video clip intro (more than 2 s extra after that): to where the beat starts (kick map)
+// Right-click the line you hear = exact fix for that song (lyricsNudge).
+const SYNC_V = 3;
 const STRETCHED = /slowed|sped|speed ?up|nightcore|daycore|reverb/i;
 function updateScale() {
   const s = st.song;
@@ -249,26 +229,32 @@ function updateScale() {
     if (r > 0.6 && r < 1.6 && Math.abs(r - 1) > 0.02) st.scale = r; // real slowed / sped-up version
   } else if (sync && sync.v === SYNC_V) st.off = sync.off || 0;
   st.off += (s && s.lyricsNudge) || 0;
-  const o = $("lyricsOff");
-  if (o) o.textContent = st.tapSync ? "tap a line" : st.off ? (st.off > 0 ? "+" : "") + st.off.toFixed(1) + "s" : "sync";
 }
 function autoSync(song) {
   const L = song && song.lyrics;
   if (!L || !L.synced || !L.dur || (song.lyricsSync && song.lyricsSync.v === SYNC_V)) return;
   if (STRETCHED.test(song.name || "")) return;
   const km = song.kickMap && song.kickMap.t;
+  const tr = song.trim;
   const a = window.audioSys.audio;
-  const dur = (song.trim && song.trim.d) || (st.song === song && a.duration && isFinite(a.duration) ? a.duration : 0);
-  if (!km || !dur) return; // not scanned yet: tried again next time the lyrics show
+  const dur = (tr && tr.d) || (st.song === song && a.duration && isFinite(a.duration) ? a.duration : 0);
+  if (!km || !dur || !tr) return; // not scanned yet: tried again next time the lyrics show
   const first = parseLrc(L.synced).find((l) => l.text);
   if (!first) return;
-  const extra = dur - L.dur; // seconds the file is longer (video clip intro / outro)
-  let off = 0;
-  if (extra > 2 && km.length) {
-    // the song proper starts where the beat starts: line it up so the first line lands there
-    // (the original's rap usually starts with its beat), never more than the extra length
-    off = Math.max(0, Math.min(extra, km[0] - first.t));
-    if (off < 1) off = 0;
+  // 1) the silent start (only the part the lyrics' version doesn't have)
+  const extra = dur - L.dur;
+  const lead = tr.a >= 0.3 ? Math.min(tr.a, Math.max(0, extra + 0.5)) : 0;
+  let off = lead;
+  // 2) a video clip intro on top: line the first line up with where the beat starts
+  const rest = extra - lead;
+  if (rest > 2 && km.length) {
+    const more = Math.max(0, Math.min(rest, km[0] - lead - first.t));
+    if (more >= 1) off += more;
+  }
+  // nudges made against the old (wrong) automatic shift don't fit anymore
+  if (song.lyricsSync && song.lyricsSync.v !== SYNC_V && song.lyricsNudge) {
+    song.lyricsNudge = 0;
+    saveNudge(song);
   }
   song.lyricsSync = { v: SYNC_V, off: +off.toFixed(2) };
   if (song.blob && !String(song.id).startsWith("ss_")) window.player.db.update(song.id, { lyricsSync: song.lyricsSync }).catch(() => {});
@@ -280,14 +266,16 @@ function autoSync(song) {
 function saveNudge(s) {
   if (s.blob && !String(s.id).startsWith("ss_")) window.player.db.update(s.id, { lyricsNudge: s.lyricsNudge }).catch(() => {});
 }
-function nudge(d) {
+// right-click a line = "this is being sung right now" (minus ~0.2 s reaction): everything shifts to match
+function syncTo(line) {
   const s = st.song;
-  if (!s) return;
-  s.lyricsNudge = Math.round((((s.lyricsNudge || 0) + d) * 10)) / 10;
+  const a = window.audioSys.audio;
+  const want = a.currentTime - 0.2 - +line.dataset.t * st.scale; // total shift needed
+  s.lyricsNudge = Math.round((want - (st.off - (s.lyricsNudge || 0))) * 10) / 10;
   saveNudge(s);
   updateScale();
   tick(true);
-  toast(d > 0 ? "Lyrics a bit later" : "Lyrics a bit earlier");
+  toast("Lyrics synced to that line ✅");
 }
 
 function currentIndex(t) {
@@ -421,5 +409,5 @@ function init() {
   if (window.player.currentTrack) onTrack(window.player.currentTrack);
 }
 
-window.lyrics = { toggle, prefetch, onTrack, parseName, lookup, autoSync, nudge, get state() { return st; } };
+window.lyrics = { toggle, prefetch, onTrack, parseName, lookup, autoSync, syncTo, get state() { return st; } };
 init();

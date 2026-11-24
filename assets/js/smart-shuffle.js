@@ -289,13 +289,57 @@ async function videoOf(song) {
   }
   return id;
 }
+// v2.29.0: mixes are remembered for 3 days (reading one takes 5-30 s, the 2nd time = instant),
+// and the same mix asked twice at once is only read once
+const MIX_KEY = "okmusic_mixes", MIX_MS = 3 * 24 * 3600 * 1000;
+let mixCache = null;
+const mixJobs = new Map();
+function mixStore() {
+  if (!mixCache) {
+    try {
+      mixCache = JSON.parse(localStorage.getItem(MIX_KEY) || "{}") || {};
+    } catch (e) {
+      mixCache = {};
+    }
+  }
+  return mixCache;
+}
+function saveMix(vid, tracks) {
+  const c = mixStore();
+  c[vid] = { at: Date.now(), t: tracks.map((t) => [t.youtube, t.title, t.artist, t.duration || 0]) };
+  const keys = Object.keys(c).sort((a, b) => c[a].at - c[b].at);
+  while (keys.length > 80) delete c[keys.shift()];
+  try {
+    localStorage.setItem(MIX_KEY, JSON.stringify(c));
+  } catch (e) {
+    // storage full: keep fewer
+    for (const k of keys.slice(0, 40)) delete c[k];
+    try {
+      localStorage.setItem(MIX_KEY, JSON.stringify(c));
+    } catch (e2) {}
+  }
+}
+async function readMix(vid) {
+  const hit = mixStore()[vid];
+  if (hit && Date.now() - hit.at < MIX_MS) return hit.t.map(([youtube, title, artist, duration]) => ({ youtube, title, artist, duration }));
+  if (mixJobs.has(vid)) return mixJobs.get(vid);
+  const job = (async () => {
+    const url = `https://www.youtube.com/watch?v=${vid}&list=RD${vid}`;
+    const l = await window.finder.api.call("/list?url=" + encodeURIComponent(url));
+    const tracks = (l && l.tracks) || [];
+    if (tracks.length) saveMix(vid, tracks);
+    return tracks;
+  })();
+  mixJobs.set(vid, job);
+  job.finally(() => mixJobs.delete(vid)).catch(() => {});
+  return job;
+}
 async function mixOf(song, vid) {
   vid = vid || (await videoOf(song));
   if (!vid) return [];
-  const url = `https://www.youtube.com/watch?v=${vid}&list=RD${vid}`;
-  const l = await window.finder.api.call("/list?url=" + encodeURIComponent(url));
+  const tracks = await readMix(vid);
   const seed = split(song.name || "").title || song.name;
-  return (l.tracks || [])
+  return (tracks || [])
     .filter((t) => t.youtube && t.youtube !== vid)
     .map((t) => ({ yt: t.youtube, title: t.title || "", artist: t.artist || "", dur: t.duration || 0, seed }));
 }
@@ -312,7 +356,7 @@ function artistsOf(v) {
 // their collabs, then drifts into random global hits (eminem, finnish rap...). So only songs CONNECTED
 // to your artists are kept: by your artists, or by someone who made a song with them, or with THEM.
 // Collab videos found on the way get their own mix read too (= the collaborators' collaborators).
-async function artistWeb(seeds, startArtists, expand, perArtist = 4) {
+async function artistWeb(seeds, startArtists, expand, perArtist = 4, onPartial = null) {
   // artist -> {o: which of your artists it leads back to, d: 0 yours, 1 worked with yours, 2 worked with them}
   // (max 2 jumps: a 3rd jump is where name twins leak in, like the romanian IDK -> the US IDK -> Eminem)
   const G = new Map();
@@ -341,6 +385,12 @@ async function artistWeb(seeds, startArtists, expand, perArtist = 4) {
     }
   };
   lists.forEach(walk);
+  // v2.29.0: hand over what we have already (the radio can start playing), the rest follows
+  if (onPartial && got.size >= 4) {
+    try {
+      onPartial(blend([...got.values()], perArtist));
+    } catch (e) {}
+  }
   // the collaborators' own mixes (collab videos first)
   const next = [...got.values()].filter((v) => artistsOf(v).length >= 2 && !tried.has(v.yt)).slice(0, expand);
   next.forEach((v) => tried.add(v.yt));
@@ -352,10 +402,13 @@ async function artistWeb(seeds, startArtists, expand, perArtist = 4) {
   if (out.length < 6)
     for (const l of lists) for (const v of l.slice(0, 8)) if (!got.has(v.yt)) got.set(v.yt, { ...v, why: "close to " + v.seed, hop: 2, main: artistsOf(v)[0] || "" });
   out = [...got.values()];
-  // blend: take turns between artists (closest ones first), max perArtist songs each,
-  // so one artist with 30 songs doesn't flood it
+  return blend(out, perArtist);
+}
+// blend: take turns between artists (closest ones first), max perArtist songs each,
+// so one artist with 30 songs doesn't flood it
+function blend(out, perArtist) {
   const groups = new Map();
-  out.sort((x, y) => x.hop - y.hop).forEach((v) => {
+  [...out].sort((x, y) => x.hop - y.hop).forEach((v) => {
     const k = v.main;
     if (!groups.has(k)) groups.set(k, []);
     if (groups.get(k).length < perArtist) groups.get(k).push(v);
@@ -594,10 +647,14 @@ const origPlay = P.play.bind(P);
 P.play = function (id, contextList = null, renderList = true) {
   if (contextList && S.radio && !S.radio.loading) stopRadio(true);
   const r = origPlay(id, contextList, renderList);
+  warmMix(id);
   if (S.plan && !S.fromPlan) {
-    // played it yourself: its next spot in Up Next goes away (later rounds keep it)
-    const i = S.plan.findIndex((e) => e.id === id);
-    if (i >= 0) S.plan.splice(i, 1);
+    if (!P.shuffle && !isPick(id)) S.planKey = ""; // in order: continue from the song you picked
+    else {
+      // played it yourself: its next spot in Up Next goes away (later rounds keep it)
+      const i = S.plan.findIndex((e) => e.id === id);
+      if (i >= 0) S.plan.splice(i, 1);
+    }
   }
   setTimeout(renderQ, 0);
   if (!isPick(id)) {
@@ -612,22 +669,34 @@ P.play = function (id, contextList = null, renderList = true) {
   }
   return r;
 };
+// v2.29.0: 6 s into a song, quietly read its mix so "Start radio" on it is instant
+let warmT = 0;
+function warmMix(id) {
+  clearTimeout(warmT);
+  if (localStorage.getItem("okmusic_ss_used") !== "1" && !S.on) return;
+  warmT = setTimeout(() => {
+    const s = P.songs.find((x) => x.id === id);
+    if (!s || P.currId !== id || !window.finder || !window.finder.api) return;
+    window.finder.api
+      .ready()
+      .then((ok) => ok && videoOf(s))
+      .then((vid) => vid && readMix(vid))
+      .catch(() => {});
+  }, 6000);
+}
 // "next song": the radio goes first, else while Smart Shuffle is on every 3rd song is a pick
 // (only one that's already loaded, so Auto DJ's crossfade never waits)
 const origNext = P.next.bind(P);
 P.next = function () {
-  if (S.radio && !S.radio.loading && !(P.queue && P.queue.length)) return radioNext();
-  const cur = P.currId;
-  if (!S.on || !P.shuffle || (P.queue && P.queue.length)) return origNext();
-  if (!isPick(cur)) {
-    S.lastLibId = cur;
+  // order: songs you queued yourself -> the radio -> Up Next (shuffle / smart shuffle / in order)
+  if (P.queue && P.queue.length) return origNext();
+  if (S.radio && !S.radio.loading) return radioNext();
+  if (P.shuffle && window.smartQueue && window.smartQueue.on) return origNext(); // picks by speed
+  if (P.currId && !isPick(P.currId)) {
+    S.lastLibId = P.currId;
     S.sinceLast++;
   }
-  if (P.shuffle && !(window.smartQueue && window.smartQueue.on)) return planNext();
-  const v = S.sinceLast >= EVERY - 1 && nextPick();
-  if (v && (S.mem.has(v.yt) || S.ready.has(v.yt))) return playSoon(v);
-  warmNext();
-  return origNext();
+  return planNext();
 };
 
 // ------------------------------------------------------------------ Up Next (v2.28.0)
@@ -641,13 +710,24 @@ function baseList() {
 }
 function makePlan() {
   const l = baseList();
-  const key = l.join(",") + "|" + (S.on ? S.ctx : "");
+  const key = l.join(",") + "|" + (P.shuffle ? "s" : "o") + (P.shuffle && S.on ? S.ctx : "");
   if (key !== S.planKey) {
     S.planKey = key;
     S.plan = [];
     S.planCount = 0;
   }
   if (!l.length) return S.plan;
+  if (!P.shuffle) {
+    // in order: the songs after the one playing (v2.29.0, so they can be dragged around too)
+    while (S.plan.length < 12) {
+      const libIds = S.plan.filter((e) => e.id).map((e) => e.id);
+      const from = libIds.length ? libIds[libIds.length - 1] : isPick(P.currId) ? S.lastLibId : P.currId;
+      const at = l.indexOf(from);
+      S.plan.push({ id: l[(at + 1 + l.length) % l.length] });
+      if (l.length === 1 && S.plan.length >= 3) break;
+    }
+    return S.plan;
+  }
   // keep at least 12 songs decided ahead: rounds of your songs in random order (no repeat until
   // every song played), a Smart Shuffle pick after every 2 of yours
   const inPlan = () => new Set(S.plan.filter((e) => e.pick).map((e) => e.pick.yt));
@@ -694,72 +774,236 @@ function planNext() {
   }
   return origNext();
 }
-// the next songs, for the Queue panel
-function upcoming(n = 10) {
-  const out = [];
-  const lib = (id) => P.songs.find((s) => s.id === id);
-  const add = (o) => out.length < n && out.push(o);
-  if (S.radio && !S.radio.loading) {
-    for (let i = S.radio.idx + 1; i < S.radio.items.length && out.length < n; i++) {
-      const v = S.radio.items[i];
-      const s = v.own && lib(v.own);
-      add(s ? { name: s.name, art: s.art, sub: "radio · in your library", play: () => radioJump(i) } : { name: niceName(v), art: `https://i.ytimg.com/vi/${v.yt}/mqdefault.jpg`, sub: "radio · new for you", pick: true, play: () => radioJump(i) });
-    }
-    return { label: `${S.radio.seed} Radio`, items: out };
-  }
-  if (window.smartQueue && window.smartQueue.on) return { label: "Smart Queue picks by speed", items: [] };
-  if (P.shuffle) {
-    makePlan().forEach((e, i) => {
-      if (e.pick) add({ name: niceName(e.pick), art: `https://i.ytimg.com/vi/${e.pick.yt}/mqdefault.jpg`, sub: e.pick.why || "Smart Shuffle", pick: true, play: () => jumpPlan(i) });
-      else {
-        const s = lib(e.id);
-        if (s) add({ name: s.name, art: s.art, sub: "", play: () => jumpPlan(i) });
-      }
-    });
-    return { label: S.on ? "Smart Shuffle" : "Shuffle", items: out };
-  }
-  const l = baseList();
-  const at = l.indexOf(P.currId);
-  for (let i = 1; i <= l.length - 1 && out.length < n; i++) {
-    const s = lib(l[(at + i + l.length) % l.length]);
-    if (s) add({ name: s.name, art: s.art, sub: "", play: () => P.play(s.id) });
-  }
-  return { label: "In order", items: out };
+// ------------------------------------------------------------------ the Queue panel (v2.29.0)
+// Now playing, then "Your queue" (songs you added), then "Next up". Drag the grip to reorder
+// (also between the two lists), right-click / long-press a song for options.
+function upSource() {
+  if (S.radio && !S.radio.loading) return { mode: "radio", label: `${S.radio.seed} Radio`, arr: S.radio.items, start: S.radio.idx + 1 };
+  if (P.shuffle && window.smartQueue && window.smartQueue.on) return { mode: "none", label: "Smart Queue picks by speed", arr: [], start: 0 };
+  makePlan();
+  return { mode: "plan", label: P.shuffle ? (S.on ? "Smart Shuffle" : "Shuffle") : "In order", arr: S.plan, start: 0 };
 }
-function jumpPlan(i) {
-  S.plan.splice(0, i); // skip the ones before it
+const libSong = (id) => P.songs.find((s) => s.id === id);
+function describe(src, e) {
+  // -> {name, art, sub, pick: v|null, id: lib song id|null}
+  if (!e) return null;
+  if (src.mode === "radio") {
+    const s = e.own && libSong(e.own);
+    return s ? { name: s.name, art: s.art, sub: "radio · in your library", id: s.id } : { name: niceName(e), art: `https://i.ytimg.com/vi/${e.yt}/mqdefault.jpg`, sub: "radio · new for you", pick: e };
+  }
+  if (e.pick) return { name: niceName(e.pick), art: `https://i.ytimg.com/vi/${e.pick.yt}/mqdefault.jpg`, sub: e.pick.why || "Smart Shuffle", pick: e.pick };
+  const s = libSong(e.id);
+  return s ? { name: s.name, art: s.art, sub: "", id: s.id } : null;
+}
+// play a Next up entry now (everything before it is skipped)
+function playUp(src, i) {
+  if (src.mode === "radio") return radioJump(src.start + i);
+  S.plan.splice(0, i);
   planNext();
 }
-const origRenderQ = window.ui.renderQueue.bind(window.ui);
+function playQueued(i) {
+  const id = P.queue.splice(i, 1)[0];
+  if (id) P.play(id);
+  renderQ();
+}
+// a song moved by dragging: from / to = {sec: "q"|"n", i}
+function moveItem(from, to) {
+  const src = upSource();
+  if (from.sec === to.sec) {
+    const arr = from.sec === "q" ? P.queue : src.arr;
+    const off = from.sec === "q" ? 0 : src.start;
+    const [x] = arr.splice(off + from.i, 1);
+    arr.splice(off + (to.i > from.i ? to.i - 1 : to.i), 0, x);
+  } else if (from.sec === "n") {
+    // Next up -> your queue (only songs from your library can go there)
+    const d = describe(src, src.arr[src.start + from.i]);
+    if (!d || !d.id) return toast("Add it with + first, new songs can't go in your queue");
+    src.arr.splice(src.start + from.i, 1);
+    P.queue.splice(to.i, 0, d.id);
+  } else {
+    // your queue -> Next up
+    const id = P.queue.splice(from.i, 1)[0];
+    if (src.mode === "plan") S.plan.splice(to.i, 0, { id });
+    else if (src.mode === "radio") src.arr.splice(src.start + to.i, 0, { yt: "lib_" + id, title: (libSong(id) || {}).name || "", own: id });
+  }
+  renderQ();
+}
+function removeItem(sec, i) {
+  if (sec === "q") P.queue.splice(i, 1);
+  else {
+    const src = upSource();
+    src.arr.splice(src.start + i, 1);
+  }
+  renderQ();
+}
+function playNext(sec, i) {
+  const src = upSource();
+  if (sec === "q") P.queue.unshift(P.queue.splice(i, 1)[0]);
+  else {
+    const d = describe(src, src.arr[src.start + i]);
+    if (d && d.id) {
+      src.arr.splice(src.start + i, 1);
+      P.queue.unshift(d.id);
+    } else src.arr.splice(src.start, 0, src.arr.splice(src.start + i, 1)[0]); // a new song: first in Next up
+  }
+  renderQ();
+  toast("Plays next ✅", 1500);
+}
+
+// small right-click menu
+function qMenu(ev, sec, i, d) {
+  ev.preventDefault();
+  closeQMenu();
+  const m = document.createElement("div");
+  m.id = "qMenu";
+  const opts = [];
+  if (sec !== "cur") opts.push(["fa-play", "Play now", () => (sec === "q" ? playQueued(i) : playUp(upSource(), i))]);
+  if (sec !== "cur") opts.push(["fa-arrow-turn-up", "Play next", () => playNext(sec, i)]);
+  if (d.pick) opts.push(["fa-plus", "Add to library", () => keep(d.pick.yt)]);
+  if (d.id) opts.push(["fa-tower-broadcast", "Start radio from this", () => startRadio(d.id)]);
+  if (sec === "cur" && S.radio) opts.push(["fa-stop", "Stop the radio", () => stopRadio()]);
+  if (sec !== "cur") opts.push(["fa-xmark", sec === "q" ? "Remove from queue" : "Remove from Next up", () => removeItem(sec, i), "del"]);
+  if (d.pick && sec !== "cur") opts.push(["fa-ban", "Not for me (never suggest)", () => hide(d.pick.yt), "del"]);
+  if (!opts.length) return;
+  m.innerHTML = opts.map((o, k) => `<button type="button" data-k="${k}" class="${o[3] || ""}"><i class="fa-solid ${o[0]}"></i>${o[1]}</button>`).join("");
+  document.body.appendChild(m);
+  const x = Math.max(8, Math.min(ev.clientX, innerWidth - 220)), y = Math.max(8, Math.min(ev.clientY, innerHeight - opts.length * 38 - 16));
+  m.style.left = x + "px";
+  m.style.top = y + "px";
+  m.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-k]");
+    if (!b) return;
+    closeQMenu();
+    opts[+b.dataset.k][2]();
+  });
+  setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
+}
+function outside(e) {
+  if (!e.target.closest("#qMenu")) closeQMenu();
+}
+function closeQMenu() {
+  const m = document.getElementById("qMenu");
+  if (m) m.remove();
+  document.removeEventListener("pointerdown", outside, true);
+}
+
+// drag with the grip (mouse + finger)
+let drag = null;
+function startDrag(e, row) {
+  e.preventDefault();
+  const list = $("queueList");
+  drag = { row, from: { sec: row.dataset.sec, i: +row.dataset.i }, line: document.createElement("div"), to: null };
+  drag.line.className = "q-drop";
+  row.classList.add("dragging");
+  const move = (ev) => {
+    const rows = [...list.querySelectorAll(".q-row[data-sec='q'], .q-row[data-sec='n'], .q-zone")];
+    let target = null;
+    for (const r of rows) {
+      const b = r.getBoundingClientRect();
+      if (ev.clientY < b.top + b.height / 2) {
+        target = r;
+        break;
+      }
+    }
+    // below every row = the end of Next up
+    drag.to = target ? { sec: target.dataset.sec, i: +target.dataset.i } : { sec: "n", i: list.querySelectorAll(".q-row[data-sec='n']").length };
+    if (target) target.before(drag.line);
+    else list.appendChild(drag.line);
+    // scroll the panel when dragging near its edges
+    const pb = list.getBoundingClientRect();
+    if (ev.clientY < pb.top + 40) list.scrollTop -= 8;
+    else if (ev.clientY > pb.bottom - 40) list.scrollTop += 8;
+  };
+  const up = () => {
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", up);
+    removeEventListener("pointercancel", up);
+    row.classList.remove("dragging");
+    drag.line.remove();
+    const d = drag;
+    drag = null;
+    if (d.to && !(d.to.sec === d.from.sec && (d.to.i === d.from.i || d.to.i === d.from.i + 1))) moveItem(d.from, d.to);
+    else renderQ();
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", up);
+  addEventListener("pointercancel", up);
+}
+
+function qRow(d, sec, i) {
+  const r = document.createElement("div");
+  r.className = "q-row" + (d.pick ? " pick" : "") + (sec === "cur" ? " now" : "");
+  r.dataset.sec = sec;
+  r.dataset.i = i;
+  const p = split(d.name || "");
+  r.innerHTML = `<div class="q-art"${d.art ? ` style="background-image:url('${esc(d.art)}')"` : ""}>${sec === "cur" ? '<span class="q-eq"><i></i><i></i><i></i></span>' : ""}</div>
+    <div class="q-t"><b>${esc(p.title)}</b><span>${esc([p.artist, d.sub].filter(Boolean).join(" · "))}</span></div>
+    ${sec === "cur" ? "" : '<span class="q-grip" title="Drag to move"><i class="fa-solid fa-grip-lines"></i></span>'}`;
+  if (sec !== "cur") {
+    r.onclick = (e) => {
+      if (e.target.closest(".q-grip")) return;
+      sec === "q" ? playQueued(i) : playUp(upSource(), i);
+    };
+    r.querySelector(".q-grip").addEventListener("pointerdown", (e) => startDrag(e, r));
+  }
+  r.oncontextmenu = (e) => qMenu(e, sec, i, d);
+  // long-press on phones = the same menu
+  let lp = 0;
+  r.addEventListener("touchstart", (e) => {
+    if (e.target.closest(".q-grip")) return;
+    const t = e.touches[0];
+    lp = setTimeout(() => qMenu({ preventDefault() {}, clientX: t.clientX, clientY: t.clientY }, sec, i, d), 500);
+  }, { passive: true });
+  ["touchend", "touchmove", "touchcancel"].forEach((n) => r.addEventListener(n, () => clearTimeout(lp), { passive: true }));
+  return r;
+}
+function qHead(text, small) {
+  const h = document.createElement("div");
+  h.className = "q-next-h";
+  h.innerHTML = `<span>${esc(text)}</span>${small ? `<small>${esc(small)}</small>` : ""}`;
+  return h;
+}
 function renderQ() {
   try {
     window.ui.renderQueue();
-  } catch (e) {}
+  } catch (e) {
+    console.warn("queue draw failed", e);
+  }
 }
 window.ui.renderQueue = function () {
-  origRenderQ();
   const list = $("queueList");
-  if (!list) return;
-  const up = upcoming(10);
-  if (!P.queue.length) list.innerHTML = ""; // drop "Queue is empty", Next up is below
-  const h = document.createElement("div");
-  h.className = "q-next-h";
-  h.innerHTML = `<span>Next up</span><small>${esc(up.label)}</small>`;
-  list.appendChild(h);
-  if (!up.items.length) {
+  if (!list || drag) return;
+  list.innerHTML = "";
+  const cur = P.currentTrack;
+  if (cur) {
+    list.appendChild(qHead("Now playing"));
+    const pick = isPick(cur.id);
+    list.appendChild(qRow({ name: cur.name, art: cur.art, sub: pick ? "new for you" : "", id: pick ? null : cur.id, pick: pick ? { yt: cur.yt, title: cur.name } : null }, "cur", 0));
+  }
+  if (P.queue.length) {
+    list.appendChild(qHead("Your queue", `${P.queue.length} song${P.queue.length === 1 ? "" : "s"}`));
+    P.queue.forEach((id, i) => {
+      const s = libSong(id);
+      if (s) list.appendChild(qRow({ name: s.name, art: s.art, sub: "", id }, "q", i));
+    });
+  }
+  const src = upSource();
+  list.appendChild(qHead("Next up", src.label));
+  let shownN = 0;
+  for (let i = src.start; i < src.arr.length && shownN < 10; i++) {
+    const d = describe(src, src.arr[i]);
+    if (!d) continue;
+    list.appendChild(qRow(d, "n", i - src.start));
+    shownN++;
+  }
+  if (!shownN) {
     const e = document.createElement("div");
-    e.className = "text-[10px] text-white/30 text-center uppercase tracking-widest mt-2";
+    e.className = "q-zone text-[10px] text-white/30 text-center uppercase tracking-widest py-3";
+    e.dataset.sec = "n";
+    e.dataset.i = 0;
     e.textContent = P.songs.length ? "decided when the song ends" : "add some songs first";
     list.appendChild(e);
   }
-  up.items.forEach((it, i) => {
-    const r = document.createElement("div");
-    r.className = "q-next" + (it.pick ? " pick" : "");
-    const p = split(it.name || "");
-    r.innerHTML = `<span class="q-n">${i + 1}</span><div class="q-art"${it.art ? ` style="background-image:url('${esc(it.art)}')"` : ""}></div><div class="q-t"><b>${esc(p.title)}</b><span>${esc([p.artist, it.sub].filter(Boolean).join(" · "))}</span></div>`;
-    r.onclick = () => it.play();
-    list.appendChild(r);
-  });
 };
 // the normal next song; after a pick (not in your list) it continues from your last own song
 function libNext() {
@@ -802,22 +1046,41 @@ async function startRadio(id) {
     if (!(await window.finder.api.ready())) throw new Error("the song servers aren't answering, try again in a bit");
     const vid = await videoOf(song);
     if (!vid) throw new Error("couldn't find that song on YouTube");
-    const raw = await artistWeb([song], artistsOf({ title: song.name, artist: "" }), 6);
+    localStorage.setItem("okmusic_ss_used", "1");
+    const build = (raw) => {
+      const keys = libKeys();
+      const names = new Set([norm(song.name)]);
+      const items = [];
+      for (const v of raw) {
+        if (!okSong(v)) continue;
+        const nm = norm(niceName(v));
+        if (names.has(nm)) continue;
+        names.add(nm);
+        const own = ownedId(v, keys);
+        if (own === id) continue;
+        items.push({ ...v, own });
+      }
+      return items;
+    };
+    // the first songs are ready after ONE mix: the radio starts right away, the rest is added later
+    const apply = (raw) => {
+      if (!S.radio || S.radio.seedId !== id) return;
+      const fresh = build(raw);
+      if (!fresh.length) return;
+      const done = S.radio.items.slice(0, S.radio.idx + 1);
+      const seen = new Set(done.map((v) => v.yt));
+      S.radio.items = done.concat(fresh.filter((v) => !seen.has(v.yt)));
+      S.radio.loading = false;
+      paintRadioBtn();
+      redraw();
+      renderQ();
+      pump();
+    };
+    const raw = await artistWeb([song], artistsOf({ title: song.name, artist: "" }), 6, 4, apply);
     if (!S.radio || S.radio.seedId !== id) return; // stopped meanwhile
-    const keys = libKeys();
-    const names = new Set([norm(song.name)]);
-    const items = [];
-    for (const v of raw) {
-      if (!okSong(v)) continue;
-      const nm = norm(niceName(v));
-      if (names.has(nm)) continue;
-      names.add(nm);
-      const own = ownedId(v, keys);
-      if (own === id) continue;
-      items.push({ ...v, own });
-    }
+    apply(raw);
+    const items = S.radio.items;
     if (!items.length) throw new Error("YouTube gave no songs for that one");
-    S.radio.items = items;
     S.radio.loading = false;
     const mine = items.filter((v) => v.own).length;
     toast(`${seedName} radio: ${items.length} songs${mine ? ` (${mine} you already have)` : ""} 📻`, 3000);
@@ -1129,6 +1392,7 @@ function setOn(v) {
   S.on = v;
   localStorage.setItem(K_ON, v ? "1" : "0");
   if (v) {
+    localStorage.setItem("okmusic_ss_used", "1");
     S.ctx = ctxNow();
     ensurePool(S.ctx);
   }

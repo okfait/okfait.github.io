@@ -1542,3 +1542,56 @@ body.remote-mode #lyricsSync { display: none; }
 .q-next .q-t span { display: block; font-size: 10px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .q-next .q-n { width: 16px; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3); text-align: right; }
 #lyricsSync span { cursor: pointer; }
+
+/* ---------- v2.29.0: clean tags under the cover (speed / bass / reverb / auto dj) */
+#metaTags { gap: 6px !important; }
+.mtag {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px;
+  border-radius: 99px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.1px;
+  color: rgba(255, 255, 255, 0.72); background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.mtag i { font-size: 9px; color: var(--accent); opacity: 0.9; }
+
+/* ---------- v2.29.0: Queue panel - now playing, your queue, next up (drag + right-click) */
+#queueList { position: relative; }
+.q-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 6px 7px 8px; border-radius: 14px;
+  cursor: pointer; transition: background 0.2s, opacity 0.2s; user-select: none; -webkit-user-select: none;
+}
+.q-row:hover { background: rgba(255, 255, 255, 0.06); }
+.q-row.now { background: color-mix(in srgb, var(--accent) 14%, transparent); cursor: default; }
+.q-row.now .q-t b { color: var(--accent); }
+.q-row.dragging { opacity: 0.35; }
+.q-row .q-art { width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; background: rgba(255, 255, 255, 0.08) center / cover no-repeat; position: relative; }
+.q-row.pick .q-art::after { content: "\2726"; position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; border-radius: 99px; display: grid; place-items: center; font-size: 8px; color: black; background: var(--accent); }
+.q-row .q-t { flex: 1; min-width: 0; }
+.q-row .q-t b { display: block; font-size: 12.5px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-row .q-t span { display: block; font-size: 10.5px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-grip {
+  width: 30px; height: 34px; display: grid; place-items: center; flex-shrink: 0; border-radius: 10px;
+  color: rgba(255, 255, 255, 0.25); cursor: grab; touch-action: none; transition: color 0.2s, background 0.2s;
+}
+.q-row:hover .q-grip { color: rgba(255, 255, 255, 0.6); }
+.q-grip:active { cursor: grabbing; background: rgba(255, 255, 255, 0.08); }
+.q-drop { height: 2px; margin: 0 8px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
+/* little playing bars on the current song's cover */
+.q-eq { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; gap: 2px; padding-bottom: 9px; border-radius: 10px; background: rgba(0, 0, 0, 0.45); }
+.q-eq i { width: 3px; height: 8px; border-radius: 2px; background: var(--accent); animation: qEq 0.9s ease-in-out infinite; }
+.q-eq i:nth-child(2) { animation-delay: -0.3s; }
+.q-eq i:nth-child(3) { animation-delay: -0.6s; }
+@keyframes qEq { 50% { height: 18px; } }
+body:not(.is-playing) .q-eq i { animation-play-state: paused; }
+#qMenu {
+  position: fixed; z-index: 9999; min-width: 200px; padding: 6px; border-radius: 16px;
+  background: rgba(20, 20, 26, 0.92); border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; animation: qMenuIn 0.14s ease-out;
+}
+@keyframes qMenuIn { from { opacity: 0; transform: scale(0.96); } }
+#qMenu button { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; color: white; text-align: left; }
+#qMenu button i { width: 16px; text-align: center; color: rgba(255, 255, 255, 0.6); font-size: 12px; }
+#qMenu button:hover { background: rgba(255, 255, 255, 0.08); }
+#qMenu button.del { color: #ff6b6b; }
+#qMenu button.del i { color: #ff6b6b; }

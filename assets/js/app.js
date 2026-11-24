@@ -5071,17 +5071,17 @@ class UI {
     localStorage.setItem("sv_bg_bright", v);
     if (window.viz) window.viz._baseOp = parseFloat(v);
   }
+  // v2.29.0: clean glass pills (icon + short text) instead of loud colored uppercase badges
   updateMetaTags() {
     const c = window.$("metaTags");
-    c.innerHTML = "";
-    if (window.audioSys.baseSpeed != 1)
-      c.innerHTML += `<span class="tag" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.3); color: #e879f9;">WARP ${window.audioSys.baseSpeed}x</span>`;
-    if (window.audioSys.bassVal > 0)
-      c.innerHTML += `<span class="tag" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171;">BASS +${window.audioSys.bassVal}</span>`;
-    if (window.audioSys.reverbVal > 0)
-      c.innerHTML += `<span class="tag" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: #7dd3fc;">REVERB ${window.audioSys.reverbVal}%</span>`;
-    if (window.player && window.player.autoDj)
-      c.innerHTML += `<span class="tag" style="background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); color: #4ade80;">AUTO DJ</span>`;
+    const as = window.audioSys;
+    const tags = [];
+    const tag = (icon, text, title) => tags.push(`<span class="mtag" title="${title}"><i class="fa-solid ${icon}"></i>${text}</span>`);
+    if (as.baseSpeed != 1) tag("fa-gauge-high", `${as.baseSpeed}x`, "Speed");
+    if (as.bassVal > 0) tag("fa-wave-square", `Bass +${as.bassVal}`, "Bass boost (dB)");
+    if (as.reverbVal > 0) tag("fa-water", `Reverb ${as.reverbVal}%`, "Reverb");
+    if (window.player && window.player.autoDj) tag("fa-shuffle", "Auto DJ", "Auto DJ crossfade is on");
+    c.innerHTML = tags.join("");
   }
 
   showToast(msg, ms = 3000) {

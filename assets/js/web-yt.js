@@ -209,14 +209,38 @@ async function viaServer(server, path) {
   return j;
 }
 
+// first one that SUCCEEDS wins; b only starts after `delay` ms (or right away if a fails)
+function raceFirst(a, b, delay) {
+  return new Promise((resolve, reject) => {
+    let fails = 0, startedB = false, done = false;
+    const ok = (v) => !done && ((done = true), resolve(v));
+    const bad = (e) => {
+      if (++fails === 2 && !done) reject(e);
+      else if (!startedB) goB();
+    };
+    const goB = () => {
+      if (startedB || done) return;
+      startedB = true;
+      b().then(ok, bad);
+    };
+    a().then(ok, bad);
+    setTimeout(goB, delay);
+  });
+}
+
 export async function fetchLike(path, { raw = false, server = "" } = {}) {
   const u = new URL(path, "http://x");
-  if (server && /^\/(search|match|resolve|list)$/.test(u.pathname)) {
+  if (server && /^\/(search|match|resolve)$/.test(u.pathname)) {
+    // v2.29.0: race - the server first; if it hasn't answered in 3.5 s the mirrors start too,
+    // whoever answers first wins (before: up to 30 s waiting on a slow server, THEN the mirrors)
+    return raceFirst(() => viaServer(server, path), () => fetchLike(path, { raw }), 3500);
+  }
+  if (server && u.pathname === "/list") {
     try {
       return await viaServer(server, path);
     } catch (e) {
       // Spotify links only work through the server: no point trying the mirrors
-      if (u.pathname === "/list" && /spotify/.test(u.searchParams.get("url") || "")) throw e;
+      if (/spotify/.test(u.searchParams.get("url") || "")) throw e;
       console.warn("okMUSIC server didn't answer, using the free mirrors", e);
     }
   }

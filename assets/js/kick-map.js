@@ -13,7 +13,7 @@ let waiters = {};
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(`assets/js/kick-scan.js?v=2.28.0&k=${VER}`);
+  worker = new Worker(`assets/js/kick-scan.js?v=2.29.0&k=${VER}`);
   worker.onmessage = (e) => {
     const { id, t, s, err } = e.data;
     const done = waiters[id];
