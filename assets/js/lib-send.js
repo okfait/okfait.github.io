@@ -8,7 +8,7 @@
 //
 // The old "sync link" only sent song NAMES and made the phone download everything again.
 
-import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.25.0";
+import { host, join, cleanCode, qrSvg, shareLink } from "./link.js?v=2.26.0";
 
 const $ = (id) => document.getElementById(id);
 const toast = (m, ms) => window.ui && window.ui.showToast(m, ms);
@@ -48,7 +48,7 @@ const extOf = (mime) => {
 // ================================================================== PC side
 async function sendAll(L, have) {
   const P = window.player;
-  const songs = (P.songs || []).filter((s) => s.blob);
+  const songs = (P.songs || []).filter((s) => s.blob && !s.suggested);
   const plan = songs.map((s) => ({ id: s.id, k: keyOf(s.name, s.blob.size) }));
   const todo = songs.filter((s) => !have.has(keyOf(s.name, s.blob.size)));
   S.total = todo.length;

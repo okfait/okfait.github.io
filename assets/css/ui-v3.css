@@ -1370,7 +1370,9 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
 @media (max-width: 700px) { .hi-meter { left: 10px; bottom: auto; top: 64px; width: 200px; scale: 0.82; transform-origin: top left; } }
 
 /* v2.22: library rows show the song cover */
-.lib-card-icon.has-art { background-size: cover; background-position: center; background-repeat: no-repeat; }
+/* v2.26.0: the playing row's "background: var(--accent)" reset size/position, so only the cover's dark top-left corner showed */
+.lib-card-icon.has-art,
+.lib-card.active .lib-card-icon.has-art { background-color: #111; background-size: cover; background-position: center; background-repeat: no-repeat; }
 .lib-card.active .lib-card-icon.has-art { box-shadow: 0 0 0 2px var(--accent), 0 0 15px var(--accent-glow); }
 
 
@@ -1405,3 +1407,60 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
 .wr-tile b { display: block; font-size: 17px; color: #fff; margin: 3px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wr-tile span { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.5); }
 .wr-since { text-align: center; margin: 12px 0 0; }
+
+/* ---------- v2.26.0: Smart Shuffle - picks mixed into the library */
+.ss-head {
+  display: flex; align-items: center; gap: 8px; margin: 2px 2px 8px; padding: 8px 8px 8px 12px;
+  border-radius: 16px; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.75);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), rgba(255, 255, 255, 0.03));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.ss-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-head span i { color: var(--accent); margin-right: 4px; }
+.ss-head button {
+  width: 28px; height: 28px; border-radius: 99px; flex-shrink: 0; color: white;
+  background: rgba(255, 255, 255, 0.08); transition: background 0.2s, transform 0.3s;
+}
+.ss-head button:hover { background: rgba(255, 255, 255, 0.18); transform: rotate(90deg); }
+.ss-head button:disabled { opacity: 0.4; pointer-events: none; }
+
+.lib-card.ss-card {
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), rgba(255, 255, 255, 0.02));
+}
+.lib-card.ss-card .lib-card-icon.has-art { position: relative; overflow: visible; }
+/* the sparkle badge = "not in your library yet" */
+.lib-card.ss-card .lib-card-icon::after {
+  content: "\2726"; position: absolute; right: -5px; bottom: -5px; width: 17px; height: 17px;
+  border-radius: 99px; display: grid; place-items: center; font-size: 9px; line-height: 1;
+  color: black; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow), 0 0 0 2px #0b0b10;
+}
+.lib-card.ss-card .lib-card-title { color: rgba(255, 255, 255, 0.85); }
+.ss-why {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.2px; margin-top: 2px;
+  color: color-mix(in srgb, var(--accent) 75%, white); opacity: 0.85;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ss-why i { font-size: 8.5px; margin-right: 2px; }
+.ss-acts { display: flex; gap: 5px; margin-left: 8px; flex-shrink: 0; }
+.ss-acts button {
+  width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center; font-size: 12px;
+  color: white; background: rgba(255, 255, 255, 0.08); transition: background 0.2s, transform 0.15s, color 0.2s;
+}
+.ss-acts button:hover { transform: scale(1.1); }
+.ss-acts .ss-add { background: var(--accent); color: black; box-shadow: 0 0 10px var(--accent-glow); }
+.ss-acts .ss-no { color: rgba(255, 255, 255, 0.55); }
+.ss-acts .ss-no:hover { color: white; background: rgba(255, 80, 80, 0.3); }
+.ss-spin { display: none; color: white; font-size: 14px; }
+.ss-card.ss-busy .lib-card-icon { display: grid; place-items: center; }
+.ss-card.ss-busy .ss-spin { display: block; filter: drop-shadow(0 0 4px #000); }
+.ss-card.ss-busy .ss-acts { opacity: 0.4; pointer-events: none; }
+
+/* the shuffle button in Smart Shuffle mode: sparkle on its corner */
+#shuffleBtn { position: relative; }
+#shuffleBtn.ss-on::after {
+  content: "\2726"; position: absolute; top: -4px; right: -2px; font-size: 11px; line-height: 1;
+  color: white; text-shadow: 0 0 6px var(--accent), 0 0 2px #000;
+  animation: ssTwinkle 1.8s ease-in-out infinite;
+}
+@keyframes ssTwinkle { 0%, 100% { transform: scale(1) rotate(0); opacity: 1; } 50% { transform: scale(1.3) rotate(20deg); opacity: 0.75; } }

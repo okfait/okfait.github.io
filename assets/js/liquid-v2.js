@@ -28,7 +28,7 @@ const S = {
   lastFrame: 0,
   bodyOn: false,
   mapId: null, mapIdx: 0, mapPos: -1,
-  an: null, fbuf: null, hist: [], fluxM: 1, fluxV: 1, lvl: -60, lastKick: 0, probeAt: 0,
+  an: null, fbuf: null, hist: [], fluxM: 1, fluxV: 1, lvl: -60, lastKick: 0, probeAt: 0, liveSrc: null, livePos: 0,
   kickSeq: 0, kickStr: 0, usedSeq: 0,
   ext: false,
   drop: 0, dropSeq: 0, usedDrop: 0, shards: [], dropFlash: 0, // Drop Mode (v2.24.0)
@@ -64,9 +64,15 @@ function fire(str, drop) {
   S.kickStr = str || 1;
   if (drop) S.dropSeq++;
 }
-// Drop Mode: a "drop" = the kicks come back after a break of 2+ seconds (the quiet build-up part),
-// not in the first seconds of the song, and the beat really keeps going after it
-const DROP_GAP = 2.2;
+// Drop Mode: a "drop" = the kicks come back after a break of 2+ seconds (the quiet build-up part)
+// and the beat really keeps going after it.
+// v2.26.0 song start: the start counts as a "break" too. if the first 4 s have no beat (lyrics /
+// intro), the first real beat is a drop. songs that start straight on the bass get no drop at 0.
+const DROP_GAP = 2.2, INTRO = 4;
+function isDrop(t, prev, keepsGoing) {
+  if (!keepsGoing || t < INTRO) return false;
+  return prev < 0 ? true : t - prev >= DROP_GAP; // prev < 0 = first beat of the song
+}
 function outLat() {
   const c = window.audioSys && window.audioSys.ctx;
   return c ? (c.outputLatency || 0) + (c.baseLatency || 0) : 0;
@@ -95,9 +101,8 @@ function probeMap(map) {
   while (S.mapIdx < t.length && t[S.mapIdx] <= pos) {
     const i = S.mapIdx;
     if (pos - t[i] < 0.15) {
-      const gap = i > 0 ? t[i] - t[i - 1] : 0;
       const keepsGoing = i + 2 < t.length && t[i + 2] - t[i] < 2.4; // 2 more kicks soon after
-      fire(map.s[i], i > 0 && gap >= DROP_GAP && t[i] > 8 && keepsGoing);
+      fire(map.s[i], isDrop(t[i], i > 0 ? t[i - 1] : -1, keepsGoing));
     }
     S.mapIdx++;
   }
@@ -141,9 +146,14 @@ function probeLive(now) {
   S.fluxM += d * 0.02;
   S.fluxV += (d * d - S.fluxV) * 0.02;
   if (isKick) {
-    const gap = (now - S.lastKick) / 1000;
+    const a = window.audioSys.audio;
+    const first = S.liveSrc !== a.src || a.currentTime < S.livePos; // new song / jumped back
+    const prev = first ? -1 : a.currentTime - (now - S.lastKick) / 1000;
     S.lastKick = now;
-    fire(Math.min(1.35, 0.6 + (flux - thr) / 8), gap >= DROP_GAP && gap < 60 && window.audioSys.audio.currentTime > 8);
+    S.liveSrc = a.src;
+    S.livePos = a.currentTime;
+    // live can't look ahead, so "the beat keeps going" is assumed
+    fire(Math.min(1.35, 0.6 + (flux - thr) / 8), isDrop(a.currentTime, prev, true));
   }
 }
 function probe() {

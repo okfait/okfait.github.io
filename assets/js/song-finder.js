@@ -18,7 +18,7 @@ function serverUrl() {
   return (u || SERVER_DEFAULT).trim().replace(/\/+$/, "");
 }
 let HELPER = LOCAL;
-import * as web from "./web-yt.js?v=2.25.0";
+import * as web from "./web-yt.js?v=2.26.0";
 const PARALLEL = 2; // songs downloading at the same time
 const $ = (id) => document.getElementById(id);
 const toast = (m) => window.ui && window.ui.showToast(m);
@@ -170,8 +170,9 @@ async function toDataUrl(url) {
   }
 }
 
-// Downloads one song through the helper and saves it. Returns the new song id.
-async function grab({ id, query, dur, name, art, folder, meta }) {
+// Downloads one song through the helper (no saving). v2.26.0: split out so Smart Shuffle can
+// play a song first and only save it when you hit +
+async function fetchSong({ id, query, dur, name }) {
   const qs = id
     ? `id=${encodeURIComponent(id)}&title=${encodeURIComponent(name || "")}`
     : `q=${encodeURIComponent(query)}&dur=${dur || ""}&title=${encodeURIComponent(name || query)}`;
@@ -181,10 +182,17 @@ async function grab({ id, query, dur, name, art, folder, meta }) {
   const title = name || decodeURIComponent(res.headers.get("X-Title") || "") || "Song";
   const blob = await res.blob();
   if (blob.size < 20000) throw new Error("download came back empty");
+  return { blob, ext, vid, title };
+}
+function thumbUrl(vid) {
+  return state.where === "web" ? `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/mqdefault.jpg` : `${HELPER}/thumb?id=${encodeURIComponent(vid)}`;
+}
+// Saves a downloaded song in the library. Returns the new song id.
+async function saveSong({ blob, ext, vid, title, art, folder, meta }) {
   const safe = title.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   const file = new File([blob], `${safe}.${ext}`, { type: blob.type || "audio/mp4" });
   const songId = await window.player.db.add(file);
-  const cover = (art && (await toDataUrl(art))) || (vid && (await toDataUrl(state.where === "web" ? `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/mqdefault.jpg` : `${HELPER}/thumb?id=${encodeURIComponent(vid)}`)));
+  const cover = (art && (await toDataUrl(art))) || (vid && (await toDataUrl(thumbUrl(vid))));
   // remember which video it was (v2.19.0) so a name can always be fixed later
   await window.player.db.update(songId, cover ? { art: cover, yt: vid || null } : { yt: vid || null }).catch(() => {});
   if (folder) {
@@ -193,9 +201,14 @@ async function grab({ id, query, dur, name, art, folder, meta }) {
   }
   refreshLibrarySoon();
   // look for lyrics right away so the lyrics button is ready when you play it
-  if (window.lyrics && window.lyrics.prefetch) window.lyrics.prefetch(songId, meta || { name: title, duration: dur }).catch(() => {});
+  if (window.lyrics && window.lyrics.prefetch) window.lyrics.prefetch(songId, meta || { name: title }).catch(() => {});
   if (window.ltStorage) window.ltStorage.afterAdd && window.ltStorage.afterAdd();
   return songId;
+}
+// Downloads one song through the helper and saves it. Returns the new song id.
+async function grab({ id, query, dur, name, art, folder, meta }) {
+  const f = await fetchSong({ id, query, dur, name });
+  return saveSong({ ...f, art, folder, meta: meta || { name: f.title, duration: dur } });
 }
 
 // ------------------------------------------------------------------ previews
@@ -752,6 +765,16 @@ function loadNames(title, names) {
 }
 
 window.finder = { open, close, ping: pingHelper, loadNames };
+// v2.26.0: for Smart Shuffle (smart-shuffle.js)
+window.finder.api = {
+  ready: async () => state.helperOk || (await pingHelper()),
+  get where() { return state.where; },
+  call: (path) => helperFetch(path),
+  fetchSong,
+  saveSong,
+  norm,
+  toDataUrl,
+};
 if (window.ui) {
   // the old "Import URL" buttons now open this
   window.ui.openPlaylistImporter = () => open("playlist");

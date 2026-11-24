@@ -6,8 +6,8 @@
 //  - Spin Cover (off): only the album cover turns, like a record (stops when paused)
 
 const $ = (id) => document.getElementById(id);
-// drop (v2.24.0, off): Drop Mode - V2 goes crazy for a few seconds when the beat drops
-const KEYS = { tint: ["sv_cover_tint", true], spin: ["sv_spin_cover", false], beatfx: ["sv_v2_beatfx", true], drop: ["sv_drop_mode", false] };
+// drop (v2.24.0, on by default since v2.26.0): Drop Mode - V2 goes crazy for a few seconds when the beat drops
+const KEYS = { tint: ["sv_cover_tint", true], spin: ["sv_spin_cover", false], beatfx: ["sv_v2_beatfx", true], drop: ["sv_drop_mode", true] };
 
 function get(k) {
   const [key, def] = KEYS[k];
