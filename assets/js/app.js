@@ -1729,26 +1729,33 @@ class Visualizer {
         }
       }
     }
-    if (!window.audioSys.analyser) return;
+    // v2.28.0: browsers only start the sound engine after your first tap, so before that there's no
+    // analyser. The V2 look (cover background, teeth, ring) still draws (silent) instead of a
+    // black screen until you press play.
+    const an = window.audioSys.analyser;
+    if (!an && !(this.mode === "liquid" && window.liquidV2 && window.liquidV2.active() && window.player && window.player.currentTrack)) return;
 
     // Native API Machine Learning hook (replaces heavy AudioWorklet pipeline)
-    if (window.learningController) {
-      window.learningController.processFrame(window.audioSys.analyser);
+    if (an && window.learningController) {
+      window.learningController.processFrame(an);
     }
 
     // Update History Buffer BEFORE reading the active frame
-    this.history.update(window.audioSys.analyser);
+    if (an) this.history.update(an);
 
     // Reuse one array instead of making a new one every frame
-    const binCount = window.audioSys.analyser.frequencyBinCount;
+    const binCount = an ? an.frequencyBinCount : 1024;
     if (!this._fftBuf || this._fftBuf.length !== binCount) {
       this._fftBuf = new Uint8Array(binCount);
     }
     const buf = this._fftBuf;
-    // same numbers the history buffer just read this frame - copy instead of asking the analyser again
-    const hf = this.history.getDelayedFrame(0);
-    if (hf.length === buf.length) buf.set(hf);
-    else window.audioSys.analyser.getByteFrequencyData(buf);
+    if (!an) buf.fill(0);
+    else {
+      // same numbers the history buffer just read this frame - copy instead of asking the analyser again
+      const hf = this.history.getDelayedFrame(0);
+      if (hf.length === buf.length) buf.set(hf);
+      else an.getByteFrequencyData(buf);
+    }
     const ctx = this.ctx,
       w = this.W,
       h = this.H;
@@ -5861,6 +5868,8 @@ setTimeout(() => {
 }, 4000);
 window.ui = new UI();
 window.player = new Player();
+// v2.28.0: draw from the start (it used to wait for your first tap = black screen until you pressed play)
+setTimeout(() => window.viz && window.viz.start(), 0);
 window.curveEditor = new CurveEditor();
 window.voiceControl = new VoiceCommander();
 window.exporter = new AudioExporter();

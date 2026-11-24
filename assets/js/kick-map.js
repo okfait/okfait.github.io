@@ -13,7 +13,7 @@ let waiters = {};
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(`assets/js/kick-scan.js?v=2.27.0&k=${VER}`);
+  worker = new Worker(`assets/js/kick-scan.js?v=2.28.0&k=${VER}`);
   worker.onmessage = (e) => {
     const { id, t, s, err } = e.data;
     const done = waiters[id];
@@ -176,6 +176,11 @@ window.kickMap = {
   _mem: mem,
   songEnd,
   trimOf,
+  // v2.28.0: lyrics auto-sync needs the song's sound (8 kHz mono)
+  async decode(song) {
+    const ab = song.blob ? await song.blob.arrayBuffer() : song.url ? await (await fetch(song.url)).arrayBuffer() : null;
+    return ab ? decode(ab) : null;
+  },
   // Smart Queue scans songs in the background to learn their speed (one at a time)
   scanSong(song) {
     if (busyId || !song || failed.has(song.id)) return false;

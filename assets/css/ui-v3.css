@@ -1514,3 +1514,31 @@ body.display-mode .hi-meter, body.clean-lines-mode .hi-meter { opacity: 0; }
   color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.04);
 }
 .radio-more:hover { color: white; background: rgba(255, 255, 255, 0.1); }
+
+/* ---------- v2.28.0: lyrics nudge (<< sync >>) under the lyrics */
+#lyricsSync {
+  position: fixed; left: clamp(20px, 4vw, 64px); bottom: 128px; z-index: 41;
+  display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 99px;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; pointer-events: none; transition: opacity 0.4s;
+}
+body.lyrics-open #lyricsSync:not(.plain) { opacity: 0.55; pointer-events: auto; }
+body.lyrics-open #lyricsSync:hover { opacity: 1; }
+#lyricsSync button { width: 26px; height: 26px; border-radius: 99px; font-size: 10px; color: white; background: rgba(255, 255, 255, 0.08); }
+#lyricsSync button:hover { background: var(--accent); color: black; }
+#lyricsSync span { min-width: 38px; text-align: center; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.7); }
+body.remote-mode #lyricsSync { display: none; }
+
+/* ---------- v2.28.0: Queue "Next up" */
+.q-next-h { margin: 14px 2px 6px; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); display: flex; justify-content: space-between; }
+.q-next-h small { letter-spacing: 0; text-transform: none; font-weight: 700; color: color-mix(in srgb, var(--accent) 70%, white); }
+.q-next { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 14px; cursor: pointer; transition: background 0.2s; }
+.q-next:hover { background: rgba(255, 255, 255, 0.06); }
+.q-next .q-art { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; background: rgba(255, 255, 255, 0.08) center / cover no-repeat; position: relative; }
+.q-next.pick .q-art::after { content: "\2726"; position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; border-radius: 99px; display: grid; place-items: center; font-size: 8px; color: black; background: var(--accent); }
+.q-next .q-t { flex: 1; min-width: 0; }
+.q-next .q-t b { display: block; font-size: 12px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-next .q-t span { display: block; font-size: 10px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-next .q-n { width: 16px; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.3); text-align: right; }
+#lyricsSync span { cursor: pointer; }

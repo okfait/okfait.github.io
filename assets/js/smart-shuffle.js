@@ -180,7 +180,7 @@ function ownedId(v, keys) {
   return hit ? hit.id : null;
 }
 // not a normal song: full albums, hour loops, mixes, reactions, type beats, shorts...
-const JUNK = /\b(full album|album complet|full ep|\d+\s*(hour|hr)s?\b|1h\b|mix 20\d\d|playlist|compilation|nonstop|non-stop|live ?stream|reaction|reacting|type beat|karaoke|tutorial|podcast|interview|trailer|shorts|8d|nightcore|sped up|speed up|bass ?boosted)\b/i;
+const JUNK = /\b(full album|album complet|full ep|\d+\s*(hour|hr)s?\b|1h\b|mix 20\d\d|playlist|compilation|nonstop|non-stop|live ?stream|reaction|reacting|type beat|karaoke|tutorial|podcast|interview|trailer|shorts|8d|nightcore|sped up|speed up|bass ?boosted|\d+\s*hz|frequency|meditation|healing|chakra|activation|binaural|asmr|affirmations?|audiobook|audio book|sleep music|relaxing)\b/i;
 function okSong(v) {
   if (!v.yt || S.no.has(v.yt) || S.bad.has(v.yt)) return false;
   if (v.dur && (v.dur < 70 || v.dur > 600)) return false;
@@ -256,12 +256,36 @@ function seedSongs(key) {
   }
   return out;
 }
+// v2.28.0: the RIGHT video for one of your songs. Before: searched "<name> audio" and took result #1
+// blindly ("awaken Sufletu' audio" = meditation videos -> the whole mix was yoga music).
+// Now: "Artist - Title", 8 results, the title words AND the artist must match, else no seed.
+const vidMemo = {};
 async function videoOf(song) {
   if (song.yt) return song.yt;
-  const p = split(song.name || "");
-  const q = `${p.artist ? p.artist + " " : ""}${p.title} audio`;
-  const r = await window.finder.api.call(`/search?n=1&q=${encodeURIComponent(q)}`);
-  return r && r.results && r.results[0] && r.results[0].id;
+  if (song.id in vidMemo) return vidMemo[song.id];
+  const p = split(cleanTitle(song.name || ""));
+  const title = norm(p.title), artist = norm(p.artist);
+  if (!title) return null;
+  const q = p.artist ? `${p.artist} - ${p.title}` : p.title;
+  const r = await window.finder.api.call(`/search?n=8&q=${encodeURIComponent(q)}`);
+  let best = null, bs = 0;
+  for (const x of (r && r.results) || []) {
+    if (JUNK.test(x.title || "")) continue;
+    const t = norm(x.title), c = norm(x.channel);
+    const tw = title.split(" ").filter((w) => w.length > 1);
+    let sc = tw.length && tw.every((w) => t.includes(w)) ? 3 : 0;
+    if (artist) sc += t.includes(artist) || c.includes(artist) ? 3 : 0;
+    else sc += 1;
+    if (x.duration && (x.duration < 60 || x.duration > 600)) sc -= 3;
+    if (sc > bs) (bs = sc), (best = x);
+  }
+  const id = best && bs >= (artist ? 6 : 4) ? best.id : null;
+  vidMemo[song.id] = id;
+  if (id && song.blob && !isPick(song.id)) {
+    song.yt = id; // remember it (no search next time)
+    window.player.db.update(song.id, { yt: id }).catch(() => {});
+  }
+  return id;
 }
 async function mixOf(song, vid) {
   vid = vid || (await videoOf(song));
@@ -272,6 +296,72 @@ async function mixOf(song, vid) {
   return (l.tracks || [])
     .filter((t) => t.youtube && t.youtube !== vid)
     .map((t) => ({ yt: t.youtube, title: t.title || "", artist: t.artist || "", dur: t.duration || 0, seed }));
+}
+// artists in a name: "awaken x Gorby - MESSI (feat. Sp!ce)" -> awaken, gorby, sp ce
+const SEP = /\s+(?:x|&|\+|feat\.?|ft\.?|featuring|with|si|și|vs\.?)\s+|\s*[,&+]\s*/i;
+const NOT_ARTIST = /^(official|music|records?|production|productions|tv|topic|lyrics?|video)$/;
+function artistsOf(v) {
+  const p = split(niceName(v));
+  const feat = (p.title.match(/[([]\s*(?:feat|ft)\.?\s*([^)\]]+)/i) || p.title.match(/(?:feat|ft)\.?\s+([^([]+)/i) || [])[1] || "";
+  const raw = [...String(p.artist || "").split(SEP), ...feat.split(SEP)];
+  return [...new Set(raw.map(norm).filter((a) => a.length >= 2 && !NOT_ARTIST.test(a)))];
+}
+// v2.28.0 the "artist web" (what the user asked for): YouTube's mix of a song starts with that artist +
+// their collabs, then drifts into random global hits (eminem, finnish rap...). So only songs CONNECTED
+// to your artists are kept: by your artists, or by someone who made a song with them, or with THEM.
+// Collab videos found on the way get their own mix read too (= the collaborators' collaborators).
+async function artistWeb(seeds, startArtists, expand, perArtist = 4) {
+  // artist -> {o: which of your artists it leads back to, d: 0 yours, 1 worked with yours, 2 worked with them}
+  // (max 2 jumps: a 3rd jump is where name twins leak in, like the romanian IDK -> the US IDK -> Eminem)
+  const G = new Map();
+  for (const a of startArtists) G.set(a, { o: a, d: 0 });
+  const vids = (await Promise.all(seeds.map((s) => videoOf(s).catch(() => null)))).filter(Boolean);
+  const lists = await Promise.all(seeds.map((s) => mixOf(s).catch(() => [])));
+  const got = new Map(), tried = new Set(vids);
+  const walk = (list) => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const v of list) {
+        if (got.has(v.yt)) continue;
+        const as = artistsOf(v);
+        let link = null;
+        for (const a of as) if (G.has(a) && (!link || G.get(a).d < G.get(link).d)) link = a;
+        if (!link) continue;
+        const L = G.get(link);
+        for (const a of as) if (!G.has(a) && L.d + 1 <= 2) G.set(a, { o: L.o, d: L.d + 1 });
+        v.why = L.d === 0 ? `more from ${link}` : `${link} · works with ${L.o}`;
+        v.hop = L.d;
+        v.main = as[0] || link;
+        got.set(v.yt, v);
+        changed = true;
+      }
+    }
+  };
+  lists.forEach(walk);
+  // the collaborators' own mixes (collab videos first)
+  const next = [...got.values()].filter((v) => artistsOf(v).length >= 2 && !tried.has(v.yt)).slice(0, expand);
+  next.forEach((v) => tried.add(v.yt));
+  const more = await Promise.all(next.map((v) => mixOf({ name: niceName(v) }, v.yt).catch(() => [])));
+  more.forEach(walk);
+  lists.forEach(walk); // songs earlier in the first mixes may connect now
+  let out = [...got.values()];
+  // tiny artist with almost nothing connected: YouTube's first few picks are still close, use those
+  if (out.length < 6)
+    for (const l of lists) for (const v of l.slice(0, 8)) if (!got.has(v.yt)) got.set(v.yt, { ...v, why: "close to " + v.seed, hop: 2, main: artistsOf(v)[0] || "" });
+  out = [...got.values()];
+  // blend: take turns between artists (closest ones first), max perArtist songs each,
+  // so one artist with 30 songs doesn't flood it
+  const groups = new Map();
+  out.sort((x, y) => x.hop - y.hop).forEach((v) => {
+    const k = v.main;
+    if (!groups.has(k)) groups.set(k, []);
+    if (groups.get(k).length < perArtist) groups.get(k).push(v);
+  });
+  const lanes = [...groups.values()];
+  const mixed = [];
+  for (let i = 0; i < perArtist; i++) for (const l of lanes) if (l[i]) mixed.push(l[i]);
+  return mixed;
 }
 
 async function refill(key, quiet) {
@@ -284,12 +374,14 @@ async function refill(key, quiet) {
     if (!(await window.finder.api.ready())) throw new Error("the song servers aren't answering, try again in a bit");
     const seeds = seedSongs(key);
     if (!seeds.length) throw new Error("add a few songs first, Smart Shuffle finds songs LIKE yours");
-    const lists = await Promise.all(seeds.map((s) => mixOf(s).catch((e) => (console.warn("smart shuffle mix failed", s.name, e), []))));
+    // every artist in the folder counts as "yours" (the folder's vibe)
+    const mine = [...new Set(ctxSongs(key).flatMap((s) => artistsOf({ title: s.name, artist: "" })))];
+    const lists = [await artistWeb(seeds, mine, 4, 3)];
     const keys = libKeys();
     const seen = new Set(), names = new Set(), perArtist = {};
     const picks = [];
     // take turns between the mixes so the picks are a blend of all the seed songs
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 200; i++) {
       for (const l of lists) {
         const v = l[i];
         if (!v || seen.has(v.yt)) continue;
@@ -297,7 +389,7 @@ async function refill(key, quiet) {
         if (!okSong(v) || ownedId(v, keys)) continue;
         const nm = norm(niceName(v));
         if (names.has(nm)) continue; // same song, another upload
-        const a = norm(split(niceName(v)).artist) || norm(v.artist);
+        const a = artistsOf(v)[0] || norm(v.artist);
         if ((perArtist[a] || 0) >= 3) continue; // not 10 songs of the same artist
         perArtist[a] = (perArtist[a] || 0) + 1;
         names.add(nm);
@@ -456,6 +548,7 @@ function playNow(v) {
   origPlay(r.id, null, false);
   window.ui.highlightActiveTrack(r.id);
   redraw();
+  renderQ();
   setTimeout(warmNext, 1500);
 }
 // "next" on a pick that's on the device: in memory = instant, else a quick read from the device
@@ -499,6 +592,12 @@ const origPlay = P.play.bind(P);
 P.play = function (id, contextList = null, renderList = true) {
   if (contextList && S.radio && !S.radio.loading) stopRadio(true);
   const r = origPlay(id, contextList, renderList);
+  if (S.plan && !S.fromPlan) {
+    // played it yourself: its next spot in Up Next goes away (later rounds keep it)
+    const i = S.plan.findIndex((e) => e.id === id);
+    if (i >= 0) S.plan.splice(i, 1);
+  }
+  setTimeout(renderQ, 0);
   if (!isPick(id)) {
     const k = ctxNow();
     if (k !== S.ctx) {
@@ -522,10 +621,143 @@ P.next = function () {
     S.lastLibId = cur;
     S.sinceLast++;
   }
+  if (P.shuffle && !(window.smartQueue && window.smartQueue.on)) return planNext();
   const v = S.sinceLast >= EVERY - 1 && nextPick();
   if (v && (S.mem.has(v.yt) || S.ready.has(v.yt))) return playSoon(v);
   warmNext();
   return origNext();
+};
+
+// ------------------------------------------------------------------ Up Next (v2.28.0)
+// Shuffle order is decided AHEAD now (like Spotify), so the Queue can show the next songs.
+// Smart Shuffle picks sit in it after every 2 of your songs.
+S.plan = [];
+S.planKey = "";
+function baseList() {
+  const l = P.playlist && P.playlist.length ? P.playlist : window.ui.getFlatList();
+  return l.filter((id) => !isPick(id) && P.songs.some((s) => s.id === id));
+}
+function makePlan() {
+  const l = baseList();
+  const key = l.join(",") + "|" + (S.on ? S.ctx : "");
+  if (key !== S.planKey) {
+    S.planKey = key;
+    S.plan = [];
+    S.planCount = 0;
+  }
+  if (!l.length) return S.plan;
+  // keep at least 12 songs decided ahead: rounds of your songs in random order (no repeat until
+  // every song played), a Smart Shuffle pick after every 2 of yours
+  const inPlan = () => new Set(S.plan.filter((e) => e.pick).map((e) => e.pick.yt));
+  while (S.plan.length < 12) {
+    const used = new Set(S.plan.filter((e) => e.id).map((e) => e.id));
+    let ids = l.filter((id) => !used.has(id) && id !== P.currId);
+    if (!ids.length) ids = l.filter((id) => id !== (S.plan.length ? S.plan[S.plan.length - 1].id : P.currId));
+    if (!ids.length) ids = [...l];
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+    for (const id of ids) {
+      S.plan.push({ id });
+      S.planCount = (S.planCount || 0) + 1;
+      if (S.on && S.planCount % (EVERY - 1) === 0) {
+        const have = inPlan();
+        const v = shown(S.ctx).find((x) => !S.played.has(x.yt) && !have.has(x.yt) && PREFIX + x.yt !== P.currId && !S.bad.has(x.yt));
+        if (v) S.plan.push({ pick: v });
+      }
+      if (S.plan.length >= 12) break;
+    }
+  }
+  return S.plan;
+}
+function planNext() {
+  makePlan();
+  if (P.currId && !isPick(P.currId)) S.lastLibId = P.currId;
+  while (S.plan.length) {
+    const e = S.plan.shift();
+    if (e.pick) {
+      if (S.mem.has(e.pick.yt) || S.ready.has(e.pick.yt)) return playSoon(e.pick), renderQ();
+      continue; // not downloaded yet: skip it, never wait
+    }
+    if (P.songs.some((s) => s.id === e.id)) {
+      S.fromPlan = true;
+      try {
+        P.play(e.id);
+      } finally {
+        S.fromPlan = false;
+      }
+      return renderQ();
+    }
+  }
+  return origNext();
+}
+// the next songs, for the Queue panel
+function upcoming(n = 10) {
+  const out = [];
+  const lib = (id) => P.songs.find((s) => s.id === id);
+  const add = (o) => out.length < n && out.push(o);
+  if (S.radio && !S.radio.loading) {
+    for (let i = S.radio.idx + 1; i < S.radio.items.length && out.length < n; i++) {
+      const v = S.radio.items[i];
+      const s = v.own && lib(v.own);
+      add(s ? { name: s.name, art: s.art, sub: "radio · in your library", play: () => radioJump(i) } : { name: niceName(v), art: `https://i.ytimg.com/vi/${v.yt}/mqdefault.jpg`, sub: "radio · new for you", pick: true, play: () => radioJump(i) });
+    }
+    return { label: `${S.radio.seed} Radio`, items: out };
+  }
+  if (window.smartQueue && window.smartQueue.on) return { label: "Smart Queue picks by speed", items: [] };
+  if (P.shuffle) {
+    makePlan().forEach((e, i) => {
+      if (e.pick) add({ name: niceName(e.pick), art: `https://i.ytimg.com/vi/${e.pick.yt}/mqdefault.jpg`, sub: e.pick.why || "Smart Shuffle", pick: true, play: () => jumpPlan(i) });
+      else {
+        const s = lib(e.id);
+        if (s) add({ name: s.name, art: s.art, sub: "", play: () => jumpPlan(i) });
+      }
+    });
+    return { label: S.on ? "Smart Shuffle" : "Shuffle", items: out };
+  }
+  const l = baseList();
+  const at = l.indexOf(P.currId);
+  for (let i = 1; i <= l.length - 1 && out.length < n; i++) {
+    const s = lib(l[(at + i + l.length) % l.length]);
+    if (s) add({ name: s.name, art: s.art, sub: "", play: () => P.play(s.id) });
+  }
+  return { label: "In order", items: out };
+}
+function jumpPlan(i) {
+  S.plan.splice(0, i); // skip the ones before it
+  planNext();
+}
+const origRenderQ = window.ui.renderQueue.bind(window.ui);
+function renderQ() {
+  try {
+    window.ui.renderQueue();
+  } catch (e) {}
+}
+window.ui.renderQueue = function () {
+  origRenderQ();
+  const list = $("queueList");
+  if (!list) return;
+  const up = upcoming(10);
+  if (!P.queue.length) list.innerHTML = ""; // drop "Queue is empty", Next up is below
+  const h = document.createElement("div");
+  h.className = "q-next-h";
+  h.innerHTML = `<span>Next up</span><small>${esc(up.label)}</small>`;
+  list.appendChild(h);
+  if (!up.items.length) {
+    const e = document.createElement("div");
+    e.className = "text-[10px] text-white/30 text-center uppercase tracking-widest mt-2";
+    e.textContent = P.songs.length ? "decided when the song ends" : "add some songs first";
+    list.appendChild(e);
+  }
+  up.items.forEach((it, i) => {
+    const r = document.createElement("div");
+    r.className = "q-next" + (it.pick ? " pick" : "");
+    const p = split(it.name || "");
+    r.innerHTML = `<span class="q-n">${i + 1}</span><div class="q-art"${it.art ? ` style="background-image:url('${esc(it.art)}')"` : ""}></div><div class="q-t"><b>${esc(p.title)}</b><span>${esc([p.artist, it.sub].filter(Boolean).join(" · "))}</span></div>`;
+    r.onclick = () => it.play();
+    list.appendChild(r);
+  });
 };
 // the normal next song; after a pick (not in your list) it continues from your last own song
 function libNext() {
@@ -563,12 +795,12 @@ async function startRadio(id) {
   paintRadioBtn();
   redraw();
   toast(`Starting ${seedName} radio 📻`, 2000);
-  if (P.currId !== id) origPlay(id, null, false), window.ui.highlightActiveTrack(id);
   try {
+    if (P.currId !== id) origPlay(id, null, false), window.ui.highlightActiveTrack(id);
     if (!(await window.finder.api.ready())) throw new Error("the song servers aren't answering, try again in a bit");
     const vid = await videoOf(song);
     if (!vid) throw new Error("couldn't find that song on YouTube");
-    const raw = await mixOf(song, vid);
+    const raw = await artistWeb([song], artistsOf({ title: song.name, artist: "" }), 6);
     if (!S.radio || S.radio.seedId !== id) return; // stopped meanwhile
     const keys = libKeys();
     const names = new Set([norm(song.name)]);
@@ -745,7 +977,7 @@ function pickRow(v, opts = {}) {
   if (!opts.radio) c.dataset.id = id;
   c.dataset.yt = v.yt;
   c.draggable = false;
-  const why = opts.why != null ? opts.why : v.seed ? "because of " + esc(v.seed) : "Smart Shuffle";
+  const why = opts.why != null ? opts.why : v.why ? esc(v.why) : v.seed ? "because of " + esc(v.seed) : "Smart Shuffle";
   c.innerHTML = `
     <div class="lib-card-icon has-art" style="background-image:url('https://i.ytimg.com/vi/${encodeURIComponent(v.yt)}/mqdefault.jpg')"><i class="ss-spin fa-solid fa-spinner fa-spin"></i></div>
     <div class="lib-card-info">
@@ -833,7 +1065,7 @@ function radioBox() {
         <div class="lib-card-info"><div class="lib-card-title">${esc(p.title)}</div>${p.artist ? `<div class="lib-card-artist">${esc(p.artist)}</div>` : ""}
         <div class="ss-why own"><i class="fa-solid fa-check"></i> in your library</div></div>`;
       row.onclick = () => radioJump(i);
-    } else row = pickRow(v, { radio: true, why: "new for you", onPlay: () => radioJump(i) });
+    } else row = pickRow(v, { radio: true, why: v.why ? esc(v.why) : "new for you", onPlay: () => radioJump(i) });
     row.classList.toggle("now", now);
     list.appendChild(row);
   }
@@ -944,4 +1176,6 @@ window.smartShuffle = {
   radio: startRadio,
   stopRadio,
   radioBtn,
+  _web: (songs, artists, n) => artistWeb(songs, artists, n), // for testing
+  _artists: (name) => artistsOf({ title: name, artist: "" }),
 };
